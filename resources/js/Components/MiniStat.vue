@@ -12,7 +12,7 @@
 
 <script setup>
 import { computed } from 'vue'
-import { LMS_TOKENS } from '@/composables/useTokens.js'
+import { LMS_TOKENS } from '@/Composables/useTokens.js'
 
 const props = defineProps({
   label: String,

@@ -312,7 +312,7 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue';
 import AppLayout from '../Components/AppLayout.vue';
-import { LMS_TOKENS } from '@/composables/useTokens'
+import { LMS_TOKENS } from '@/composables/useTokens.js'
 import SvgIcon from '../Components/SvgIcon.vue';
 import Button from '../Components/Button.vue';
 import StatusPill from '../Components/StatusPill.vue';

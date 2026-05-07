@@ -18,7 +18,7 @@ Examples:
 - job_456_signature_20260504143045.png
 ```
 
-## Database Fields
+## Database Fields;
 - `job_checkpoints.photo_path` - Relative path to photo file
 - `job_checkpoints.signature_path` - Relative path to signature file
 

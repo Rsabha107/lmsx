@@ -6,6 +6,7 @@
  */
 
 use App\Http\Controllers\LmsController;
+use App\Http\Controllers\MatchesController;
 use Illuminate\Support\Facades\Route;
 
 Route::middleware('auth')->group(function () {
@@ -19,6 +20,14 @@ Route::middleware('auth')->group(function () {
         Route::post('/', [LmsController::class, 'storeTeam'])->name('store');
         Route::put('/{code}', [LmsController::class, 'updateTeam'])->name('update');
         Route::delete('/{code}', [LmsController::class, 'destroyTeam'])->name('destroy');
+    });
+    
+    // Matches Management
+    Route::prefix('matches')->name('matches.')->group(function () {
+        Route::get('/', [MatchesController::class, 'index'])->name('index');
+        Route::post('/', [MatchesController::class, 'store'])->name('store');
+        Route::put('/{id}', [MatchesController::class, 'update'])->name('update');
+        Route::delete('/{id}', [MatchesController::class, 'destroy'])->name('destroy');
     });
     
     // Contacts Management

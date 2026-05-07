@@ -141,6 +141,7 @@ const navItems = [
   { label: 'Live Tracker',  route: 'tracker',           icon: 'tracker' },
   { label: 'Fleet',         route: 'fleet',             icon: 'fleet' },
   { label: 'Teams',         route: 'teams',             icon: 'team' },
+  { label: 'Matches',       route: 'matches',           icon: 'trophy' },
   { label: 'Contacts',      route: 'contacts',          icon: 'contacts' },
   { label: 'Notifications', route: 'notifications',     icon: 'bell' },
   { label: 'Daily Email',   route: 'email',             icon: 'email' },

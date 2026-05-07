@@ -289,6 +289,7 @@ function openCheckpointModal(checkpoint) {
   signatureData.value = null;
   photoData.value = null;
   photoPreview.value = null;
+  processing.value = false;
   showCheckpointModal.value = true;
   
   // Initialize signature canvas after modal is shown
@@ -459,6 +460,7 @@ function confirmCheckpoint() {
     })
     .then(data => {
       if (data.success) {
+        processing.value = false;
         showCheckpointModal.value = false;
         actualTime.value = '';
         checkpointNote.value = '';

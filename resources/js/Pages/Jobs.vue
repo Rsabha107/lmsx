@@ -321,8 +321,8 @@
         <div class="override-footer-inner">
           <span class="override-signed-as">Signed as <strong>Logistics Manager</strong></span>
           <div style="display:flex;gap:8px;">
-            <Button variant="secondary" size="sm" @click="showOverrideModal = false">Cancel</Button>
-            <Button variant="primary" size="sm" :disabled="!overrideReason" @click="submitOverride">Override &amp; log</Button>
+            <Button variant="secondary" size="sm" @click="showOverrideModal = false" :disabled="overrideProcessing">Cancel</Button>
+            <Button variant="primary" size="sm" :disabled="!overrideReason || overrideProcessing" :processing="overrideProcessing" @click="submitOverride">Override &amp; log</Button>
           </div>
         </div>
       </template>
@@ -552,6 +552,7 @@ function selectPlan(planId) {
 
 // Override modal
 const showOverrideModal = ref(false);
+const overrideProcessing = ref(false);
 const overrideCheckpoint = ref(null);
 const overrideState = ref('done');
 const overrideTime = ref('');
@@ -574,6 +575,7 @@ function openOverrideModal() {
   overrideReason.value = '';
   overrideNotes.value = '';
   overrideNotify.value = true;
+  overrideProcessing.value = false;
   showOverrideModal.value = true;
 }
 
@@ -636,6 +638,8 @@ function startJob() {
 function submitOverride() {
   if (!overrideReason.value || !overrideCheckpoint.value) return;
 
+  overrideProcessing.value = true;
+  
   const checkpointId = overrideCheckpoint.value.id || overrideCheckpoint.value.dbId;
   
   // Build payload
@@ -672,6 +676,7 @@ function submitOverride() {
     .then(data => {
       if (data.success) {
         showOverrideModal.value = false;
+        overrideProcessing.value = false;
         const currentJobId = selectedJob.value?.id;
         router.reload({ 
           only: ['schedule'],
@@ -683,10 +688,12 @@ function submitOverride() {
           }
         });
       } else {
+        overrideProcessing.value = false;
         alert('Failed to update checkpoint: ' + (data.message || 'Unknown error'));
       }
     })
     .catch(error => {
+      overrideProcessing.value = false;
       console.error('Error updating checkpoint:', error);
       alert('Failed to update checkpoint. Please try again.');
     });

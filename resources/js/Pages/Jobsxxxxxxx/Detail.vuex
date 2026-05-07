@@ -1,0 +1,334 @@
+<template>
+  <app-layout>
+    <div class="page-header">
+      <inertia-link href="/jobs" class="back-link">
+        <svg-icon name="chevron" style="transform:rotate(180deg)" :size="16" /> Jobs
+      </inertia-link>
+    </div>
+
+    <div class="detail-layout">
+      <!-- Left: job info -->
+      <div class="detail-main">
+        <div class="job-hero">
+          <div class="hero-left">
+            <div class="hero-id mono">{{ job.id }}</div>
+            <h1 class="hero-team">{{ job.team }}</h1>
+            <div class="hero-route">{{ job.from }} <span class="arrow">→</span> {{ job.to }}</div>
+          </div>
+          <status-pill :tone="statusTone(job.status)" style="font-size:13px;padding:5px 12px">
+            {{ job.delay ? `Delayed +${job.delay}m` : statusLabel(job.status) }}
+          </status-pill>
+        </div>
+
+        <div class="stats-grid">
+          <div class="stat-box">
+            <div class="stat-label">Departure</div>
+            <div class="stat-val mono">{{ job.dep }}</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-label">Arrival</div>
+            <div class="stat-val mono">{{ job.arr }}</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-label">Passengers</div>
+            <div class="stat-val">{{ job.pax }}</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-label">Vehicle</div>
+            <div class="stat-val">{{ job.vehicle }}</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-label">Kind</div>
+            <div class="stat-val" style="text-transform:capitalize">{{ job.kind }}</div>
+          </div>
+        </div>
+
+        <!-- Checkpoint timeline -->
+        <div class="section-card">
+          <div class="section-header">
+            <span class="section-title">Checkpoint Timeline</span>
+            <button class="btn btn--ghost btn--sm" @click="showOverride = true">Override</button>
+          </div>
+          <div class="checkpoint-timeline">
+            <div v-for="(cp, i) in checkpoints" :key="cp.id" class="cp-row">
+              <div :class="['cp-icon-col', `cp-icon-col--${cp.status}`]">
+                <div :class="['cp-dot', `cp-dot--${cp.status}`]">
+                  <svg-icon v-if="cp.status === 'done'" name="check" :size="11" />
+                  <svg-icon v-else-if="cp.status === 'active'" name="clock" :size="11" />
+                </div>
+                <div v-if="i < checkpoints.length - 1" :class="['cp-line', `cp-line--${cp.status}`]" />
+              </div>
+              <div class="cp-body">
+                <div class="cp-label">{{ cp.label }}</div>
+                <div class="cp-times">
+                  <span class="cp-sched mono">{{ cp.time }}</span>
+                  <span v-if="cp.actual" class="cp-actual mono">
+                    Actual: {{ cp.actual }}
+                  </span>
+                  <span v-else-if="cp.status !== 'pending'" class="cp-pending">In progress…</span>
+                </div>
+              </div>
+              <div class="cp-status-col">
+                <span v-if="cp.status === 'done'" class="cp-badge cp-badge--done">Done</span>
+                <span v-else-if="cp.status === 'active'" class="cp-badge cp-badge--active">Active</span>
+                <span v-else class="cp-badge cp-badge--pending">Pending</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right: actions -->
+      <div class="detail-side">
+        <div class="side-card">
+          <div class="side-title">Quick Actions</div>
+          <div class="action-list">
+            <button class="action-btn" @click="showOverride = true">
+              <svg-icon name="check" :size="16" /> Mark checkpoint
+            </button>
+            <button class="action-btn action-btn--warn">
+              <svg-icon name="warn" :size="16" /> Flag delay
+            </button>
+            <button class="action-btn">
+              <svg-icon name="phone" :size="16" /> Contact driver
+            </button>
+            <button class="action-btn">
+              <svg-icon name="refresh" :size="16" /> Reassign vehicle
+            </button>
+          </div>
+        </div>
+
+        <div class="side-card">
+          <div class="side-title">Contacts</div>
+          <div class="contact-list">
+            <div class="contact-row">
+              <div class="contact-avatar">IA</div>
+              <div>
+                <div class="contact-name">Irena Volkov</div>
+                <div class="contact-role">Logistics Manager</div>
+              </div>
+            </div>
+            <div class="contact-row">
+              <div class="contact-avatar">PA</div>
+              <div>
+                <div class="contact-name">Priya Anand</div>
+                <div class="contact-role">Field Supervisor</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Override modal -->
+    <teleport to="body">
+      <div v-if="showOverride" class="modal-backdrop" @click.self="showOverride = false">
+        <div class="modal">
+          <div class="modal-header">
+            <span class="modal-title">Override Checkpoint</span>
+            <button class="modal-close" @click="showOverride = false"><svg-icon name="x" /></button>
+          </div>
+          <div class="modal-body">
+            <div class="form-field">
+              <label>Checkpoint</label>
+              <select v-model="overrideCheckpoint">
+                <option v-for="cp in checkpoints" :key="cp.id" :value="cp.id">{{ cp.label }}</option>
+              </select>
+            </div>
+            <div class="form-field">
+              <label>Actual time</label>
+              <input v-model="overrideTime" type="time" />
+            </div>
+            <div class="form-field">
+              <label>Reason / note</label>
+              <textarea v-model="overrideNote" rows="3" placeholder="Optional note…" />
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn btn--ghost" @click="showOverride = false">Cancel</button>
+            <button class="btn btn--primary" @click="showOverride = false">Save override</button>
+          </div>
+        </div>
+      </div>
+    </teleport>
+  </app-layout>
+</template>
+
+<script setup>
+import { ref } from 'vue';
+import AppLayout from '../../Components/AppLayout.vue';
+import StatusPill from '../../Components/StatusPill.vue';
+import SvgIcon from '../../Components/SvgIcon.vue';
+import { Link as InertiaLink } from '@inertiajs/vue3';
+
+const props = defineProps({
+  job:         { type: Object, default: () => ({}) },
+  checkpoints: { type: Array, default: () => [] },
+});
+
+const showOverride = ref(false);
+const overrideCheckpoint = ref(props.checkpoints[3]?.id ?? '');
+const overrideTime = ref('');
+const overrideNote = ref('');
+
+const statusMap = {
+  'in-progress': { tone: 'live',    label: 'In Progress' },
+  'scheduled':   { tone: 'primary', label: 'Scheduled' },
+  'delayed':     { tone: 'warn',    label: 'Delayed' },
+  'done':        { tone: 'ok',      label: 'Done' },
+};
+function statusTone(s) { return statusMap[s]?.tone ?? 'neutral'; }
+function statusLabel(s) { return statusMap[s]?.label ?? s; }
+</script>
+
+<style scoped>
+.page-header { margin-bottom: 16px; }
+.back-link {
+  display: inline-flex; align-items: center; gap: 4px;
+  color: var(--ink3); text-decoration: none; font-size: 13.5px;
+}
+.back-link:hover { color: var(--ink); }
+
+.detail-layout {
+  display: grid; grid-template-columns: 1fr 280px; gap: 20px; align-items: start;
+}
+@media (max-width: 900px) { .detail-layout { grid-template-columns: 1fr; } }
+
+/* Job hero */
+.job-hero {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 16px; margin-bottom: 20px; flex-wrap: wrap;
+}
+.hero-id { font-size: 13px; color: var(--ink3); margin-bottom: 4px; }
+.hero-team { font-size: 24px; font-weight: 800; color: var(--ink); margin: 0 0 4px; }
+.hero-route { font-size: 15px; color: var(--ink2); }
+.arrow { color: var(--ink4); margin: 0 4px; }
+
+.stats-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: 12px; margin-bottom: 20px;
+}
+.stat-box {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 8px; padding: 12px;
+}
+.stat-label { font-size: 11px; color: var(--ink3); font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px; }
+.stat-val { font-size: 15px; font-weight: 700; color: var(--ink); }
+
+/* Timeline */
+.section-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 10px; overflow: hidden;
+}
+.section-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 16px; border-bottom: 1px solid var(--border);
+}
+.section-title { font-size: 13.5px; font-weight: 600; color: var(--ink); }
+
+.checkpoint-timeline { padding: 8px 16px; }
+.cp-row { display: flex; gap: 12px; }
+.cp-icon-col { display: flex; flex-direction: column; align-items: center; width: 24px; flex-shrink: 0; }
+.cp-dot {
+  width: 24px; height: 24px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0; margin-top: 10px;
+}
+.cp-dot--done    { background: var(--ok); color: #fff; }
+.cp-dot--active  { background: var(--accent); color: #fff; }
+.cp-dot--pending { background: var(--panel); border: 2px solid var(--border); }
+.cp-line { width: 2px; flex: 1; min-height: 12px; margin: 2px 0; }
+.cp-line--done   { background: var(--ok); }
+.cp-line--active { background: var(--accent); opacity: 0.4; }
+.cp-line--pending{ background: var(--border); }
+.cp-body { flex: 1; padding: 10px 0; }
+.cp-label { font-size: 13.5px; font-weight: 600; color: var(--ink); }
+.cp-times { display: flex; gap: 12px; margin-top: 2px; flex-wrap: wrap; }
+.cp-sched { font-size: 12px; color: var(--ink3); }
+.cp-actual { font-size: 12px; color: var(--ok); }
+.cp-pending { font-size: 12px; color: var(--accent); font-style: italic; }
+.cp-status-col { display: flex; align-items: center; padding: 10px 0; }
+.cp-badge {
+  padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600;
+}
+.cp-badge--done    { background: var(--ok-soft); color: var(--ok); }
+.cp-badge--active  { background: var(--accent-soft); color: var(--accent-fg); }
+.cp-badge--pending { background: var(--panel); color: var(--ink4); }
+
+/* Side */
+.side-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 10px; padding: 16px; margin-bottom: 16px;
+}
+.side-title { font-size: 13px; font-weight: 700; color: var(--ink); margin-bottom: 12px; }
+
+.action-list { display: flex; flex-direction: column; gap: 6px; }
+.action-btn {
+  display: flex; align-items: center; gap: 8px;
+  padding: 9px 12px; border-radius: 7px;
+  border: 1px solid var(--border); background: none;
+  font-size: 13px; font-weight: 500; color: var(--ink2); cursor: pointer;
+  text-align: left;
+}
+.action-btn:hover { background: var(--panel); border-color: var(--border-strong); }
+.action-btn--warn { border-color: var(--warn); color: var(--warn); }
+.action-btn--warn:hover { background: var(--warn-soft); }
+
+.contact-list { display: flex; flex-direction: column; gap: 10px; }
+.contact-row { display: flex; align-items: center; gap: 10px; }
+.contact-avatar {
+  width: 34px; height: 34px; border-radius: 50%;
+  background: var(--accent-soft); color: var(--accent-fg);
+  font-size: 11px; font-weight: 700;
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+.contact-name { font-size: 13px; font-weight: 600; color: var(--ink); }
+.contact-role { font-size: 11.5px; color: var(--ink3); }
+
+/* Buttons */
+.btn {
+  display: inline-flex; align-items: center; gap: 5px;
+  border-radius: 7px; font-size: 13px; font-weight: 500; cursor: pointer;
+  border: 1px solid transparent;
+}
+.btn--sm { padding: 5px 12px; }
+.btn--ghost { background: none; border-color: var(--border); color: var(--ink3); }
+.btn--ghost:hover { background: var(--panel); color: var(--ink); }
+.btn--primary { background: var(--accent); color: #fff; padding: 8px 16px; }
+.btn--primary:hover { opacity: 0.9; }
+
+/* Modal */
+.modal-backdrop {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.45);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 100; padding: 16px;
+}
+.modal {
+  background: var(--surface); border-radius: 12px;
+  width: 100%; max-width: 440px; border: 1px solid var(--border);
+  animation: slideIn 0.2s ease;
+}
+.modal-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 16px 20px; border-bottom: 1px solid var(--border);
+}
+.modal-title { font-size: 16px; font-weight: 700; color: var(--ink); }
+.modal-close { background: none; border: none; cursor: pointer; color: var(--ink3); display: flex; padding: 4px; border-radius: 5px; }
+.modal-close:hover { background: var(--panel); }
+.modal-body { padding: 20px; display: flex; flex-direction: column; gap: 14px; }
+.modal-footer { display: flex; justify-content: flex-end; gap: 8px; padding: 14px 20px; border-top: 1px solid var(--border); }
+
+.form-field { display: flex; flex-direction: column; gap: 5px; }
+.form-field label { font-size: 12.5px; font-weight: 600; color: var(--ink2); }
+.form-field input, .form-field select, .form-field textarea {
+  padding: 8px 10px; border-radius: 7px;
+  border: 1px solid var(--border); background: var(--surface);
+  color: var(--ink); font-size: 13.5px; font-family: inherit;
+  resize: vertical;
+}
+.form-field input:focus, .form-field select:focus, .form-field textarea:focus {
+  outline: none; border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(99,102,241,0.12);
+}
+.mono { font-family: var(--font-mono, monospace); }
+</style>

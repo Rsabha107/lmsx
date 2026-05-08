@@ -35,4 +35,8 @@ return [
         ],
     ],
 
+    'aviationstack' => [
+        'key' => env('AVIATIONSTACK_API_KEY'),
+    ],
+
 ];

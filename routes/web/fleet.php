@@ -21,6 +21,8 @@ Route::middleware('auth')->group(function () {
     // Teams Management
     Route::prefix('teams')->name('teams.')->group(function () {
         Route::get('/', [LmsController::class, 'teams'])->name('index');
+        Route::post('/sync-flights', [LmsController::class, 'syncFlights'])->name('sync-flights');
+        Route::post('/{code}/sync-flight', [LmsController::class, 'syncTeamFlight'])->name('sync-flight');
         Route::post('/', [LmsController::class, 'storeTeam'])->name('store');
         Route::put('/{code}', [LmsController::class, 'updateTeam'])->name('update');
         Route::delete('/{code}', [LmsController::class, 'destroyTeam'])->name('destroy');

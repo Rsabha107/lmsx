@@ -13,6 +13,12 @@
           </template>
           Filter
         </Button>
+        <Button variant="secondary" size="sm" :disabled="syncing" @click="syncFlights">
+          <template #icon>
+            <svg-icon name="refresh" :size="14" />
+          </template>
+          {{ syncing ? 'Syncing…' : 'Sync Flights' }}
+        </Button>
         <Button variant="primary" size="sm" @click="openAddModal">
           <template #icon>
             <svg-icon name="plus" :size="14" style="color: #fff;" />
@@ -228,10 +234,22 @@
               </td>
               <td v-if="visibleColumns.notes" class="notes-cell">{{ team.notes || '—' }}</td>
               <td class="actions-cell" @click.stop>
-                <TableActions 
-                  :is-deleting="deleting && teamToDelete?.code === team.code" 
-                  @edit="editTeam(team)" 
-                  @delete="openDeleteModal(team)" 
+                <button
+                  v-if="team.flight_number"
+                  class="action-btn action-btn--flight"
+                  :disabled="syncingTeamCode === team.code"
+                  title="Sync flight status"
+                  @click="syncTeamFlight(team)"
+                >
+                  <span v-if="syncingTeamCode === team.code" class="spinner-sm"></span>
+                  <svg v-else width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 16v-2l-8-5V3.5c0-.83-.67-1.5-1.5-1.5S10 2.67 10 3.5V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5z"/>
+                  </svg>
+                </button>
+                <TableActions
+                  :is-deleting="deleting && teamToDelete?.code === team.code"
+                  @edit="editTeam(team)"
+                  @delete="openDeleteModal(team)"
                 />
               </td>
             </tr>
@@ -343,12 +361,38 @@
             <div class="detail-section">
               <h4 class="detail-section-title">Schedule</h4>
               <div class="detail-row">
-                <span class="detail-label">Arrival</span>
+                <span class="detail-label">Arrival (planned)</span>
                 <span class="detail-value mono">{{ formatDate(selectedTeam.arrival_date_time) }}</span>
               </div>
+              <div v-if="selectedTeam.actual_arrival_date_time" class="detail-row">
+                <span class="detail-label">Arrival (actual)</span>
+                <span class="detail-value mono" style="display:flex;align-items:center;gap:6px;">
+                  {{ formatDate(selectedTeam.actual_arrival_date_time) }}
+                  <span v-if="selectedTeam.arrival_delay_minutes" :style="{ color: selectedTeam.arrival_delay_minutes > 0 ? '#ef4444' : '#3b82f6', fontSize: '11px', fontWeight: 600 }">
+                    {{ selectedTeam.arrival_delay_minutes > 0 ? `+${selectedTeam.arrival_delay_minutes}m` : `${selectedTeam.arrival_delay_minutes}m` }}
+                  </span>
+                </span>
+              </div>
               <div class="detail-row">
-                <span class="detail-label">Departure</span>
+                <span class="detail-label">Departure (planned)</span>
                 <span class="detail-value mono">{{ formatDate(selectedTeam.departure_date_time) }}</span>
+              </div>
+              <div v-if="selectedTeam.actual_departure_date_time" class="detail-row">
+                <span class="detail-label">Departure (actual)</span>
+                <span class="detail-value mono" style="display:flex;align-items:center;gap:6px;">
+                  {{ formatDate(selectedTeam.actual_departure_date_time) }}
+                  <span v-if="selectedTeam.departure_delay_minutes" :style="{ color: selectedTeam.departure_delay_minutes > 0 ? '#ef4444' : '#3b82f6', fontSize: '11px', fontWeight: 600 }">
+                    {{ selectedTeam.departure_delay_minutes > 0 ? `+${selectedTeam.departure_delay_minutes}m` : `${selectedTeam.departure_delay_minutes}m` }}
+                  </span>
+                </span>
+              </div>
+              <div v-if="selectedTeam.flight_status" class="detail-row">
+                <span class="detail-label">Flight Status</span>
+                <span class="detail-value" style="text-transform:capitalize;">{{ selectedTeam.flight_status }}</span>
+              </div>
+              <div v-if="selectedTeam.flight_synced_at" class="detail-row">
+                <span class="detail-label">Last Synced</span>
+                <span class="detail-value mono" style="font-size:11px;color:var(--ink3);">{{ formatDate(selectedTeam.flight_synced_at) }}</span>
               </div>
             </div>
 
@@ -422,6 +466,99 @@
         </div>
       </transition>
     </div>
+
+    <!-- Flight Status Modal -->
+    <Modal :show="showFlightModal" @close="showFlightModal = false" max-width="480px">
+      <template #title>
+        <span style="display:flex;align-items:center;gap:8px;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 16v-2l-8-5V3.5c0-.83-.67-1.5-1.5-1.5S10 2.67 10 3.5V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5z"/>
+          </svg>
+          {{ flightCard?.flight_number }} · Flight Status
+        </span>
+      </template>
+
+      <div v-if="flightCard" class="fc-wrap">
+        <!-- Date mismatch warning -->
+        <div v-if="flightCard.date_mismatch" class="fc-notice fc-notice--warn">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          Data is for <strong>{{ flightCard.flight_date }}</strong> — planned date is <strong>{{ flightCard.planned_date }}</strong>. Not saved.
+        </div>
+        <!-- Delay / status notice -->
+        <div v-if="!flightCard.date_mismatch && (flightCard.departure?.delay || flightCard.arrival?.delay)" class="fc-notice fc-notice--delay">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          Flight is delayed · {{ flightCard.airline || '' }}
+        </div>
+        <div v-else-if="!flightCard.date_mismatch && flightCard.flight_status === 'landed'" class="fc-notice fc-notice--ok">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+          Landed on time · {{ flightCard.airline || '' }}
+        </div>
+        <div v-else-if="!flightCard.date_mismatch" class="fc-notice fc-notice--info">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+          {{ fcStatusLabel }} · {{ flightCard.airline || '' }}
+        </div>
+
+        <!-- Route bar -->
+        <div class="fc-route">
+          <div class="fc-endpoint">
+            <div class="fc-iata">{{ flightCard.departure?.iata || '—' }}</div>
+          </div>
+          <div class="fc-route-line">
+            <div class="fc-route-dash"></div>
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" style="color:#ef4444;flex-shrink:0;">
+              <path d="M21 16v-2l-8-5V3.5c0-.83-.67-1.5-1.5-1.5S10 2.67 10 3.5V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5z"/>
+            </svg>
+            <div class="fc-route-dash fc-route-dash--faint"></div>
+          </div>
+          <div class="fc-endpoint fc-endpoint--right">
+            <div class="fc-iata">{{ flightCard.arrival?.iata || '—' }}</div>
+          </div>
+        </div>
+
+        <div class="fc-divider"></div>
+
+        <!-- Departure leg -->
+        <div class="fc-leg">
+          <div class="fc-leg-city">{{ flightCard.departure?.airport || flightCard.departure?.iata }} · {{ fcDate(flightCard.departure?.scheduled) }}</div>
+          <div class="fc-leg-grid">
+            <div class="fc-leg-label">{{ flightCard.departure?.actual ? 'Departed' : (flightCard.flight_status === 'active' ? 'Departed (est.)' : 'Scheduled') }}</div>
+            <div class="fc-leg-label">Terminal</div>
+            <div class="fc-leg-label">Gate</div>
+            <div class="fc-leg-time" :class="{ 'fc-leg-time--late': (flightCard.departure?.delay ?? 0) > 0 }">
+              {{ fcTime(flightCard.departure?.actual || flightCard.departure?.estimated || flightCard.departure?.scheduled) }}
+            </div>
+            <div class="fc-leg-meta">{{ flightCard.departure?.terminal || '—' }}</div>
+            <div class="fc-leg-meta">{{ flightCard.departure?.gate || '—' }}</div>
+            <div v-if="(flightCard.departure?.actual || flightCard.departure?.estimated) && fcTime(flightCard.departure?.actual || flightCard.departure?.estimated) !== fcTime(flightCard.departure?.scheduled)" class="fc-leg-planned">
+              {{ fcTime(flightCard.departure?.scheduled) }}
+            </div>
+          </div>
+        </div>
+
+        <div class="fc-divider"></div>
+
+        <!-- Arrival leg -->
+        <div class="fc-leg">
+          <div class="fc-leg-city">{{ flightCard.arrival?.airport || flightCard.arrival?.iata }} · {{ fcDate(flightCard.arrival?.scheduled) }}</div>
+          <div class="fc-leg-grid">
+            <div class="fc-leg-label">{{ flightCard.arrival?.actual ? 'Arrived' : (flightCard.arrival?.estimated ? 'Est. arrival' : 'Scheduled') }}</div>
+            <div class="fc-leg-label">Terminal</div>
+            <div class="fc-leg-label">Gate</div>
+            <div class="fc-leg-time" :class="{ 'fc-leg-time--late': (flightCard.arrival?.delay ?? 0) > 0 }">
+              {{ fcTime(flightCard.arrival?.actual || flightCard.arrival?.estimated || flightCard.arrival?.scheduled) }}
+            </div>
+            <div class="fc-leg-meta">{{ flightCard.arrival?.terminal || '—' }}</div>
+            <div class="fc-leg-meta">{{ flightCard.arrival?.gate || '—' }}</div>
+            <div v-if="(flightCard.arrival?.actual || flightCard.arrival?.estimated) && fcTime(flightCard.arrival?.actual || flightCard.arrival?.estimated) !== fcTime(flightCard.arrival?.scheduled)" class="fc-leg-planned">
+              {{ fcTime(flightCard.arrival?.scheduled) }}
+            </div>
+          </div>
+        </div>
+
+        <div class="fc-divider"></div>
+        <div class="fc-footer">Updated {{ fcAgo(flightCard.synced_at) }} · Source: AviationStack</div>
+      </div>
+    </Modal>
 
     <!-- Add Team Modal -->
     <Modal :show="showAddModal" @close="showAddModal = false" max-width="700px">
@@ -1032,6 +1169,92 @@ const showEditModal = ref(false);
 const showDeleteModal = ref(false);
 const processing = ref(false);
 const deleting = ref(false);
+const syncing = ref(false);
+const syncingTeamCode = ref(null);
+const showFlightModal = ref(false);
+const flightCard = ref(null);
+
+const fcStatusLabel = computed(() => {
+  const map = { scheduled: 'Scheduled', active: 'In flight', landed: 'Landed', cancelled: 'Cancelled', diverted: 'Diverted', incident: 'Incident' };
+  return map[flightCard.value?.flight_status] ?? (flightCard.value?.flight_status || 'Unknown');
+});
+
+function fcTime(iso) {
+  if (!iso) return '—';
+  // Extract HH:MM directly from the ISO string — no timezone conversion.
+  // AviationStack returns airport-local times; converting via Date shifts them to browser tz.
+  const match = iso.match(/T(\d{2}):(\d{2})/);
+  if (match) {
+    const h = parseInt(match[1], 10);
+    const m = match[2];
+    const ampm = h >= 12 ? 'PM' : 'AM';
+    const h12  = h % 12 || 12;
+    return `${h12}:${m} ${ampm}`;
+  }
+  return iso;
+}
+
+function fcDate(iso) {
+  if (!iso) return '';
+  // Same: parse date parts directly to avoid timezone shift
+  const match = iso.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (match) {
+    const d = new Date(parseInt(match[1]), parseInt(match[2]) - 1, parseInt(match[3]));
+    return d.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+  }
+  return iso;
+}
+
+function fcAgo(iso) {
+  if (!iso) return '—';
+  const diff = Math.floor((Date.now() - new Date(iso)) / 60000);
+  if (diff < 1) return 'just now';
+  if (diff < 60) return `${diff}m ago`;
+  return `${Math.floor(diff / 60)}h ago`;
+}
+
+async function syncTeamFlight(team) {
+  syncingTeamCode.value = team.code;
+  try {
+    const csrf = document.querySelector('meta[name="csrf-token"]')?.content ?? '';
+    const res  = await fetch(`/teams/${team.code}/sync-flight`, {
+      method: 'POST',
+      headers: { 'X-CSRF-TOKEN': csrf, 'Accept': 'application/json' },
+    });
+    const data = await res.json();
+    if (!res.ok || !data.success) {
+      alert(data.message || 'No flight data available.');
+      return;
+    }
+    flightCard.value = data;
+    showFlightModal.value = true;
+    router.reload({ only: ['teams'] });
+  } catch (e) {
+    alert('Flight sync failed. Check the console for details.');
+    console.error(e);
+  } finally {
+    syncingTeamCode.value = null;
+  }
+}
+
+async function syncFlights() {
+  syncing.value = true;
+  try {
+    const csrf = document.querySelector('meta[name="csrf-token"]')?.content ?? '';
+    const res  = await fetch('/teams/sync-flights', {
+      method: 'POST',
+      headers: { 'X-CSRF-TOKEN': csrf, 'Accept': 'application/json' },
+    });
+    const data = await res.json();
+    alert(`Flight sync complete — Synced: ${data.synced}, Failed: ${data.failed}, Skipped: ${data.skipped}`);
+    router.reload({ only: ['teams'] });
+  } catch (e) {
+    alert('Flight sync failed. Check the console for details.');
+    console.error(e);
+  } finally {
+    syncing.value = false;
+  }
+}
 const validationErrors = ref({});
 const teamToDelete = ref(null);
 const arrivalDateInput = ref(null);
@@ -1951,6 +2174,77 @@ onUnmounted(() => {
 .actions-cell {
   padding: 8px 14px !important;
 }
+
+/* Per-row flight sync button */
+.action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  background: transparent;
+  transition: all 0.13s;
+  vertical-align: middle;
+}
+.action-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.action-btn--flight { color: var(--ink3); }
+.action-btn--flight:hover:not(:disabled) { background: rgba(99,102,241,0.1); color: #6366f1; }
+.spinner-sm {
+  width: 14px; height: 14px;
+  border: 2px solid var(--border);
+  border-top-color: #6366f1;
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+}
+
+/* Flight card modal */
+.fc-wrap { font-size: 13px; color: var(--ink); }
+.fc-notice {
+  display: flex; align-items: center; gap: 7px;
+  padding: 9px 12px; border-radius: 8px;
+  font-size: 12px; font-weight: 500; margin-bottom: 16px;
+}
+.fc-notice--delay  { background: #FEF2F2; color: #b91c1c; border: 1px solid #fecaca; }
+.fc-notice--ok     { background: #F0FDF4; color: #15803d; border: 1px solid #bbf7d0; }
+.fc-notice--info   { background: #EFF6FF; color: #1d4ed8; border: 1px solid #bfdbfe; }
+.fc-notice--warn   { background: #FFFBEB; color: #92400e; border: 1px solid #fcd34d; }
+
+.fc-route {
+  display: flex; align-items: center; gap: 0;
+  padding: 0 4px 16px;
+}
+.fc-endpoint { flex: 0 0 auto; }
+.fc-endpoint--right { text-align: right; }
+.fc-iata { font-size: 36px; font-weight: 700; letter-spacing: -1px; color: var(--ink); line-height: 1; }
+.fc-route-line {
+  flex: 1; display: flex; align-items: center; gap: 6px;
+  padding: 0 10px; margin-top: 4px;
+}
+.fc-route-dash {
+  flex: 1; height: 2px; background: #ef4444; border-radius: 1px;
+}
+.fc-route-dash--faint { background: #d1d5db; }
+.fc-divider { height: 1px; background: var(--border); margin: 12px 0; }
+
+.fc-leg { padding: 4px 0 8px; }
+.fc-leg-city { font-size: 12px; color: var(--ink3); margin-bottom: 10px; }
+.fc-leg-grid {
+  display: grid;
+  grid-template-columns: 1fr 80px 80px;
+  row-gap: 2px;
+}
+.fc-leg-label { font-size: 11px; color: var(--ink3); margin-bottom: 2px; }
+.fc-leg-time  { font-size: 22px; font-weight: 700; color: var(--ink); line-height: 1.2; }
+.fc-leg-time--late { color: #ef4444; }
+.fc-leg-meta  { font-size: 20px; font-weight: 600; color: var(--ink2); line-height: 1.2; }
+.fc-leg-planned {
+  font-size: 12px; color: var(--ink3);
+  text-decoration: line-through; margin-top: 2px;
+}
+.fc-footer { font-size: 11px; color: var(--ink3); padding-top: 4px; }
 
 @media (max-width: 768px) {
   .table-header {

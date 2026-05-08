@@ -17,6 +17,7 @@ use App\Models\MovementTemplate;
 use App\Models\JobOperation;
 use App\Models\JobCheckpoint;
 use App\Models\User;
+use App\Services\FlightSyncService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -504,6 +505,69 @@ class LmsController extends Controller
         ]);
     }
 
+    public function syncFlights(FlightSyncService $service): JsonResponse
+    {
+        $result = $service->syncAll();
+        return response()->json($result);
+    }
+
+    public function syncTeamFlight(FlightSyncService $service, string $code): JsonResponse
+    {
+        $team   = Team::where('code', $code)->firstOrFail();
+        $flight = $service->syncTeam($team);
+
+        if (!$flight) {
+            return response()->json(['success' => false, 'message' => 'No flight data available for ' . $team->flight_number], 404);
+        }
+
+        $dep = $flight['departure'] ?? [];
+        $arr = $flight['arrival']   ?? [];
+
+        // AviationStack may put the real time in actual_runway, or leave actual null.
+        // If still missing but delay is known, derive it by adding delay to scheduled.
+        $depActual = $dep['actual'] ?? $dep['actual_runway'] ?? null;
+        if (!$depActual && !empty($dep['delay']) && !empty($dep['scheduled'])) {
+            $depActual = \Carbon\Carbon::parse($dep['scheduled'])->addMinutes((int) $dep['delay'])->toIso8601String();
+        }
+
+        $arrActual    = $arr['actual']    ?? $arr['actual_runway'] ?? null;
+        $arrEstimated = $arr['estimated'] ?? $arr['estimated_runway'] ?? null;
+        if (!$arrEstimated && !$arrActual && !empty($arr['delay']) && !empty($arr['scheduled'])) {
+            $arrEstimated = \Carbon\Carbon::parse($arr['scheduled'])->addMinutes((int) $arr['delay'])->toIso8601String();
+        }
+
+        return response()->json([
+            'success'       => true,
+            'date_mismatch' => !empty($flight['_date_mismatch']),
+            'planned_date'  => $flight['_planned_date'] ?? null,
+            'flight_date'   => $flight['flight_date']   ?? null,
+            'flight_number' => $team->flight_number,
+            'flight_status' => $flight['flight_status'] ?? null,
+            'airline'       => $flight['airline']['name'] ?? null,
+            'departure'     => [
+                'iata'      => $dep['iata']      ?? null,
+                'airport'   => $dep['airport']   ?? null,
+                'scheduled' => $dep['scheduled'] ?? null,
+                'actual'    => $depActual,
+                'estimated' => $dep['estimated'] ?? null,
+                'terminal'  => $dep['terminal']  ?? null,
+                'gate'      => $dep['gate']      ?? $team->gate,
+                'delay'     => $dep['delay']     ?? null,
+            ],
+            'arrival'       => [
+                'iata'      => $arr['iata']      ?? null,
+                'airport'   => $arr['airport']   ?? null,
+                'scheduled' => $arr['scheduled'] ?? null,
+                'actual'    => $arrActual,
+                'estimated' => $arrEstimated,
+                'terminal'  => $arr['terminal']  ?? null,
+                'gate'      => $arr['gate']      ?? null,
+                'delay'     => $arr['delay']     ?? null,
+            ],
+            'synced_at'     => now()->toISOString(),
+        ]);
+    }
+
     public function storeTeam(Request $request): RedirectResponse
     {
         Log::info('Storing new team', ['request' => $request->all()]);
@@ -537,7 +601,7 @@ class LmsController extends Controller
         Team::create($validated);
 
         Log::info('Team created successfully', ['team_code' => $validated['code']]);
-        return redirect()->route('teams')->with('success', 'Team added successfully.');
+        return redirect()->route('teams.index')->with('success', 'Team added successfully.');
     }
 
     public function updateTeam(Request $request, string $code): RedirectResponse
@@ -576,7 +640,7 @@ class LmsController extends Controller
         $team->update($validated);
 
         Log::info('Team updated successfully', ['team_code' => $code]);
-        return redirect()->route('teams')->with('success', 'Team updated successfully.');
+        return redirect()->route('teams.index')->with('success', 'Team updated successfully.');
     }
 
     public function destroyTeam(string $code): RedirectResponse
@@ -587,7 +651,7 @@ class LmsController extends Controller
         $team->delete();
 
         Log::info('Team deleted successfully', ['team_code' => $code]);
-        return redirect()->route('teams')->with('success', 'Team deleted successfully.');
+        return redirect()->route('teams.index')->with('success', 'Team deleted successfully.');
     }
 
     public function notifications(): Response

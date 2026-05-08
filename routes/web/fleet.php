@@ -5,6 +5,7 @@
  * Routes for managing fleet, teams, and contacts
  */
 
+use App\Http\Controllers\KitTruckDashboardController;
 use App\Http\Controllers\LmsController;
 use App\Http\Controllers\MatchesController;
 use Illuminate\Support\Facades\Route;
@@ -13,6 +14,9 @@ Route::middleware('auth')->group(function () {
     
     // Fleet Overview
     Route::get('/fleet', [LmsController::class, 'fleet'])->name('fleet');
+
+    // Kit Truck Daily Movements Dashboard
+    Route::get('/kit-truck', [KitTruckDashboardController::class, 'index'])->name('kit-truck');
     
     // Teams Management
     Route::prefix('teams')->name('teams.')->group(function () {

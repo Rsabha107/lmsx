@@ -142,6 +142,7 @@ const navItems = [
   { label: 'Fleet',         route: 'fleet',             icon: 'fleet' },
   { label: 'Teams',         route: 'teams',             icon: 'team' },
   { label: 'Matches',       route: 'matches',           icon: 'trophy' },
+  { label: 'Kit Truck',     route: 'kit-truck',         icon: 'fleet' },
   { label: 'Contacts',      route: 'contacts',          icon: 'contacts' },
   { label: 'Notifications', route: 'notifications',     icon: 'bell' },
   { label: 'Daily Email',   route: 'email',             icon: 'email' },

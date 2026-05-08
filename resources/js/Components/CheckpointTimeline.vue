@@ -74,7 +74,7 @@
               <span style="font-size: 12px; font-family: var(--mono); font-weight: 500; display: flex; align-items: center; gap: 4px;">
                 <span v-if="cp.scheduled_at && getVisualState(cp, idx) === 'done'"
                       style="text-decoration: line-through; color: var(--ink4);">{{ formatTime(cp.scheduled_at) }}</span>
-                <span v-if="cp.completed_at" style="color: var(--ink3);">{{ formatTime(cp.completed_at) }}</span>
+                <span v-if="cp.completed_at" :style="{ color: getTimeColor(cp), fontWeight: '600' }">{{ formatTime(cp.completed_at) }}</span>
                 <span v-else-if="cp.scheduled_at && getVisualState(cp, idx) !== 'done'"
                       style="color: var(--ink4);">{{ formatTime(cp.scheduled_at) }}</span>
               </span>
@@ -129,6 +129,27 @@ function formatTime(value) {
   const d = new Date(value);
   if (isNaN(d)) return value;
   return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+}
+
+function getTimeColor(cp) {
+  if (!cp.completed_at || !cp.scheduled_at) return 'var(--ink3)';
+  
+  // Parse times for comparison
+  const parseTime = (value) => {
+    const m = String(value).match(/(\d{2}):(\d{2})/);
+    if (m) return parseInt(m[1]) * 60 + parseInt(m[2]);
+    const d = new Date(value);
+    if (!isNaN(d)) return d.getHours() * 60 + d.getMinutes();
+    return null;
+  };
+  
+  const actualMinutes = parseTime(cp.completed_at);
+  const estimateMinutes = parseTime(cp.scheduled_at);
+  
+  if (actualMinutes === null || estimateMinutes === null) return 'var(--ink3)';
+  
+  // Late: amber, On-time or early: green
+  return actualMinutes > estimateMinutes ? '#d97706' : '#16a34a';
 }
 
 const hasMobileUpdates = computed(() =>

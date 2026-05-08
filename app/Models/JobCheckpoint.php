@@ -49,6 +49,8 @@ class JobCheckpoint extends Model
         'overridden_by',
         'overridden_at',
         'override_actual_time',
+        'bags_loaded',
+        'oversized_pieces',
     ];
 
     protected $casts = [
@@ -63,6 +65,8 @@ class JobCheckpoint extends Model
         'is_required' => 'boolean',
         'is_on_time' => 'boolean',
         'was_overridden' => 'boolean',
+        'bags_loaded' => 'integer',
+        'oversized_pieces' => 'integer',
     ];
 
     /**

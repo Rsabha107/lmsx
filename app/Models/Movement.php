@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use App\Models\GameMatch;
 
 class Movement extends Model
 {
@@ -31,6 +32,7 @@ class Movement extends Model
         'delay_minutes',
         'source',
         'flight_number',
+        'match_id',
         'job_id',
         'job_generated_at',
         'notes',
@@ -92,6 +94,14 @@ class Movement extends Model
     public function fieldSupervisor(): BelongsTo
     {
         return $this->belongsTo(User::class, 'field_supervisor_id');
+    }
+
+    /**
+     * The match this movement is for.
+     */
+    public function match(): BelongsTo
+    {
+        return $this->belongsTo(GameMatch::class, 'match_id');
     }
 
     /**

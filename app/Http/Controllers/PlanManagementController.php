@@ -130,16 +130,49 @@ class PlanManagementController extends Controller
                     'team.destinationAirport',
                     'team.country',
                     'team.classification',
-                    'team.flights' => function ($query) {
+                    'flights' => function ($query) use ($activeEventId) {
                         $query->where('direction', 'arrival')
+                              ->where('event_id', $activeEventId)
                               ->with(['destinationAirport', 'originAirport'])
                               ->orderBy('scheduled_at');
                     },
-                    'team.stay'
+                    'stay'
                 ])
                 ->get()
                 ->map(function ($et) {
-                    return $et->team;
+                    if (!$et->team) return null;
+                    
+                    // Get all arrival flights
+                    $arrivalFlights = $et->flights->map(function ($flight) {
+                        return [
+                            'id' => $flight->id,
+                            'flight_number' => $flight->flight_number,
+                            'scheduled_at' => $flight->scheduled_at?->format('Y-m-d H:i:s'),
+                            'scheduled_date' => $flight->scheduled_at?->format('Y-m-d'),
+                            'scheduled_time' => $flight->scheduled_at?->format('H:i'),
+                            'origin_airport' => $flight->originAirport?->code,
+                            'destination_airport' => $flight->destinationAirport?->code,
+                        ];
+                    })->values();
+                    
+                    // Use first flight as default
+                    $defaultFlight = $arrivalFlights->first();
+                    
+                    // Build a combined object with team info + all flights
+                    return [
+                        'id' => $et->team_id,
+                        'event_team_id' => $et->id,
+                        'code' => $et->team->code ?? $et->team->team ?? 'TEAM',
+                        'team_name' => $et->team->team_name ?? $et->team->team ?? 'Unnamed Team',
+                        'arrival_date_time' => $defaultFlight ? $defaultFlight['scheduled_at'] : null,
+                        'arrival_date' => $defaultFlight ? $defaultFlight['scheduled_date'] : null,
+                        'flights' => $arrivalFlights,
+                        'selected_flight_id' => $defaultFlight ? $defaultFlight['id'] : null,
+                        'origin_airport' => $et->team->originAirport,
+                        'destination_airport' => $et->team->destinationAirport,
+                        'country' => $et->team->country,
+                        'classification' => $et->team->classification,
+                    ];
                 })
                 ->filter()
                 ->sortBy('team_name')
@@ -460,6 +493,104 @@ class PlanManagementController extends Controller
         }
         
         return "Plan – {$datePart}";
+    }
+
+    /**
+     * Bulk create plans grouped by arrival date.
+     * Each plan will contain all teams arriving on that date.
+     */
+    public function bulkStore(Request $request)
+    {
+        Log::info('Bulk creating plans', ['request' => $request->all()]);
+        
+        // Get active event from session
+        $activeEventId = session('active_event_id');
+        
+        $validated = $request->validate([
+            'plans' => 'required|array|min:1',
+            'plans.*.date' => 'required|date',
+            'plans.*.teams' => 'required|array|min:1',
+            'plans.*.teams.*.team_id' => 'required|exists:teams,id',
+            'plans.*.teams.*.start_time' => 'nullable|date_format:H:i',
+            'plans.*.teams.*.flight_id' => 'nullable|exists:team_flights,id',
+            'plans.*.movement_template_id' => 'required|exists:movement_templates,id',
+        ]);
+        
+        $createdPlans = [];
+        $totalMovements = 0;
+        
+        foreach ($validated['plans'] as $planData) {
+            $date = $planData['date'];
+            $teamsData = $planData['teams']; // Array of ['team_id' => X, 'start_time' => 'HH:MM']
+            $templateId = $planData['movement_template_id'];
+            
+            // Get the template
+            $template = MovementTemplate::findOrFail($templateId);
+            
+            // Extract team IDs and build team-time map
+            $teamIds = [];
+            $teamStartTimes = [];
+            $teamFlightIds = [];
+            foreach ($teamsData as $teamInfo) {
+                $teamIds[] = $teamInfo['team_id'];
+                $teamStartTimes[$teamInfo['team_id']] = $teamInfo['start_time'] ?? '09:00';
+                $teamFlightIds[$teamInfo['team_id']] = $teamInfo['flight_id'] ?? null;
+            }
+            
+            // Generate plan name
+            $dateObj = new \DateTime($date);
+            $datePart = $dateObj->format('F j, Y');
+            $teamCount = count($teamIds);
+            $planName = "{$template->name} – {$datePart} ({$teamCount} " . ($teamCount === 1 ? 'team' : 'teams') . ")";
+            
+            // Use earliest time as plan's base_time (for display purposes)
+            $earliestTime = min(array_values($teamStartTimes));
+            $baseTime = Carbon::createFromFormat('Y-m-d H:i', $date . ' ' . $earliestTime, config('app.timezone'));
+            
+            // Create team assignments with start times and flight IDs
+            $teamAssignments = [
+                'teams' => $teamIds,
+                'team_start_times' => $teamStartTimes, // Pass per-team start times
+                'team_flight_ids' => $teamFlightIds, // Pass per-team flight IDs
+            ];
+            
+            try {
+                $plan = $this->jobService->createPlanFromTemplate(
+                    $template,
+                    [
+                        'name' => $planName,
+                        'date' => $date,
+                        'base_time' => $baseTime,
+                        'status' => 'draft',
+                        'event_id' => $activeEventId,
+                        'created_by' => Auth::id(),
+                    ],
+                    $teamAssignments
+                );
+                
+                $createdPlans[] = $plan;
+                $totalMovements += $plan->movements_count ?? 0;
+                
+                Log::info('Created plan from bulk', [
+                    'plan_id' => $plan->id,
+                    'date' => $date,
+                    'teams' => $teamCount,
+                    'movements' => $plan->movements_count
+                ]);
+                
+            } catch (\Exception $e) {
+                Log::error('Failed to create plan from bulk', [
+                    'date' => $date,
+                    'teams' => $teamIds,
+                    'error' => $e->getMessage()
+                ]);
+                // Continue with next plan
+            }
+        }
+        
+        $planCount = count($createdPlans);
+        return redirect()->route('plans.index')
+            ->with('success', "Successfully created {$planCount} " . ($planCount === 1 ? 'plan' : 'plans') . " with {$totalMovements} movements");
     }
 
     /**

@@ -48,7 +48,7 @@ class MovementTemplateController extends Controller
         return Inertia::render('Admin/MovementTemplates/Index', [
             'templates' => $templates,
             'filters' => $request->only(['search', 'scenario_type', 'active']),
-            'scenarioTypes' => ['match_day', 'training_day', 'arrival_day', 'departure_day', 'custom'],
+            'scenarioTypes' => ['match_day', 'training_day', 'arrival_day', 'departure_day', 'custom','operation_day'],
         ]);
     }
 
@@ -63,9 +63,9 @@ class MovementTemplateController extends Controller
             ->get();
 
         return Inertia::render('Admin/MovementTemplates/Create', [
-            'scenarioTypes' => ['match_day', 'training_day', 'arrival_day', 'departure_day', 'custom'],
+            'scenarioTypes' => ['match_day', 'training_day', 'arrival_day', 'departure_day', 'custom','operation_day'],
             'checkpointTemplates' => $checkpointTemplates,
-            'legTypes' => ['arrival', 'departure', 'transfer', 'training', 'match'],
+            'legTypes' => ['arrival', 'departure', 'transfer', 'training', 'match', 'daily_ops'],
             'vehicleTypes' => ['coach', 'van', 'car', 'walk', 'auto'],
         ]);
     }
@@ -81,13 +81,13 @@ class MovementTemplateController extends Controller
             'code' => 'required|string|max:50|unique:movement_templates,code',
             'name' => 'required|string|max:255',
             'description' => 'nullable|string',
-            'scenario_type' => 'required|in:match_day,training_day,arrival_day,departure_day,full_day,custom',
+            'scenario_type' => 'required|in:match_day,training_day,arrival_day,departure_day,full_day,custom,operation_day',
             'estimated_duration_minutes' => 'nullable|integer|min:1',
             'is_active' => 'boolean',
             'legs' => 'nullable|array',
             'legs.*.checkpoint_template_id' => 'required|exists:checkpoint_templates,id',
             'legs.*.order' => 'required|integer|min:1',
-            'legs.*.leg_type' => 'required|in:arrival,departure,transfer,training,match',
+            'legs.*.leg_type' => 'required|in:arrival,departure,transfer,training,match,daily_ops',
             'legs.*.from_location' => 'nullable|string|max:255',
             'legs.*.to_location' => 'nullable|string|max:255',
             'legs.*.transport_type' => 'required|in:bus,walk,car,other',
@@ -194,9 +194,9 @@ class MovementTemplateController extends Controller
 
         return Inertia::render('Admin/MovementTemplates/Edit', [
             'template' => $movementTemplate,
-            'scenarioTypes' => ['match_day', 'training_day', 'arrival_day', 'departure_day', 'custom'],
+            'scenarioTypes' => ['match_day', 'training_day', 'arrival_day', 'departure_day', 'custom','operation_day'],
             'checkpointTemplates' => $checkpointTemplates,
-            'legTypes' => ['arrival', 'departure', 'transfer', 'training', 'match'],
+            'legTypes' => ['arrival', 'departure', 'transfer', 'training', 'match', 'daily_ops'],
             'vehicleTypes' => ['coach', 'van', 'car', 'walk', 'auto'],
             'legs' => $movementTemplate->legs->map(fn($leg) => [
                 'id' => $leg->id,
@@ -222,13 +222,13 @@ class MovementTemplateController extends Controller
             'code' => 'required|string|max:50|unique:movement_templates,code,' . $movementTemplate->id,
             'name' => 'required|string|max:255',
             'description' => 'nullable|string',
-            'scenario_type' => 'required|in:match_day,training_day,arrival_day,departure_day,full_day,custom',
+            'scenario_type' => 'required|in:match_day,training_day,arrival_day,departure_day,full_day,custom,operation_day',
             'estimated_duration_minutes' => 'nullable|integer|min:1',
             'is_active' => 'boolean',
             'legs' => 'nullable|array',
             'legs.*.checkpoint_template_id' => 'required|exists:checkpoint_templates,id',
             'legs.*.order' => 'required|integer|min:1',
-            'legs.*.leg_type' => 'required|in:arrival,departure,transfer,training,match',
+            'legs.*.leg_type' => 'required|in:arrival,departure,transfer,training,match,daily_ops',
             'legs.*.from_location' => 'nullable|string|max:255',
             'legs.*.to_location' => 'nullable|string|max:255',
             'legs.*.transport_type' => 'required|in:bus,walk,car,other',

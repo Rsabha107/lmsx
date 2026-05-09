@@ -22,6 +22,7 @@ Route::middleware(['auth'])->group(function () {
         // Plan CRUD
         Route::get('/', [PlanManagementController::class, 'index'])->name('index');
         Route::get('/create', [PlanManagementController::class, 'create'])->name('create');
+        Route::post('/bulk', [PlanManagementController::class, 'bulkStore'])->name('bulk-store');
         Route::post('/', [PlanManagementController::class, 'store'])->name('store');
         Route::get('/{plan}', [PlanManagementController::class, 'show'])->name('show');
         Route::put('/{plan}', [PlanManagementController::class, 'update'])->name('update');

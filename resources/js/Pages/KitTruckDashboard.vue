@@ -5,7 +5,7 @@
     <div class="page-header">
       <div>
         <h1 class="page-title">Movements Dashboard</h1>
-        <p class="page-sub">{{ filteredRows.length }} of {{ rows.length }} movements · planned vs actual</p>
+        <p class="page-sub">{{ filteredRows.length }} of {{ rows.length }} jobs · planned vs actual</p>
       </div>
       <div class="header-actions">
         <RefreshButton :only="['rows', 'columns', 'kindCounts']" />
@@ -18,8 +18,8 @@
 
     <!-- ── Summary Stats ───────────────────────────────────────────── -->
     <div class="stats-grid">
-      <mini-stat label="Total Movements"  :value="rows.length" />
-      <mini-stat label="Jobs Active"      :value="withJobCount"  tone="primary" />
+      <mini-stat label="Total Jobs"       :value="rows.length" />
+      <mini-stat label="Active"           :value="withJobCount"  tone="primary" />
       <mini-stat label="On Time"          :value="onTimeCount"   tone="ok" />
       <mini-stat label="Late Checkpoints" :value="lateCount"     tone="warn" />
     </div>
@@ -74,11 +74,11 @@
           <rect x="3" y="3" width="18" height="18" rx="2" stroke="currentColor" stroke-width="1.5"/>
           <path d="M3 9h18M9 9v12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
         </svg>
-        <p class="empty-title">No {{ kindLabel }} movements found</p>
+        <p class="empty-title">No {{ kindLabel }} jobs found</p>
         <p class="empty-sub">
           {{ searchQuery
             ? 'Try clearing the search filter.'
-            : `Create movements with kind "${filters.kind}" and assign a checkpoint template.`
+            : `Create movements with kind "${filters.kind}", assign a checkpoint template, and generate jobs.`
           }}
         </p>
       </div>
@@ -146,7 +146,7 @@
               <!-- Data rows -->
               <tr
                 v-for="row in group.rows"
-                :key="row.movement_id"
+                :key="row.job_id"
                 class="mv-data-row"
               >
                 <!-- PMA -->
@@ -333,7 +333,7 @@ const groupedRows = computed(() => {
 });
 
 // ── Stats ─────────────────────────────────────────────────────────────────
-const withJobCount = computed(() => props.rows.filter(r => r.job_status).length);
+const withJobCount = computed(() => props.rows.filter(r => ['in-progress', 'dispatched'].includes(r.job_status)).length);
 const onTimeCount  = computed(() => {
   let n = 0;
   for (const r of props.rows) for (const cp of r.checkpoints ?? []) if (cp.is_on_time === true) n++;

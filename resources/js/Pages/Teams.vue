@@ -13,12 +13,6 @@
           </template>
           Filter
         </Button>
-        <Button variant="secondary" size="sm" :disabled="syncing" @click="syncFlights">
-          <template #icon>
-            <svg-icon name="refresh" :size="14" />
-          </template>
-          {{ syncing ? 'Syncing…' : 'Sync Flights' }}
-        </Button>
         <Button variant="primary" size="sm" @click="openAddModal">
           <template #icon>
             <svg-icon name="plus" :size="14" style="color: #fff;" />
@@ -115,16 +109,6 @@
                 <div class="tc-stat-label">Staff</div>
               </div>
             </div>
-            <div class="tc-info">
-              <div class="tc-info-row" v-if="team.hotel_name">
-                <svg-icon name="home" :size="12" />
-                <span>{{ team.hotel_name }}</span>
-              </div>
-              <div class="tc-info-row" v-if="team.sc_liaison_name">
-                <svg-icon name="user" :size="12" />
-                <span>{{ team.sc_liaison_name }}</span>
-              </div>
-            </div>
             <div class="tc-footer">
               <button class="tc-action-btn" @click.stop="editTeam(team)">
                 <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
@@ -152,16 +136,10 @@
               <th>Code</th>
               <th>Team Name</th>
               <th v-if="visibleColumns.country">Country</th>
-              <th v-if="visibleColumns.hotel">Hotel</th>
-              <th v-if="visibleColumns.liaison">SC Liaison</th>
               <th v-if="visibleColumns.group">Group/Pool</th>
               <th v-if="visibleColumns.delegationSize" class="center">Party</th>
               <th v-if="visibleColumns.players" class="center">Players</th>
               <th v-if="visibleColumns.staff" class="center">Staff</th>
-              <th v-if="visibleColumns.training">Training Ground</th>
-              <th v-if="visibleColumns.originAirport">Origin Airport</th>
-              <th v-if="visibleColumns.destinationAirport">Destination Airport</th>
-              <th v-if="visibleColumns.gate">Gate</th>
               <th v-if="visibleColumns.arrival">Arrival</th>
               <th v-if="visibleColumns.departure">Departure</th>
               <th v-if="visibleColumns.headOfDelegation">Head of Delegation</th>
@@ -211,20 +189,13 @@
                 <div class="country-name">{{ team.country?.country_name || team.country_id }}</div>
                 <div class="country-code">{{ team.country?.country_code || '' }}</div>
               </td>
-              <td v-if="visibleColumns.hotel">{{ team.hotel_name }}</td>
-              <td v-if="visibleColumns.liaison">{{ team.sc_liaison_name }}</td>
               <td v-if="visibleColumns.group" class="mono">{{ team.group_pool }}</td>
               <td v-if="visibleColumns.delegationSize" class="mono center">{{ team.party_size_total }}</td>
               <td v-if="visibleColumns.players" class="mono center">{{ team.party_size_players }}</td>
               <td v-if="visibleColumns.staff" class="mono center">{{ team.party_size_staff }}</td>
-              <td v-if="visibleColumns.training">{{ team.training_ground }}</td>
-              <td v-if="visibleColumns.originAirport">{{ team.origin_airport?.name || '—' }}</td>
-              <td v-if="visibleColumns.destinationAirport">{{ team.destination_airport?.name || '—' }}</td>
-              <td v-if="visibleColumns.gate" class="mono">{{ team.gate || '—' }}</td>
               <td v-if="visibleColumns.arrival" class="mono">{{ formatDate(team.arrival_date_time) }}</td>
               <td v-if="visibleColumns.departure" class="mono">{{ formatDate(team.departure_date_time) }}</td>
               <td v-if="visibleColumns.headOfDelegation">{{ team.head_of_delegation }}</td>
-              <td v-if="visibleColumns.liaisonPhone" class="mono">{{ team.sc_liaison_phone }}</td>
               <td v-if="visibleColumns.bibColor">
                 <div v-if="team.bib_accent_color" class="color-swatch-wrapper">
                   <span class="color-swatch" :style="{ backgroundColor: team.bib_accent_color }"></span>
@@ -234,18 +205,6 @@
               </td>
               <td v-if="visibleColumns.notes" class="notes-cell">{{ team.notes || '—' }}</td>
               <td class="actions-cell" @click.stop>
-                <button
-                  v-if="team.flight_number"
-                  class="action-btn action-btn--flight"
-                  :disabled="syncingTeamCode === team.code"
-                  title="Sync flight status"
-                  @click="syncTeamFlight(team)"
-                >
-                  <span v-if="syncingTeamCode === team.code" class="spinner-sm"></span>
-                  <svg v-else width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M21 16v-2l-8-5V3.5c0-.83-.67-1.5-1.5-1.5S10 2.67 10 3.5V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5z"/>
-                  </svg>
-                </button>
                 <TableActions
                   :is-deleting="deleting && teamToDelete?.code === team.code"
                   @edit="editTeam(team)"
@@ -319,44 +278,6 @@
               </div>
             </div>
 
-            <!-- Accommodation & Training -->
-            <div class="detail-section">
-              <h4 class="detail-section-title">Accommodation & Training</h4>
-              <div class="detail-row">
-                <span class="detail-label">Hotel</span>
-                <span class="detail-value">{{ selectedTeam.hotel_name || '—' }}</span>
-              </div>
-              <div class="detail-row">
-                <span class="detail-label">Training Ground</span>
-                <span class="detail-value">{{ selectedTeam.training_ground || '—' }}</span>
-              </div>
-              <div class="detail-row">
-                <span class="detail-label">Group/Pool</span>
-                <span class="detail-value mono">{{ selectedTeam.group_pool || '—' }}</span>
-              </div>
-            </div>
-
-            <!-- Airports -->
-            <div class="detail-section">
-              <h4 class="detail-section-title">Airports</h4>
-              <div class="detail-row">
-                <span class="detail-label">Origin</span>
-                <span class="detail-value">{{ selectedTeam.origin_airport?.name || '—' }}</span>
-              </div>
-              <div class="detail-row">
-                <span class="detail-label">Destination</span>
-                <span class="detail-value">{{ selectedTeam.destination_airport?.name || '—' }}</span>
-              </div>
-              <div class="detail-row">
-                <span class="detail-label">Flight Number</span>
-                <span class="detail-value mono">{{ selectedTeam.flight_number || '—' }}</span>
-              </div>
-              <div class="detail-row">
-                <span class="detail-label">Gate</span>
-                <span class="detail-value mono">{{ selectedTeam.gate || '—' }}</span>
-              </div>
-            </div>
-
             <!-- Schedule -->
             <div class="detail-section">
               <h4 class="detail-section-title">Schedule</h4>
@@ -386,41 +307,6 @@
                   </span>
                 </span>
               </div>
-              <div v-if="selectedTeam.flight_status" class="detail-row">
-                <span class="detail-label">Flight Status</span>
-                <span class="detail-value" style="text-transform:capitalize;">{{ selectedTeam.flight_status }}</span>
-              </div>
-              <div v-if="selectedTeam.flight_synced_at" class="detail-row">
-                <span class="detail-label">Last Synced</span>
-                <span class="detail-value mono" style="font-size:11px;color:var(--ink3);">{{ formatDate(selectedTeam.flight_synced_at) }}</span>
-              </div>
-            </div>
-
-            <!-- Multiple Arrivals -->
-            <div v-if="selectedTeam.arrival_manifest && selectedTeam.arrival_manifest.flights && selectedTeam.arrival_manifest.flights.length > 0" class="detail-section">
-              <h4 class="detail-section-title">Multiple Arrivals ({{ selectedTeam.arrival_manifest.flights.length }} flights)</h4>
-              <div v-for="(flight, index) in selectedTeam.arrival_manifest.flights" :key="index" class="flight-detail">
-                <div class="flight-detail-header">
-                  <span class="flight-badge">Flight {{ index + 1 }}</span>
-                  <span class="flight-number">{{ flight.flight_number }}</span>
-                </div>
-                <div class="detail-row">
-                  <span class="detail-label">Group</span>
-                  <span class="detail-value">{{ flight.group }}</span>
-                </div>
-                <div class="detail-row">
-                  <span class="detail-label">Passengers</span>
-                  <span class="detail-value">{{ flight.passengers }}</span>
-                </div>
-                <div class="detail-row">
-                  <span class="detail-label">Arrival</span>
-                  <span class="detail-value mono">{{ flight.arrival_time }}</span>
-                </div>
-                <div class="detail-row">
-                  <span class="detail-label">Terminal/Gate</span>
-                  <span class="detail-value">{{ flight.terminal }} - {{ flight.gate }}</span>
-                </div>
-              </div>
             </div>
 
             <!-- Contacts -->
@@ -429,14 +315,6 @@
               <div class="detail-row">
                 <span class="detail-label">Head of Delegation</span>
                 <span class="detail-value">{{ selectedTeam.head_of_delegation || '—' }}</span>
-              </div>
-              <div class="detail-row">
-                <span class="detail-label">SC Liaison</span>
-                <span class="detail-value">{{ selectedTeam.sc_liaison_name || '—' }}</span>
-              </div>
-              <div class="detail-row">
-                <span class="detail-label">Liaison Phone</span>
-                <span class="detail-value mono">{{ selectedTeam.sc_liaison_phone || '—' }}</span>
               </div>
             </div>
 
@@ -466,99 +344,6 @@
         </div>
       </transition>
     </div>
-
-    <!-- Flight Status Modal -->
-    <Modal :show="showFlightModal" @close="showFlightModal = false" max-width="480px">
-      <template #title>
-        <span style="display:flex;align-items:center;gap:8px;">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M21 16v-2l-8-5V3.5c0-.83-.67-1.5-1.5-1.5S10 2.67 10 3.5V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5z"/>
-          </svg>
-          {{ flightCard?.flight_number }} · Flight Status
-        </span>
-      </template>
-
-      <div v-if="flightCard" class="fc-wrap">
-        <!-- Date mismatch warning -->
-        <div v-if="flightCard.date_mismatch" class="fc-notice fc-notice--warn">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-          Data is for <strong>{{ flightCard.flight_date }}</strong> — planned date is <strong>{{ flightCard.planned_date }}</strong>. Not saved.
-        </div>
-        <!-- Delay / status notice -->
-        <div v-if="!flightCard.date_mismatch && (flightCard.departure?.delay || flightCard.arrival?.delay)" class="fc-notice fc-notice--delay">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-          Flight is delayed · {{ flightCard.airline || '' }}
-        </div>
-        <div v-else-if="!flightCard.date_mismatch && flightCard.flight_status === 'landed'" class="fc-notice fc-notice--ok">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
-          Landed on time · {{ flightCard.airline || '' }}
-        </div>
-        <div v-else-if="!flightCard.date_mismatch" class="fc-notice fc-notice--info">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
-          {{ fcStatusLabel }} · {{ flightCard.airline || '' }}
-        </div>
-
-        <!-- Route bar -->
-        <div class="fc-route">
-          <div class="fc-endpoint">
-            <div class="fc-iata">{{ flightCard.departure?.iata || '—' }}</div>
-          </div>
-          <div class="fc-route-line">
-            <div class="fc-route-dash"></div>
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" style="color:#ef4444;flex-shrink:0;">
-              <path d="M21 16v-2l-8-5V3.5c0-.83-.67-1.5-1.5-1.5S10 2.67 10 3.5V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5z"/>
-            </svg>
-            <div class="fc-route-dash fc-route-dash--faint"></div>
-          </div>
-          <div class="fc-endpoint fc-endpoint--right">
-            <div class="fc-iata">{{ flightCard.arrival?.iata || '—' }}</div>
-          </div>
-        </div>
-
-        <div class="fc-divider"></div>
-
-        <!-- Departure leg -->
-        <div class="fc-leg">
-          <div class="fc-leg-city">{{ flightCard.departure?.airport || flightCard.departure?.iata }} · {{ fcDate(flightCard.departure?.scheduled) }}</div>
-          <div class="fc-leg-grid">
-            <div class="fc-leg-label">{{ flightCard.departure?.actual ? 'Departed' : (flightCard.flight_status === 'active' ? 'Departed (est.)' : 'Scheduled') }}</div>
-            <div class="fc-leg-label">Terminal</div>
-            <div class="fc-leg-label">Gate</div>
-            <div class="fc-leg-time" :class="{ 'fc-leg-time--late': (flightCard.departure?.delay ?? 0) > 0 }">
-              {{ fcTime(flightCard.departure?.actual || flightCard.departure?.estimated || flightCard.departure?.scheduled) }}
-            </div>
-            <div class="fc-leg-meta">{{ flightCard.departure?.terminal || '—' }}</div>
-            <div class="fc-leg-meta">{{ flightCard.departure?.gate || '—' }}</div>
-            <div v-if="(flightCard.departure?.actual || flightCard.departure?.estimated) && fcTime(flightCard.departure?.actual || flightCard.departure?.estimated) !== fcTime(flightCard.departure?.scheduled)" class="fc-leg-planned">
-              {{ fcTime(flightCard.departure?.scheduled) }}
-            </div>
-          </div>
-        </div>
-
-        <div class="fc-divider"></div>
-
-        <!-- Arrival leg -->
-        <div class="fc-leg">
-          <div class="fc-leg-city">{{ flightCard.arrival?.airport || flightCard.arrival?.iata }} · {{ fcDate(flightCard.arrival?.scheduled) }}</div>
-          <div class="fc-leg-grid">
-            <div class="fc-leg-label">{{ flightCard.arrival?.actual ? 'Arrived' : (flightCard.arrival?.estimated ? 'Est. arrival' : 'Scheduled') }}</div>
-            <div class="fc-leg-label">Terminal</div>
-            <div class="fc-leg-label">Gate</div>
-            <div class="fc-leg-time" :class="{ 'fc-leg-time--late': (flightCard.arrival?.delay ?? 0) > 0 }">
-              {{ fcTime(flightCard.arrival?.actual || flightCard.arrival?.estimated || flightCard.arrival?.scheduled) }}
-            </div>
-            <div class="fc-leg-meta">{{ flightCard.arrival?.terminal || '—' }}</div>
-            <div class="fc-leg-meta">{{ flightCard.arrival?.gate || '—' }}</div>
-            <div v-if="(flightCard.arrival?.actual || flightCard.arrival?.estimated) && fcTime(flightCard.arrival?.actual || flightCard.arrival?.estimated) !== fcTime(flightCard.arrival?.scheduled)" class="fc-leg-planned">
-              {{ fcTime(flightCard.arrival?.scheduled) }}
-            </div>
-          </div>
-        </div>
-
-        <div class="fc-divider"></div>
-        <div class="fc-footer">Updated {{ fcAgo(flightCard.synced_at) }} · Source: AviationStack</div>
-      </div>
-    </Modal>
 
     <!-- Add Team Modal -->
     <Modal :show="showAddModal" @close="showAddModal = false" max-width="700px">
@@ -664,143 +449,11 @@
           </div>
         </div>
 
-        <div class="form-section-title">Accommodation & Training</div>
-        <div class="form-row">
-          <div class="form-group">
-            <label class="form-label">Hotel Name</label>
-            <input v-model="formData.hotel_name" type="text" class="form-input" placeholder="Hotel name" />
-          </div>
-
-          <div class="form-group">
-            <label class="form-label">Training Ground</label>
-            <input v-model="formData.training_ground" type="text" class="form-input" placeholder="Training ground" />
-          </div>
-        </div>
-
-        <div class="form-row">
-          <div class="form-group">
-            <label class="form-label">Origin Airport</label>
-            <select v-model="formData.origin_airport_id" class="form-input">
-              <option value="">Select Origin Airport</option>
-              <option v-for="airport in airports" :key="airport.id" :value="airport.id">
-                {{ airport.code }} - {{ airport.name }}
-              </option>
-            </select>
-          </div>
-
-          <div class="form-group">
-            <label class="form-label">Destination Airport</label>
-            <select v-model="formData.destination_airport_id" class="form-input">
-              <option value="">Select Destination Airport</option>
-              <option v-for="airport in airports" :key="airport.id" :value="airport.id">
-                {{ airport.code }} - {{ airport.name }}
-              </option>
-            </select>
-          </div>
-        </div>
-
-        <div class="form-section-title">Flight Information</div>
-        <div class="form-row">
-          <div class="form-group">
-            <label class="form-label">Flight Number</label>
-            <input v-model="formData.flight_number" type="text" class="form-input" placeholder="e.g., AC123" />
-          </div>
-
-          <div class="form-group">
-            <label class="form-label">Gate</label>
-            <input v-model="formData.gate" type="text" class="form-input" placeholder="e.g., A12" />
-          </div>
-        </div>
-
-        <div class="form-row">
-          <div class="form-group">
-            <label class="form-label">Arrival Date & Time</label>
-            <input ref="arrivalDateInput" v-model="formData.arrival_date_time" type="text" class="form-input" placeholder="YYYY-MM-DD HH:MM" />
-          </div>
-
-          <div class="form-group">
-            <label class="form-label">Departure Date & Time</label>
-            <input ref="departureDateInput" v-model="formData.departure_date_time" type="text" class="form-input" placeholder="YYYY-MM-DD HH:MM" />
-          </div>
-        </div>
-
-        <!-- Multiple Arrivals Section -->
-        <div class="form-section-title">Multiple Arrivals (Optional)</div>
-        <div class="form-group" style="margin-bottom: 12px;">
-          <label class="form-label checkbox-label">
-            <input type="checkbox" v-model="hasMultipleFlights" class="form-checkbox" />
-            <span>This team arrives on multiple flights</span>
-          </label>
-          <p class="form-helper">Enable if the team is split across different flights with different arrival times.</p>
-        </div>
-
-        <div v-if="hasMultipleFlights" class="multi-flights-section">
-          <div v-for="(flight, index) in formData.flights" :key="index" class="flight-entry">
-            <div class="flight-entry-header">
-              <h5 class="flight-entry-title">Flight {{ index + 1 }}</h5>
-              <button type="button" @click="removeFlight(index)" class="btn-remove">
-                <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-                  <path d="M2 4H14M6 4V2H10V4M12 4V14H4V4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-                </svg>
-                Remove
-              </button>
-            </div>
-            <div class="form-row">
-              <div class="form-group">
-                <label class="form-label">Flight Number</label>
-                <input v-model="flight.flight_number" class="form-input" placeholder="e.g., AF123" />
-              </div>
-              <div class="form-group">
-                <label class="form-label">Group/Category</label>
-                <input v-model="flight.group" class="form-input" placeholder="e.g., Players, Staff, Equipment" />
-              </div>
-            </div>
-            <div class="form-row">
-              <div class="form-group">
-                <label class="form-label">Passengers</label>
-                <input v-model.number="flight.passengers" type="number" class="form-input" min="0" />
-              </div>
-              <div class="form-group">
-                <label class="form-label">Arrival Time</label>
-                <input v-model="flight.arrival_time" class="form-input" placeholder="YYYY-MM-DD HH:MM" />
-              </div>
-            </div>
-            <div class="form-row">
-              <div class="form-group">
-                <label class="form-label">Terminal</label>
-                <input v-model="flight.terminal" class="form-input" placeholder="e.g., CDG T2" />
-              </div>
-              <div class="form-group">
-                <label class="form-label">Gate</label>
-                <input v-model="flight.gate" class="form-input" placeholder="e.g., A12" />
-              </div>
-            </div>
-          </div>
-          <button type="button" @click="addFlight" class="btn-add-flight">
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" style="margin-right: 6px;">
-              <path d="M8 2V14M2 8H14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-            </svg>
-            Add Another Flight
-          </button>
-        </div>
-
         <div class="form-section-title">Contacts</div>
         <div class="form-row">
           <div class="form-group">
             <label class="form-label">Head of Delegation</label>
             <input v-model="formData.head_of_delegation" type="text" class="form-input" placeholder="Name" />
-          </div>
-
-          <div class="form-group">
-            <label class="form-label">SC Liaison Name</label>
-            <input v-model="formData.sc_liaison_name" type="text" class="form-input" placeholder="Name" />
-          </div>
-        </div>
-
-        <div class="form-row">
-          <div class="form-group">
-            <label class="form-label">SC Liaison Phone</label>
-            <input v-model="formData.sc_liaison_phone" type="text" class="form-input" placeholder="Phone number" />
           </div>
 
           <div class="form-group">
@@ -926,143 +579,11 @@
           </div>
         </div>
 
-        <div class="form-section-title">Accommodation & Training</div>
-        <div class="form-row">
-          <div class="form-group">
-            <label class="form-label">Hotel Name</label>
-            <input v-model="formData.hotel_name" type="text" class="form-input" placeholder="Hotel name" />
-          </div>
-
-          <div class="form-group">
-            <label class="form-label">Training Ground</label>
-            <input v-model="formData.training_ground" type="text" class="form-input" placeholder="Training ground" />
-          </div>
-        </div>
-
-        <div class="form-row">
-          <div class="form-group">
-            <label class="form-label">Origin Airport</label>
-            <select v-model="formData.origin_airport_id" class="form-input">
-              <option value="">Select Origin Airport</option>
-              <option v-for="airport in airports" :key="airport.id" :value="airport.id">
-                {{ airport.code }} - {{ airport.name }}
-              </option>
-            </select>
-          </div>
-
-          <div class="form-group">
-            <label class="form-label">Destination Airport</label>
-            <select v-model="formData.destination_airport_id" class="form-input">
-              <option value="">Select Destination Airport</option>
-              <option v-for="airport in airports" :key="airport.id" :value="airport.id">
-                {{ airport.code }} - {{ airport.name }}
-              </option>
-            </select>
-          </div>
-        </div>
-
-        <div class="form-section-title">Flight Information</div>
-        <div class="form-row">
-          <div class="form-group">
-            <label class="form-label">Flight Number</label>
-            <input v-model="formData.flight_number" type="text" class="form-input" placeholder="e.g., AC123" />
-          </div>
-
-          <div class="form-group">
-            <label class="form-label">Gate</label>
-            <input v-model="formData.gate" type="text" class="form-input" placeholder="e.g., A12" />
-          </div>
-        </div>
-
-        <div class="form-row">
-          <div class="form-group">
-            <label class="form-label">Arrival Date & Time</label>
-            <input ref="arrivalDateInput" v-model="formData.arrival_date_time" type="text" class="form-input" placeholder="YYYY-MM-DD HH:MM" />
-          </div>
-
-          <div class="form-group">
-            <label class="form-label">Departure Date & Time</label>
-            <input ref="departureDateInput" v-model="formData.departure_date_time" type="text" class="form-input" placeholder="YYYY-MM-DD HH:MM" />
-          </div>
-        </div>
-
-                <!-- Multiple Arrivals Section (Edit) -->
-        <div class="form-section-title" style="margin-top: 20px;">Multiple Arrivals (Optional)</div>
-        <div class="form-group" style="margin-bottom: 12px;">
-          <label class="form-label checkbox-label">
-            <input type="checkbox" v-model="hasMultipleFlights" class="form-checkbox" />
-            <span>This team arrives on multiple flights</span>
-          </label>
-          <p class="form-helper">Enable if the team is split across different flights with different arrival times.</p>
-        </div>
-
-                <div v-if="hasMultipleFlights" class="multi-flights-section">
-          <div v-for="(flight, index) in formData.flights" :key="index" class="flight-entry">
-            <div class="flight-entry-header">
-              <h5 class="flight-entry-title">Flight {{ index + 1 }}</h5>
-              <button type="button" @click="removeFlight(index)" class="btn-remove">
-                <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-                  <path d="M2 4H14M6 4V2H10V4M12 4V14H4V4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-                </svg>
-                Remove
-              </button>
-            </div>
-            <div class="form-row">
-              <div class="form-group">
-                <label class="form-label">Flight Number</label>
-                <input v-model="flight.flight_number" class="form-input" placeholder="e.g., AF123" />
-              </div>
-              <div class="form-group">
-                <label class="form-label">Group/Category</label>
-                <input v-model="flight.group" class="form-input" placeholder="e.g., Players, Staff, Equipment" />
-              </div>
-            </div>
-            <div class="form-row">
-              <div class="form-group">
-                <label class="form-label">Passengers</label>
-                <input v-model.number="flight.passengers" type="number" class="form-input" min="0" />
-              </div>
-              <div class="form-group">
-                <label class="form-label">Arrival Time</label>
-                <input v-model="flight.arrival_time" class="form-input" placeholder="YYYY-MM-DD HH:MM" />
-              </div>
-            </div>
-            <div class="form-row">
-              <div class="form-group">
-                <label class="form-label">Terminal</label>
-                <input v-model="flight.terminal" class="form-input" placeholder="e.g., CDG T2" />
-              </div>
-              <div class="form-group">
-                <label class="form-label">Gate</label>
-                <input v-model="flight.gate" class="form-input" placeholder="e.g., A12" />
-              </div>
-            </div>
-          </div>
-          <button type="button" @click="addFlight" class="btn-add-flight">
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" style="margin-right: 6px;">
-              <path d="M8 2V14M2 8H14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-            </svg>
-            Add Another Flight
-          </button>
-        </div>
-
         <div class="form-section-title">Contacts</div>
         <div class="form-row">
           <div class="form-group">
             <label class="form-label">Head of Delegation</label>
             <input v-model="formData.head_of_delegation" type="text" class="form-input" placeholder="Name" />
-          </div>
-
-          <div class="form-group">
-            <label class="form-label">SC Liaison Name</label>
-            <input v-model="formData.sc_liaison_name" type="text" class="form-input" placeholder="Name" />
-          </div>
-        </div>
-
-        <div class="form-row">
-          <div class="form-group">
-            <label class="form-label">SC Liaison Phone</label>
-            <input v-model="formData.sc_liaison_phone" type="text" class="form-input" placeholder="Phone number" />
           </div>
 
           <div class="form-group">

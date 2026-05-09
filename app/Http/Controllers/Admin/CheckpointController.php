@@ -68,6 +68,7 @@ class CheckpointController extends Controller
 
         $validated = $request->validate([
             'name' => 'required|string|max:255',
+            'category' => 'required|in:NA,Logistics,A&D,Transportation,Guest Services',
             'type' => 'required|in:dispatch,arrival,boarding,departure,handoff,manual,auto',
             'description' => 'nullable|string',
             'capture_method' => 'required|in:auto,manual,gps,photo,signature',
@@ -127,6 +128,7 @@ class CheckpointController extends Controller
         $validated = $request->validate([
             'code' => 'required|string|max:50|unique:checkpoints,code,' . $checkpoint->id,
             'name' => 'required|string|max:255',
+            'category' => 'required|in:NA,Logistics,A&D,Transportation,Guest Services',
             'type' => 'required|in:dispatch,arrival,boarding,departure,handoff,manual,auto',
             'description' => 'nullable|string',
             'capture_method' => 'required|in:auto,manual,gps,photo,signature',

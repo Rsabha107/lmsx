@@ -10,6 +10,7 @@ class Checkpoint extends Model
     protected $fillable = [
         'code',
         'name',
+        'category',
         'type',
         'description',
         'capture_method',

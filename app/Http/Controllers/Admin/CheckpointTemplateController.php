@@ -73,7 +73,7 @@ class CheckpointTemplateController extends Controller
         $validated = $request->validate([
             'code' => 'required|string|max:50|unique:checkpoint_templates,code',
             'name' => 'required|string|max:255',
-            'movement_type' => 'required|in:arrival,departure,transfer,training,match',
+            'movement_type' => 'required|in:arrival,departure,transfer,training,match,daily_ops',
             'description' => 'nullable|string',
             'estimated_duration_minutes' => 'nullable|integer|min:1',
             'is_active' => 'boolean',
@@ -150,7 +150,7 @@ class CheckpointTemplateController extends Controller
 
         return Inertia::render('Admin/CheckpointTemplates/Edit', [
             'template' => $checkpointTemplate,
-            'movementTypes' => ['arrival', 'departure', 'transfer', 'training', 'match'],
+            'movementTypes' => ['arrival', 'departure', 'transfer', 'training', 'match', 'daily_ops'],
             'availableCheckpoints' => $availableCheckpoints,
             'attachedCheckpoints' => $checkpointTemplate->checkpoints->map(fn($cp) => [
                 'checkpoint_id' => $cp->id,
@@ -172,7 +172,7 @@ class CheckpointTemplateController extends Controller
         $validated = $request->validate([
             'code' => 'required|string|max:50|unique:checkpoint_templates,code,' . $checkpointTemplate->id,
             'name' => 'required|string|max:255',
-            'movement_type' => 'required|in:arrival,departure,transfer,training,match',
+            'movement_type' => 'required|in:arrival,departure,transfer,training,match,daily_ops',
             'description' => 'nullable|string',
             'estimated_duration_minutes' => 'nullable|integer|min:1',
             'is_active' => 'boolean',

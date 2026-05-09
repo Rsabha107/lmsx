@@ -39,23 +39,31 @@
     <!-- Checkpoints Tab -->
     <div v-if="activeTab === 'checkpoints'" style="flex: 1; overflow: auto;">
       <div class="plan-table-card">
-        <div style="padding: 14px 16px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center;">
-          <div>
-            <div style="font-size: 11px; letter-spacing: 1px; text-transform: uppercase; color: var(--ink3); font-weight: 700;">Global Checkpoint Library</div>
-            <!-- <div style="font-size: 14px; font-weight: 700; color: var(--ink); margin-top: 2px;">{{ checkpoints.length }} Checkpoints</div> -->
-          </div>
-          <div style="display: flex; gap: 8px; align-items: center;">
-            <input 
-              v-model="checkpointSearch" 
-              type="text" 
-              placeholder="Search checkpoints..." 
-              style="padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 12px; width: 200px;"
-            />
+        <div style="padding: 14px 16px; border-bottom: 1px solid var(--border);">
+          <div style="font-size: 11px; letter-spacing: 1px; text-transform: uppercase; color: var(--ink3); font-weight: 700; margin-bottom: 12px;">Global Checkpoint Library</div>
+          <div class="table-header">
+            <div class="table-controls">
+              <div class="search-box">
+                <svg-icon name="search" :size="14" />
+                <input 
+                  v-model="checkpointSearch" 
+                  type="text" 
+                  placeholder="Search checkpoints..." 
+                  class="search-input"
+                />
+              </div>
+              <select v-model="filterCategory" class="filter-select">
+                <option value="">All Categories</option>
+                <option v-for="category in uniqueCategories" :key="category" :value="category">
+                  {{ category }}
+                </option>
+              </select>
+            </div>
           </div>
         </div>
         
-        <div style="display: grid; grid-template-columns: 120px 1.5fr 140px 140px 120px 120px; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--border); font-size: 11px; font-weight: 700; color: var(--ink3); letter-spacing: 0.6px; text-transform: uppercase; position: sticky; top: 0; background: var(--surface);">
-          <div>Code</div><div>Name</div><div>Type</div><div>Capture Method</div><div>Usage Count</div><div>Actions</div>
+        <div style="display: grid; grid-template-columns: 120px 1.5fr 140px 140px 140px 120px 120px; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--border); font-size: 11px; font-weight: 700; color: var(--ink3); letter-spacing: 0.6px; text-transform: uppercase; position: sticky; top: 0; background: var(--surface);">
+          <div>Code</div><div>Name</div><div>Category</div><div>Type</div><div>Capture Method</div><div>Usage Count</div><div>Actions</div>
         </div>
         
         <div v-if="!filteredCheckpoints || filteredCheckpoints.length === 0" style="padding: 40px; text-align: center; color: var(--ink3);">
@@ -68,7 +76,7 @@
           :key="checkpoint.id"
           :style="{
             display: 'grid', 
-            gridTemplateColumns: '120px 1.5fr 140px 140px 120px 120px', 
+            gridTemplateColumns: '120px 1.5fr 140px 140px 140px 120px 120px', 
             gap: '10px',
             padding: '12px 14px',
             borderBottom: i === filteredCheckpoints.length - 1 ? 'none' : '1px solid var(--border)',
@@ -80,6 +88,9 @@
         >
           <div style="font-family: var(--mono); font-size: 11px; color: var(--ink); font-weight: 700;">{{ checkpoint.code }}</div>
           <div style="font-size: 13px; color: var(--ink); font-weight: 600;">{{ checkpoint.name }}</div>
+          <div>
+            <span :style="categoryPillStyle(checkpoint.category)">{{ checkpoint.category }}</span>
+          </div>
           <div>
             <span :style="checkpointTypePillStyle(checkpoint.type)">{{ checkpoint.type.toUpperCase() }}</span>
           </div>
@@ -332,6 +343,16 @@
           <input v-model="newCheckpoint.name" type="text" placeholder="Dispatch from depot" style="width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px;" />
         </div>
         <div>
+          <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px; color: var(--ink);">Category</label>
+          <select v-model="newCheckpoint.category" style="width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px;">
+            <option value="NA">N/A</option>
+            <option value="Logistics">Logistics</option>
+            <option value="A&D">A&D</option>
+            <option value="Transportation">Transportation</option>
+            <option value="Guest Services">Guest Services</option>
+          </select>
+        </div>
+        <div>
           <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px; color: var(--ink);">Type</label>
           <select v-model="newCheckpoint.type" style="width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px;">
             <option value="dispatch">Dispatch</option>
@@ -391,6 +412,16 @@
         <div>
           <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px; color: var(--ink);">Name</label>
           <input v-model="editingCheckpoint.name" type="text" style="width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px;" />
+        </div>
+        <div>
+          <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px; color: var(--ink);">Category</label>
+          <select v-model="editingCheckpoint.category" style="width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px;">
+            <option value="NA">N/A</option>
+            <option value="Logistics">Logistics</option>
+            <option value="A&D">A&D</option>
+            <option value="Transportation">Transportation</option>
+            <option value="Guest Services">Guest Services</option>
+          </select>
         </div>
         <div>
           <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px; color: var(--ink);">Type</label>
@@ -459,6 +490,7 @@
             <option value="arrival">Arrival</option>
             <option value="departure">Departure</option>
             <option value="transfer">Transfer</option>
+            <option value="daily_ops">Daily ops</option>
             <option value="training">Training</option>
             <option value="match">Match</option>
           </select>
@@ -476,11 +508,22 @@
         <div style="margin-top: 8px;">
           <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 8px; color: var(--ink);">Checkpoints</label>
           
+          <!-- Category Filter -->
+          <div style="margin-bottom: 8px;">
+            <label style="display: block; font-size: 11px; font-weight: 600; margin-bottom: 4px; color: var(--ink3);">Filter by Category</label>
+            <select v-model="checkpointCategoryFilter" style="width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px;">
+              <option value="">All Categories</option>
+              <option v-for="category in uniqueCategories" :key="category" :value="category">
+                {{ category }}
+              </option>
+            </select>
+          </div>
+          
           <!-- Add Checkpoint Section -->
           <div style="display: flex; gap: 8px; margin-bottom: 12px;">
             <select v-model="selectedCheckpointId" style="flex: 1; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px;">
               <option :value="null">Select checkpoint to add...</option>
-              <option v-for="checkpoint in props.checkpoints" :key="checkpoint.id" :value="checkpoint.id" :disabled="newCheckpointTemplate.checkpoints.some(c => c.checkpoint_id === checkpoint.id)">
+              <option v-for="checkpoint in filteredCheckpointsForTemplate" :key="checkpoint.id" :value="checkpoint.id" :disabled="newCheckpointTemplate.checkpoints.some(c => c.checkpoint_id === checkpoint.id)">
                 {{ checkpoint.code }} - {{ checkpoint.name }}
               </option>
             </select>
@@ -568,6 +611,7 @@
             <option value="arrival">Arrival</option>
             <option value="departure">Departure</option>
             <option value="transfer">Transfer</option>
+            <option value="daily_ops">Daily ops</option>
             <option value="training">Training</option>
             <option value="match">Match</option>
           </select>
@@ -584,11 +628,23 @@
         <!-- Checkpoint Builder -->
         <div style="margin-top: 8px;">
           <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 8px; color: var(--ink);">Checkpoints</label>
+          
+          <!-- Category Filter -->
+          <div style="margin-bottom: 8px;">
+            <label style="display: block; font-size: 11px; font-weight: 600; margin-bottom: 4px; color: var(--ink3);">Filter by Category</label>
+            <select v-model="checkpointCategoryFilterEdit" style="width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px;">
+              <option value="">All Categories</option>
+              <option v-for="category in uniqueCategories" :key="category" :value="category">
+                {{ category }}
+              </option>
+            </select>
+          </div>
+          
           <div style="display: flex; gap: 8px; margin-bottom: 12px;">
             <select v-model="selectedCheckpointIdEdit" style="flex: 1; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px;">
               <option :value="null">Select a checkpoint...</option>
               <option 
-                v-for="checkpoint in checkpoints" 
+                v-for="checkpoint in filteredCheckpointsForEditTemplate" 
                 :key="checkpoint.id" 
                 :value="checkpoint.id"
                 :disabled="editingCheckpointTemplate.checkpoints?.some(c => c.checkpoint_id === checkpoint.id)"
@@ -691,6 +747,7 @@
             <option value="training_day">Training Day</option>
             <option value="arrival_day">Arrival Day</option>
             <option value="departure_day">Departure Day</option>
+            <option value="operation_day">Operation Day</option>
             <option value="full_day">Full Day</option>
             <option value="custom">Custom</option>
           </select>
@@ -737,6 +794,7 @@
                   <option value="arrival">Arrival</option>
                   <option value="training">Training</option>
                   <option value="departure">Departure</option>
+                  <option value="daily_ops">Daily Ops</option>
                   <option value="match">Match</option>
                 </select>
               </div>
@@ -836,6 +894,7 @@
             <option value="training_day">Training Day</option>
             <option value="arrival_day">Arrival Day</option>
             <option value="departure_day">Departure Day</option>
+            <option value="operation_day">Operation Day</option>
             <option value="full_day">Full Day</option>
             <option value="custom">Custom</option>
           </select>
@@ -882,6 +941,7 @@
                   <option value="arrival">Arrival</option>
                   <option value="training">Training</option>
                   <option value="departure">Departure</option>
+                  <option value="daily_ops">Daily Ops</option>
                   <option value="match">Match</option>
                 </select>
               </div>
@@ -1023,16 +1083,47 @@ const tabs = computed(() => [
   { id: 'movement-templates', label: 'Movement Templates', count: props.movementTemplates.length },
 ]);
 
-// Checkpoint search
+// Checkpoint search and filter
 const checkpointSearch = ref('');
+const filterCategory = ref('');
+
+const uniqueCategories = computed(() => {
+  const categories = props.checkpoints.map(c => c.category).filter(Boolean);
+  return [...new Set(categories)].sort();
+});
+
 const filteredCheckpoints = computed(() => {
-  if (!checkpointSearch.value) return props.checkpoints;
-  const search = checkpointSearch.value.toLowerCase();
-  return props.checkpoints.filter(c => 
-    c.code.toLowerCase().includes(search) || 
-    c.name.toLowerCase().includes(search) ||
-    c.type.toLowerCase().includes(search)
-  );
+  let result = props.checkpoints;
+
+  // Filter by search query
+  if (checkpointSearch.value) {
+    const search = checkpointSearch.value.toLowerCase();
+    result = result.filter(c => 
+      c.code.toLowerCase().includes(search) || 
+      c.name.toLowerCase().includes(search) ||
+      c.type.toLowerCase().includes(search) ||
+      c.category?.toLowerCase().includes(search)
+    );
+  }
+
+  // Filter by category
+  if (filterCategory.value) {
+    result = result.filter(c => c.category === filterCategory.value);
+  }
+
+  return result;
+});
+
+// Filter checkpoints by category for template builder
+const filteredCheckpointsForTemplate = computed(() => {
+  if (!checkpointCategoryFilter.value) return props.checkpoints;
+  return props.checkpoints.filter(c => c.category === checkpointCategoryFilter.value);
+});
+
+// Filter checkpoints by category for edit template
+const filteredCheckpointsForEditTemplate = computed(() => {
+  if (!checkpointCategoryFilterEdit.value) return props.checkpoints;
+  return props.checkpoints.filter(c => c.category === checkpointCategoryFilterEdit.value);
 });
 
 // Modals
@@ -1061,6 +1152,7 @@ const deleteTarget = ref(null); // { type: 'checkpoint'|'checkpoint-template'|'m
 // New checkpoint form
 const newCheckpoint = ref({
   name: '',
+  category: 'Logistics',
   type: 'dispatch',
   capture_method: 'manual',
   requires_photo: false,
@@ -1085,10 +1177,12 @@ const newCheckpointTemplate = ref({
 
 // Checkpoint template builder state
 const selectedCheckpointId = ref(null);
+const checkpointCategoryFilter = ref('');
 
 // Edit checkpoint template form
 const editingCheckpointTemplate = ref(null);
 const selectedCheckpointIdEdit = ref(null);
+const checkpointCategoryFilterEdit = ref('');
 
 // New movement template form
 const newMovementTemplate = ref({
@@ -1140,6 +1234,7 @@ function closeNewCheckpointTemplateModal() {
   showNewCheckpointTemplate.value = false;
   checkpointTemplateErrors.value = {};
   selectedCheckpointId.value = null;
+  checkpointCategoryFilter.value = '';
 }
 
 // Checkpoint template builder functions
@@ -1206,6 +1301,7 @@ function closeEditCheckpointTemplateModal() {
   showEditCheckpointTemplate.value = false;
   checkpointTemplateErrors.value = {};
   selectedCheckpointIdEdit.value = null;
+  checkpointCategoryFilterEdit.value = '';
 }
 
 // Checkpoint template builder functions for editing
@@ -1543,6 +1639,7 @@ function createCheckpointTemplate() {
         checkpoints: [],
       };
       selectedCheckpointId.value = null;
+      checkpointCategoryFilter.value = '';
       checkpointTemplateErrors.value = {};
       showSuccessToast('Checkpoint template created successfully');
     },
@@ -1589,6 +1686,8 @@ function updateCheckpointTemplate() {
     onSuccess: () => {
       showEditCheckpointTemplate.value = false;
       editingCheckpointTemplate.value = null;
+      selectedCheckpointIdEdit.value = null;
+      checkpointCategoryFilterEdit.value = '';
       checkpointTemplateErrors.value = {};
       showSuccessToast('Checkpoint template updated successfully');
     },
@@ -1782,12 +1881,33 @@ function checkpointTypePillStyle(type) {
   `;
 }
 
+function categoryPillStyle(category) {
+  const colors = {
+    'Logistics': { bg: '#DBEAFE', text: '#1E40AF' },
+    'A&D': { bg: '#FED7AA', text: '#9A3412' },
+    'Transportation': { bg: '#D1FAE5', text: '#065F46' },
+    'Guest Services': { bg: '#E9D5FF', text: '#6B21A8' },
+  };
+  const color = colors[category] || { bg: '#F3F4F6', text: '#374151' };
+  return `
+    font-size: 10px;
+    font-weight: 700;
+    padding: 3px 8px;
+    border-radius: 999px;
+    background: ${color.bg};
+    color: ${color.text};
+    letter-spacing: 0.5px;
+    display: inline-block;
+  `;
+}
+
 function movementTypePillStyle(type) {
   const colors = {
     arrival: { bg: '#F0FDF4', text: '#166534' },
     departure: { bg: '#FCE7F3', text: '#9F1239' },
     transfer: { bg: '#EFF6FF', text: '#1E40AF' },
     training: { bg: '#FEF3C7', text: '#92400E' },
+    daily_ops: { bg: '#E9D5FF', text: '#6B21A8' },
     match: { bg: '#F3E8FF', text: '#6B21A8' },
   };
   const color = colors[type] || { bg: '#F3F4F6', text: '#374151' };
@@ -1868,6 +1988,73 @@ function movementTypePillStyle(type) {
   display: flex;
   gap: 8px;
   align-items: center;
+}
+
+.table-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.table-controls {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.search-box {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  transition: border-color 0.13s;
+}
+
+.search-box:focus-within {
+  border-color: var(--accent);
+}
+
+.search-box svg {
+  color: var(--ink3);
+  flex-shrink: 0;
+}
+
+.search-input {
+  border: none;
+  background: none;
+  outline: none;
+  font-size: 13px;
+  color: var(--ink);
+  width: 200px;
+  padding: 0;
+}
+
+.search-input::placeholder {
+  color: var(--ink4);
+}
+
+.filter-select {
+  padding: 6px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  font-size: 13px;
+  color: var(--ink2);
+  cursor: pointer;
+  transition: border-color 0.13s;
+  outline: none;
+}
+
+.filter-select:hover {
+  border-color: var(--accent);
+}
+
+.filter-select:focus {
+  border-color: var(--accent);
 }
 
 .plan-table-card {

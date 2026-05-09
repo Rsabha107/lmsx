@@ -85,8 +85,18 @@
             <div class="checkpoint-content">
               <div class="checkpoint-label">
                 {{ cp.label }}
-                <span v-if="cp.requires_photo" class="checkpoint-req-badge checkpoint-req-badge--photo">📷</span>
-                <span v-if="cp.requires_signature" class="checkpoint-req-badge checkpoint-req-badge--sign">✍</span>
+                <span v-if="cp.requires_photo"
+                      @click.stop="cp.has_photo && cp.photo_url ? openPhotoViewer(cp.photo_url, cp.label) : null"
+                      :class="['checkpoint-req-badge', 'checkpoint-req-badge--photo', cp.has_photo && cp.photo_url ? 'checkpoint-req-badge--clickable' : '']"
+                      :style="{ background: cp.has_photo ? '#f0fdf4' : '#fffbeb', color: cp.has_photo ? '#166534' : '#92400e' }">
+                  📷 {{ cp.has_photo ? 'View' : 'Req' }}
+                </span>
+                <span v-if="cp.requires_signature"
+                      @click.stop="cp.has_signature && cp.signature_url ? openSignatureViewer(cp.signature_url, cp.label) : null"
+                      :class="['checkpoint-req-badge', 'checkpoint-req-badge--sign', cp.has_signature && cp.signature_url ? 'checkpoint-req-badge--clickable' : '']"
+                      :style="{ background: cp.has_signature ? '#f0fdf4' : '#fffbeb', color: cp.has_signature ? '#166534' : '#92400e' }">
+                  ✍ {{ cp.has_signature ? 'View' : 'Req' }}
+                </span>
               </div>
               <div class="checkpoint-time">
                 <span class="time-planned">Est. {{ cp.time }}</span>
@@ -115,6 +125,36 @@
         </Button>
       </div>
     </div>
+
+    <!-- Photo Viewer Modal -->
+    <teleport to="body">
+      <transition name="slide-up">
+        <div v-if="showPhotoViewer" @click="closePhotoViewer" class="evidence-viewer-overlay">
+          <div class="evidence-viewer-content" @click.stop>
+            <button @click="closePhotoViewer" class="evidence-viewer-close">
+              <svg-icon name="x" :size="20" />
+            </button>
+            <img v-if="currentPhoto" :src="currentPhoto" alt="Checkpoint photo" class="evidence-viewer-image" />
+            <div v-if="currentEvidenceName" class="evidence-viewer-label">{{ currentEvidenceName }}</div>
+          </div>
+        </div>
+      </transition>
+    </teleport>
+
+    <!-- Signature Viewer Modal -->
+    <teleport to="body">
+      <transition name="slide-up">
+        <div v-if="showSignatureViewer" @click="closeSignatureViewer" class="evidence-viewer-overlay">
+          <div class="evidence-viewer-content" @click.stop>
+            <button @click="closeSignatureViewer" class="evidence-viewer-close">
+              <svg-icon name="x" :size="20" />
+            </button>
+            <img v-if="currentSignature" :src="currentSignature" alt="Checkpoint signature" class="evidence-viewer-image" />
+            <div v-if="currentEvidenceName" class="evidence-viewer-label">Signature - {{ currentEvidenceName }}</div>
+          </div>
+        </div>
+      </transition>
+    </teleport>
 
     <!-- Checkpoint Confirmation Modal -->
     <teleport to="body">
@@ -252,11 +292,45 @@ const photoInput = ref(null);
 const photoData = ref(null);
 const photoPreview = ref(null);
 const processing = ref(false);
+
+// Evidence viewer state
+const showPhotoViewer = ref(false);
+const showSignatureViewer = ref(false);
+const currentPhoto = ref(null);
+const currentSignature = ref(null);
+const currentEvidenceName = ref(null);
+
 let isDrawing = false;
 
 const completedCount = computed(() => 
   props.checkpoints.filter(cp => cp.status === 'done').length
 );
+
+function openPhotoViewer(photoUrl, checkpointName) {
+  if (!photoUrl) return;
+  currentPhoto.value = photoUrl;
+  currentEvidenceName.value = checkpointName;
+  showPhotoViewer.value = true;
+}
+
+function closePhotoViewer() {
+  showPhotoViewer.value = false;
+  currentPhoto.value = null;
+  currentEvidenceName.value = null;
+}
+
+function openSignatureViewer(signatureUrl, checkpointName) {
+  if (!signatureUrl) return;
+  currentSignature.value = signatureUrl;
+  currentEvidenceName.value = checkpointName;
+  showSignatureViewer.value = true;
+}
+
+function closeSignatureViewer() {
+  showSignatureViewer.value = false;
+  currentSignature.value = null;
+  currentEvidenceName.value = null;
+}
 
 function isCheckpointEnabled(index) {
   // Checkpoint is enabled if all previous checkpoints are done
@@ -1164,6 +1238,109 @@ function statusLabel(s) {
 .modal-actions {
   display: flex;
   gap: 10px;
+}
+
+/* Evidence Viewer */
+.evidence-viewer-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.95);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 99999;
+  padding: 20px;
+  cursor: zoom-out;
+}
+
+.evidence-viewer-content {
+  position: relative;
+  max-width: 90vw;
+  max-height: 90vh;
+  cursor: default;
+  animation: zoomIn 0.25s ease-out;
+}
+
+@keyframes zoomIn {
+  from { 
+    transform: scale(0.9) translateY(20px); 
+    opacity: 0; 
+  }
+  to { 
+    transform: scale(1) translateY(0); 
+    opacity: 1; 
+  }
+}
+
+.evidence-viewer-image {
+  max-width: 100%;
+  max-height: 80vh;
+  width: auto;
+  height: auto;
+  display: block;
+  border-radius: 12px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.7);
+}
+
+.evidence-viewer-close {
+  position: absolute;
+  top: -50px;
+  right: 0;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.15);
+  border: none;
+  color: white;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+  backdrop-filter: blur(10px);
+}
+
+.evidence-viewer-close:active {
+  background: rgba(255, 255, 255, 0.3);
+  transform: scale(0.95);
+}
+
+.evidence-viewer-label {
+  position: absolute;
+  bottom: -45px;
+  left: 0;
+  right: 0;
+  text-align: center;
+  color: white;
+  font-size: 14px;
+  font-weight: 600;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+}
+
+@media (max-width: 640px) {
+  .evidence-viewer-close {
+    top: 10px;
+    right: 10px;
+  }
+  
+  .evidence-viewer-label {
+    bottom: 10px;
+    font-size: 13px;
+  }
+  
+  .evidence-viewer-image {
+    border-radius: 8px;
+  }
+}
+
+/* Clickable Evidence Badges */
+.checkpoint-req-badge--clickable {
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.checkpoint-req-badge--clickable:active {
+  transform: scale(0.95);
 }
 
 /* Transitions */

@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Models\Event;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
 
@@ -16,11 +17,12 @@ class HandleInertiaRequests extends Middleware
 
     public function share(Request $request): array
     {
+        $activeEventId = $request->session()->get('active_event_id');
+
         return array_merge(parent::share($request), [
-            'appName'   => 'Atlas Cup LMS',
-            'eventName' => 'Atlas Cup 2026',
-            'matchDay'  => 'Match Day 4',
-            'today'     => 'Sat, 18 Apr 2026',
+            'appName'       => 'Atlas Cup LMS',
+            'matchDay'      => 'Match Day 4',
+            'today'         => now()->format('D, d M Y'),
             'auth' => [
                 'user' => $request->user()?->only('id', 'name', 'email'),
             ],
@@ -28,6 +30,10 @@ class HandleInertiaRequests extends Middleware
                 'success' => $request->session()->get('success'),
                 'status'  => $request->session()->get('status'),
             ],
+            'eventList'     => $request->user()
+                ? Event::orderBy('start_date', 'desc')->get(['id', 'name', 'short_name'])->toArray()
+                : [],
+            'activeEventId' => $activeEventId ? (int) $activeEventId : null,
         ]);
     }
 }

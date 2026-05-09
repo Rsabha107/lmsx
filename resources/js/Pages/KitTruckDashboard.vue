@@ -43,6 +43,11 @@
             {{ k.label }} ({{ kindCounts[k.value] ?? 0 }})
           </option>
         </select>
+        <!-- Event -->
+        <select v-if="events.length" v-model="selectedEvent" class="filter-select" @change="setEvent(selectedEvent)">
+          <option value="">All events</option>
+          <option v-for="evt in events" :key="evt.id" :value="evt.id">{{ evt.name }}</option>
+        </select>
         <!-- Date -->
         <select v-if="dates.length" v-model="selectedDate" class="filter-select" @change="setDate(selectedDate)">
           <option value="">All dates</option>
@@ -79,7 +84,7 @@
       </div>
 
       <!-- Table -->
-      <div v-else style="overflow-x: auto;">
+      <div v-else class="table-scroll-wrapper">
         <table class="mv-table">
           <thead>
             <!-- Row 1: column group headers -->
@@ -239,13 +244,15 @@ const props = defineProps({
   columns:    { type: Array,  default: () => [] },
   kindCounts: { type: Object, default: () => ({}) },
   dates:      { type: Array,  default: () => [] },
-  filters:    { type: Object, default: () => ({ kind: 'match', date: null }) },
+  events:     { type: Array,  default: () => [] },
+  filters:    { type: Object, default: () => ({ kind: 'match', date: null, event: null }) },
 });
 
 // ── Local state ───────────────────────────────────────────────────────────
 const searchQuery  = ref('');
 const selectedKind = ref(props.filters.kind ?? 'match');
 const selectedDate = ref(props.filters.date ?? '');
+const selectedEvent = ref(props.filters.event ?? '');
 
 // ── Kind config ───────────────────────────────────────────────────────────
 const kindOptions = [
@@ -342,10 +349,20 @@ const lateCount = computed(() => {
 function setKind(kind) {
   searchQuery.value  = '';
   selectedDate.value = '';
+  selectedEvent.value = '';
   router.get('/kit-truck', { kind }, { preserveScroll: true });
 }
 function setDate(date) {
-  router.get('/kit-truck', { kind: props.filters.kind, ...(date ? { date } : {}) }, { preserveScroll: true });
+  const params = { kind: props.filters.kind };
+  if (date) params.date = date;
+  if (props.filters.event) params.event = props.filters.event;
+  router.get('/kit-truck', params, { preserveScroll: true });
+}
+function setEvent(event) {
+  const params = { kind: props.filters.kind };
+  if (event) params.event = event;
+  if (props.filters.date) params.date = props.filters.date;
+  router.get('/kit-truck', params, { preserveScroll: true });
 }
 </script>
 
@@ -422,6 +439,14 @@ function setDate(date) {
 .empty-title { font-size: 14px; font-weight: 600; color: var(--ink2); margin: 0 0 6px; }
 .empty-sub   { font-size: 12px; color: var(--ink4); margin: 0; max-width: 380px; line-height: 1.5; }
 
+/* Table scroll wrapper */
+.table-scroll-wrapper {
+  overflow-x: auto;
+  overflow-y: auto;
+  max-height: calc(100vh - 400px);
+  min-height: 400px;
+}
+
 /* ── Table — based on matches-table from Teams/Matches pages ─────── */
 .mv-table {
   width: 100%;
@@ -441,15 +466,17 @@ function setDate(date) {
   border-bottom: 1px solid var(--border);
   border-right: 1px solid var(--border);
   white-space: nowrap;
-  position: sticky; top: 0; z-index: 2;
+  position: sticky; top: 0; z-index: 3;
+  box-shadow: 0 1px 0 var(--border);
 }
 .mv-th:last-child { border-right: none; }
 .mv-th--left { text-align: left; }
 .mv-th--wide { min-width: 150px; }
 .mv-th--pma {
   text-align: left; min-width: 190px;
-  position: sticky; left: 0; z-index: 3;
+  position: sticky; left: 0; top: 0; z-index: 5;
   border-right: 1px solid var(--border);
+  box-shadow: 1px 1px 0 var(--border);
 }
 
 /* Checkpoint group header */
@@ -460,7 +487,7 @@ function setDate(date) {
 }
 
 /* Sub-header row (Planned / Actual) */
-.mv-th--sub     { background: var(--bg); font-size: 10px; font-weight: 500; }
+.mv-th--sub     { background: var(--bg); font-size: 10px; font-weight: 500; position: sticky; top: 33px; z-index: 3; box-shadow: 0 1px 0 var(--border); }
 .mv-th--planned { border-left: 2px solid var(--border); color: var(--ink4); }
 .mv-th--actual  { color: var(--ink2); }
 
@@ -477,6 +504,7 @@ function setDate(date) {
 /* Data rows — same hover as matches-table */
 .mv-data-row { transition: background-color 0.13s; }
 .mv-data-row:hover td { background: var(--panel) !important; }
+.mv-data-row:hover .mv-td--pma { background: var(--panel) !important; }
 .mv-data-row:last-child .mv-td { border-bottom: none; }
 
 /* Data cells */
@@ -493,7 +521,7 @@ function setDate(date) {
 
 .mv-td--pma {
   display: flex; align-items: center; gap: 8px;
-  position: sticky; left: 0; z-index: 1;
+  position: sticky; left: 0; z-index: 2;
   background: var(--surface);
   border-right: 1px solid var(--border);
 }

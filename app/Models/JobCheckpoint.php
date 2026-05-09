@@ -9,6 +9,7 @@ class JobCheckpoint extends Model
 {
     protected $fillable = [
         'job_id',
+        'event_id',
         'checkpoint_id',
         'order',
         'name',
@@ -68,6 +69,21 @@ class JobCheckpoint extends Model
         'bags_loaded' => 'integer',
         'oversized_pieces' => 'integer',
     ];
+
+    protected $appends = [
+        'photo_url',
+        'signature_url',
+        'has_photo',
+        'has_signature',
+    ];
+
+    /**
+     * The event this checkpoint belongs to.
+     */
+    public function event(): BelongsTo
+    {
+        return $this->belongsTo(Event::class);
+    }
 
     /**
      * The job this checkpoint belongs to.
@@ -294,5 +310,45 @@ class JobCheckpoint extends Model
         }
 
         return $this->completed_at->diffInMinutes($this->scheduled_at, false);
+    }
+
+    /**
+     * Get the photo URL.
+     */
+    public function getPhotoUrlAttribute(): ?string
+    {
+        if (!$this->photo_path) {
+            return null;
+        }
+
+        return asset('storage/' . $this->photo_path);
+    }
+
+    /**
+     * Get the signature URL.
+     */
+    public function getSignatureUrlAttribute(): ?string
+    {
+        if (!$this->signature_path) {
+            return null;
+        }
+
+        return asset('storage/' . $this->signature_path);
+    }
+
+    /**
+     * Check if this checkpoint has a photo.
+     */
+    public function getHasPhotoAttribute(): bool
+    {
+        return !empty($this->photo_path);
+    }
+
+    /**
+     * Check if this checkpoint has a signature.
+     */
+    public function getHasSignatureAttribute(): bool
+    {
+        return !empty($this->signature_path);
     }
 }

@@ -13,6 +13,34 @@
       </div>
     </div>
 
+    <!-- Photo Viewer Modal -->
+    <div v-if="showPhotoModal" @click="closePhotoModal" class="photo-modal-overlay">
+      <div class="photo-modal-content" @click.stop>
+        <button @click="closePhotoModal" class="photo-modal-close">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+        <img v-if="currentPhoto" :src="currentPhoto" alt="Checkpoint evidence" class="photo-modal-image" />
+        <div v-if="currentCheckpointName" class="photo-modal-label">{{ currentCheckpointName }}</div>
+      </div>
+    </div>
+
+    <!-- Signature Viewer Modal -->
+    <div v-if="showSignatureModal" @click="closeSignatureModal" class="photo-modal-overlay">
+      <div class="photo-modal-content" @click.stop>
+        <button @click="closeSignatureModal" class="photo-modal-close">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+        <img v-if="currentSignature" :src="currentSignature" alt="Checkpoint signature" class="photo-modal-image" />
+        <div v-if="currentCheckpointName" class="photo-modal-label">Signature - {{ currentCheckpointName }}</div>
+      </div>
+    </div>
+
     <!-- Empty state -->
     <div v-if="!checkpoints?.length" style="padding: 24px; text-align: center; border: 1px dashed var(--border); border-radius: 8px;">
       <div style="font-size: 12px; color: var(--ink3);">{{ emptyMessage }}</div>
@@ -49,13 +77,41 @@
                 </span>
                 <!-- Photo badge -->
                 <span v-if="cp.requires_photo"
-                      :style="{ display: 'inline-flex', alignItems: 'center', gap: '2px', fontSize: '10px', fontWeight: 600, padding: '1px 5px', borderRadius: '3px', background: cp.has_photo ? '#f0fdf4' : '#fffbeb', color: cp.has_photo ? '#166534' : '#92400e' }">
+                      @click="cp.has_photo && cp.photo_url ? openPhotoModal(cp.photo_url, cp.name) : null"
+                      :style="{ 
+                        display: 'inline-flex', 
+                        alignItems: 'center', 
+                        gap: '2px', 
+                        fontSize: '10px', 
+                        fontWeight: 600, 
+                        padding: '1px 5px', 
+                        borderRadius: '3px', 
+                        background: cp.has_photo ? '#f0fdf4' : '#fffbeb', 
+                        color: cp.has_photo ? '#166534' : '#92400e',
+                        cursor: cp.has_photo && cp.photo_url ? 'pointer' : 'default',
+                        transition: 'transform 0.15s'
+                      }"
+                      :class="{ 'evidence-badge-clickable': cp.has_photo && cp.photo_url }">
                   <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
                   {{ cp.has_photo ? 'Done' : 'Required' }}
                 </span>
                 <!-- Signature badge -->
                 <span v-if="cp.requires_signature"
-                      :style="{ display: 'inline-flex', alignItems: 'center', gap: '2px', fontSize: '10px', fontWeight: 600, padding: '1px 5px', borderRadius: '3px', background: cp.has_signature ? '#f0fdf4' : '#fffbeb', color: cp.has_signature ? '#166534' : '#92400e' }">
+                      @click="cp.has_signature && cp.signature_url ? openSignatureModal(cp.signature_url, cp.name) : null"
+                      :style="{ 
+                        display: 'inline-flex', 
+                        alignItems: 'center', 
+                        gap: '2px', 
+                        fontSize: '10px', 
+                        fontWeight: 600, 
+                        padding: '1px 5px', 
+                        borderRadius: '3px', 
+                        background: cp.has_signature ? '#f0fdf4' : '#fffbeb', 
+                        color: cp.has_signature ? '#166534' : '#92400e',
+                        cursor: cp.has_signature && cp.signature_url ? 'pointer' : 'default',
+                        transition: 'transform 0.15s'
+                      }"
+                      :class="{ 'evidence-badge-clickable': cp.has_signature && cp.signature_url }">
                   <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>
                   {{ cp.has_signature ? 'Signed' : 'Required' }}
                 </span>
@@ -87,13 +143,46 @@
 </template>
 
 <script setup>
-import { computed } from 'vue';
+import { ref, computed } from 'vue';
 
 const props = defineProps({
   checkpoints: { type: Array, default: () => [] },
   title:        { type: String, default: 'Checkpoints' },
   emptyMessage: { type: String, default: 'No checkpoints defined' },
 });
+
+// Photo/Signature viewer state
+const showPhotoModal = ref(false);
+const showSignatureModal = ref(false);
+const currentPhoto = ref(null);
+const currentSignature = ref(null);
+const currentCheckpointName = ref(null);
+
+function openPhotoModal(photoUrl, checkpointName) {
+  if (!photoUrl) return;
+  currentPhoto.value = photoUrl;
+  currentCheckpointName.value = checkpointName;
+  showPhotoModal.value = true;
+}
+
+function closePhotoModal() {
+  showPhotoModal.value = false;
+  currentPhoto.value = null;
+  currentCheckpointName.value = null;
+}
+
+function openSignatureModal(signatureUrl, checkpointName) {
+  if (!signatureUrl) return;
+  currentSignature.value = signatureUrl;
+  currentCheckpointName.value = checkpointName;
+  showSignatureModal.value = true;
+}
+
+function closeSignatureModal() {
+  showSignatureModal.value = false;
+  currentSignature.value = null;
+  currentCheckpointName.value = null;
+}
 
 function getCheckpointState(cp) {
   if (!cp) return 'pending';
@@ -166,4 +255,101 @@ const hasMobileUpdates = computed(() =>
 .dc-cp-dot--active  { background: #fff; border: 2px solid var(--accent, #4f46e5); box-shadow: 0 0 0 4px var(--accent-soft, rgba(79,70,229,0.12)); }
 .dc-cp-dot--pending { background: var(--panel); border: 2px solid var(--borderStrong, #d0d5df); }
 .dc-cp-line { width: 2px; flex: 1; min-height: 16px; }
+
+/* Evidence badge hover effect */
+.evidence-badge-clickable:hover {
+  transform: scale(1.05);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+/* Photo viewer modal */
+.photo-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.85);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  padding: 20px;
+  backdrop-filter: blur(4px);
+  animation: fadeIn 0.2s ease;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.photo-modal-content {
+  position: relative;
+  max-width: 90vw;
+  max-height: 90vh;
+  background: white;
+  border-radius: 12px;
+  padding: 16px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  animation: scaleIn 0.2s ease;
+}
+
+@keyframes scaleIn {
+  from {
+    transform: scale(0.95);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.photo-modal-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.6);
+  border: none;
+  color: white;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s;
+  z-index: 10;
+}
+
+.photo-modal-close:hover {
+  background: rgba(0, 0, 0, 0.8);
+}
+
+.photo-modal-image {
+  max-width: 100%;
+  max-height: calc(90vh - 100px);
+  border-radius: 8px;
+  object-fit: contain;
+}
+
+.photo-modal-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink, #111827);
+  text-align: center;
+  padding: 8px 16px;
+  background: var(--panel, #f9fafb);
+  border-radius: 6px;
+}
 </style>

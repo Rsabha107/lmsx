@@ -473,32 +473,14 @@
     </Modal>
 
     <!-- Delete Confirmation Modal -->
-    <Modal :show="showDeleteModal" @close="closeDeleteModal" max-width="500px">
-      <template #title>Delete Match</template>
-      
-      <div style="padding: 0;">
-        <p style="margin: 0 0 12px; color: var(--ink2); font-size: 14px;">
-          Are you sure you want to delete <strong>Match {{ matchToDelete?.match_number }}</strong>?
-        </p>
-        <p style="margin: 0; color: var(--ink3); font-size: 13px;">
-          This action cannot be undone.
-        </p>
-      </div>
-
-      <template #footer>
-        <Button variant="secondary" size="sm" @click="closeDeleteModal" :disabled="deleting">Cancel</Button>
-        <Button 
-          variant="primary" 
-          size="sm" 
-          @click="deleteMatch" 
-          :processing="deleting" 
-          :disabled="deleting" 
-          style="background: #EF4444;"
-        >
-          Delete
-        </Button>
-      </template>
-    </Modal>
+    <DeleteConfirmModal
+      :show="showDeleteModal"
+      title="Match"
+      :message="matchToDelete ? `Are you sure you want to delete <strong>Match ${matchToDelete.match_number}</strong>?` : ''"
+      :processing="deleting"
+      @close="closeDeleteModal"
+      @confirm="deleteMatch"
+    />
   </app-layout>
 </template>
 
@@ -512,6 +494,7 @@ import MiniStat from '../Components/MiniStat.vue';
 import SvgIcon from '../Components/SvgIcon.vue';
 import Button from '../Components/Button.vue';
 import Modal from '../Components/Modal.vue';
+import DeleteConfirmModal from '../Components/DeleteConfirmModal.vue';
 import ColumnToggle from '../Components/ColumnToggle.vue';
 import TableActions from '../Components/TableActions.vue';
 import RefreshButton from '../Components/RefreshButton.vue';

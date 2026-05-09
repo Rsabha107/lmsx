@@ -284,28 +284,14 @@
     </div>
 
     <!-- Delete Confirmation Modal -->
-    <div v-if="showDeleteModal" class="modal-backdrop" @click.self="closeDeleteModal">
-      <div class="delete-modal">
-        <div class="modal-header">
-          <h3 class="modal-title">Delete Contact</h3>
-          <button class="modal-close" @click="closeDeleteModal">✕</button>
-        </div>
-        <div class="modal-body">
-          <p style="margin: 0 0 12px; color: var(--ink2); font-size: 14px;">
-            Are you sure you want to delete <strong>{{ contactToDelete?.name }}</strong>?
-          </p>
-          <p style="margin: 0; color: var(--ink3); font-size: 13px;">
-            This action cannot be undone.
-          </p>
-        </div>
-        <div class="modal-footer">
-          <Button variant="ghost" size="sm" @click="closeDeleteModal" :disabled="isSubmitting">Cancel</Button>
-          <Button variant="primary" size="sm" @click="deleteContact" :disabled="isSubmitting" style="background: #EF4444;">
-            {{ isSubmitting ? 'Deleting...' : 'Delete' }}
-          </Button>
-        </div>
-      </div>
-    </div>
+    <DeleteConfirmModal
+      :show="showDeleteModal"
+      title="Contact"
+      :message="contactToDelete ? `Are you sure you want to delete <strong>${contactToDelete.name}</strong>?` : ''"
+      :processing="isSubmitting"
+      @close="closeDeleteModal"
+      @confirm="deleteContact"
+    />
   </app-layout>
 </template>
 
@@ -319,6 +305,7 @@ import StatusPill from '../Components/StatusPill.vue';
 import TableActions from '../Components/TableActions.vue';
 import ColumnToggle from '../Components/ColumnToggle.vue';
 import RefreshButton from '../Components/RefreshButton.vue';
+import DeleteConfirmModal from '../Components/DeleteConfirmModal.vue';
 import { router } from '@inertiajs/vue3';
 
 const props = defineProps({

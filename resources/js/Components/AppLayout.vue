@@ -21,7 +21,19 @@
 
       <nav class="sidebar-nav">
         <template v-for="item in navItems" :key="item.type === 'section' ? '__s__' + item.label : item.route">
-          <div v-if="item.type === 'section'" class="nav-section-label">{{ item.label }}</div>
+          <!-- Expandable section -->
+          <template v-if="item.type === 'section'">
+            <button v-if="item.expandable" class="nav-section-header" @click="toggleSection(item.label)">
+              <span class="nav-section-header-label">{{ item.label }}</span>
+              <svg class="nav-section-chevron" :class="{ 'rotated': expandedSections[item.label] }" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg>
+            </button>
+            <div v-else class="nav-section-label">{{ item.label }}</div>
+            <!-- Section items -->
+            <div class="section-items" :class="{ 'section-items--collapsed': item.expandable && !expandedSections[item.label] && (isMobile || !sidebarMini) }">
+              <sidebar-link v-for="subItem in item.items" :key="subItem.route" :item="subItem" @click="onNavClick" />
+            </div>
+          </template>
+          <!-- Regular nav item -->
           <sidebar-link v-else :item="item" @click="onNavClick" />
         </template>
       </nav>
@@ -46,11 +58,33 @@
         <button class="topbar-menu-btn" @click="toggleSidebar">
           <svg-icon name="menu" />
         </button>
-        <div class="topbar-title">
-          <span class="topbar-event">{{ $page.props.eventName }}</span>
-          <span class="topbar-sep">·</span>
-          <span class="topbar-day">{{ $page.props.matchDay }}</span>
+
+        <!-- Event selector -->
+        <div class="event-selector" ref="selectorRef">
+          <button class="event-selector-btn" @click="selectorOpen = !selectorOpen">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/></svg>
+            <span class="event-selector-label">{{ activeEventLabel }}</span>
+            <svg class="event-selector-chevron" :class="{ 'rotated': selectorOpen }" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg>
+          </button>
+
+          <transition name="dropdown">
+            <div v-if="selectorOpen" class="event-dropdown">
+              <div class="event-dropdown-header">Switch Event</div>
+              <button
+                v-for="ev in page.props.eventList"
+                :key="ev.id"
+                class="event-dropdown-item"
+                :class="{ 'event-dropdown-item--active': ev.id === page.props.activeEventId }"
+                @click="selectEvent(ev.id)"
+              >
+                <span class="event-dropdown-name">{{ ev.name }}</span>
+                <svg v-if="ev.id === page.props.activeEventId" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 6L9 17l-5-5"/></svg>
+              </button>
+              <div v-if="!page.props.eventList?.length" class="event-dropdown-empty">No events</div>
+            </div>
+          </transition>
         </div>
+
         <div class="topbar-right">
           <span class="topbar-date">{{ $page.props.today }}</span>
           <div class="topbar-live-dot" />
@@ -82,6 +116,35 @@ import Toast from './Toast.vue';
 
 const page = usePage();
 
+// ── Event selector ─────────────────────────────────────────────────────────
+const selectorOpen = ref(false);
+const selectorRef  = ref(null);
+
+const activeEventLabel = computed(() => {
+  const id = page.props.activeEventId;
+  if (!id) return 'Select Event';
+  const ev = page.props.eventList?.find(e => e.id === id);
+  return ev ? (ev.name) : 'Select Event';
+});
+
+function selectEvent(eventId) {
+  console.log('Selecting event with ID:', eventId);
+  selectorOpen.value = false;
+  router.post('/session/active-event', { event_id: eventId }, { 
+    preserveScroll: true,
+    onSuccess: () => {
+      // Reload the current page to fetch fresh data with new event context
+      router.reload({ only: ['activeEvent', 'eventTeams', 'teams', 'plans', 'movementTemplates'] });
+    }
+  });
+}
+
+function onDocClick(e) {
+  if (selectorRef.value && !selectorRef.value.contains(e.target)) {
+    selectorOpen.value = false;
+  }
+}
+
 // Theme & density
 const theme = ref(localStorage.getItem('lms-theme') || 'light');
 const density = ref(localStorage.getItem('lms-density') || 'comfortable');
@@ -101,6 +164,24 @@ const sidebarOpen = ref(false);
 const sidebarMini = ref(localStorage.getItem('lms-sidebar-mini') === 'true');
 const windowWidth = ref(typeof window !== 'undefined' ? window.innerWidth : 1280);
 const isMobile = computed(() => windowWidth.value < 768);
+
+// Expandable sections
+const expandedSections = ref({ Master: true, Setups: false }); // Only Master expanded by default
+
+function toggleSection(sectionLabel) {
+  const isCurrentlyExpanded = expandedSections.value[sectionLabel];
+  
+  if (isCurrentlyExpanded) {
+    // Just collapse this section
+    expandedSections.value[sectionLabel] = false;
+  } else {
+    // Collapse all sections and expand only this one
+    Object.keys(expandedSections.value).forEach(key => {
+      expandedSections.value[key] = false;
+    });
+    expandedSections.value[sectionLabel] = true;
+  }
+}
 
 function toggleSidebar() {
   if (isMobile.value) {
@@ -126,9 +207,13 @@ const mainWrapStyle = computed(() => {
 function onResize() { windowWidth.value = window.innerWidth; }
 onMounted(() => {
   window.addEventListener('resize', onResize);
+  document.addEventListener('click', onDocClick);
   if (!isMobile.value) sidebarOpen.value = true;
 });
-onUnmounted(() => window.removeEventListener('resize', onResize));
+onUnmounted(() => {
+  window.removeEventListener('resize', onResize);
+  document.removeEventListener('click', onDocClick);
+});
 
 const navItems = [
   { label: 'Dashboard',     route: 'dashboard',        icon: 'dashboard' },
@@ -137,21 +222,35 @@ const navItems = [
   { label: 'Library',       route: 'library',           icon: 'database' },
   { label: 'Jobs Queue',    route: 'jobs',              icon: 'jobs' },
   { label: 'Jobs (Mobile)', route: 'jobs/mobile',       icon: 'phone' },
-  { label: 'Job Detail',    route: 'job/JOB-2026-001',  icon: 'info' },
   { label: 'Live Tracker',  route: 'tracker',           icon: 'tracker' },
-  { label: 'Fleet',         route: 'fleet',             icon: 'fleet' },
-  { label: 'Teams',         route: 'teams',             icon: 'team' },
   { label: 'Matches',       route: 'matches',           icon: 'trophy' },
   { label: 'Kit Truck',     route: 'kit-truck',         icon: 'fleet' },
-  { label: 'Contacts',      route: 'contacts',          icon: 'contacts' },
   { label: 'Notifications', route: 'notifications',     icon: 'bell' },
   { label: 'Daily Email',   route: 'email',             icon: 'email' },
-  { label: 'Audit Trail',   route: 'audit',             icon: 'audit' },
   { label: 'Analytics',     route: 'analytics',         icon: 'chart' },
-  { type: 'section', label: 'Setups' },
-  { label: 'Users',         route: 'setups/users',       icon: 'user'   },
-  { label: 'Roles',         route: 'setups/roles',       icon: 'shield' },
-  { label: 'Permissions',   route: 'setups/permissions', icon: 'key'    },
+  { label: 'Event Teams',   route: 'event-teams',       icon: 'team' },
+  { 
+    type: 'section', 
+    label: 'Master', 
+    expandable: true,
+    items: [
+      { label: 'Events',        route: 'events',            icon: 'trophy' },
+      { label: 'Teams',         route: 'teams',             icon: 'team' },
+      { label: 'Fleet',         route: 'fleet',             icon: 'fleet' },
+      { label: 'Contacts',      route: 'contacts',          icon: 'contacts' },
+      { label: 'Audit Trail',   route: 'audit',             icon: 'audit' },
+    ]
+  },
+  { 
+    type: 'section', 
+    label: 'Setups',
+    expandable: true,
+    items: [
+      { label: 'Users',         route: 'setups/users',       icon: 'user'   },
+      { label: 'Roles',         route: 'setups/roles',       icon: 'shield' },
+      { label: 'Permissions',   route: 'setups/permissions', icon: 'key'    },
+    ]
+  },
 ];
 
 const mobileNavItems = [
@@ -303,6 +402,52 @@ MobileNavItem.props = ['item'];
   border-top: 1px solid var(--border);
 }
 
+.nav-section-header {
+  display: flex; align-items: center; justify-content: space-between;
+  width: 100%; background: none; border: none; cursor: pointer;
+  padding: 10px 10px 3px; margin-top: 4px;
+  transition: background 0.13s;
+  border-radius: 6px;
+}
+.nav-section-header:hover { background: var(--panel); }
+.nav-section-header-label {
+  font-size: 10.5px; font-weight: 700; letter-spacing: 0.07em;
+  text-transform: uppercase; color: var(--ink4);
+  white-space: nowrap;
+}
+.nav-section-chevron {
+  color: var(--ink4); flex-shrink: 0; transition: transform 0.2s;
+}
+.nav-section-chevron.rotated { transform: rotate(180deg); }
+
+.section-items { 
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  max-height: 2000px;
+  opacity: 1;
+  transition: max-height 0.3s ease, opacity 0.2s ease, margin 0.3s ease;
+}
+.section-items--collapsed {
+  max-height: 0 !important;
+  opacity: 0;
+  margin: 0;
+}
+
+.sidebar--mini .nav-section-header {
+  font-size: 0; padding: 0; margin: 6px 8px;
+  border-top: 1px solid var(--border);
+  pointer-events: none;
+}
+.sidebar--mini .nav-section-header-label,
+.sidebar--mini .nav-section-chevron { display: none; }
+
+/* Always show section items in mini mode */
+.sidebar--mini .section-items {
+  max-height: 2000px !important;
+  opacity: 1 !important;
+}
+
 :deep(.sidebar-link) {
   display: flex; align-items: center; gap: 10px;
   padding: 9px 10px; border-radius: 7px;
@@ -368,10 +513,48 @@ MobileNavItem.props = ['item'];
 }
 .topbar-menu-btn:hover { background: var(--panel); color: var(--ink); }
 
-.topbar-title { display: flex; align-items: center; gap: 6px; flex: 1; }
-.topbar-event { font-weight: 700; font-size: 14px; color: var(--ink); }
-.topbar-sep { color: var(--ink4); }
-.topbar-day { font-size: 13px; color: var(--ink3); }
+/* Event selector */
+.event-selector { position: relative; flex: 1; }
+
+.event-selector-btn {
+  display: inline-flex; align-items: center; gap: 7px;
+  background: var(--panel); border: 1px solid var(--border);
+  border-radius: 8px; padding: 5px 10px;
+  cursor: pointer; color: var(--ink); font-size: 13px; font-weight: 600;
+  transition: border-color .15s, background .15s;
+  max-width: 260px;
+}
+.event-selector-btn:hover { border-color: var(--accent); background: var(--accent-soft); }
+.event-selector-label { flex: 1; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.event-selector-chevron { color: var(--ink3); flex-shrink: 0; transition: transform .15s; }
+.event-selector-chevron.rotated { transform: rotate(180deg); }
+
+.event-dropdown {
+  position: absolute; top: calc(100% + 6px); left: 0;
+  min-width: 240px; max-width: 320px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,.12);
+  z-index: 200; overflow: hidden;
+}
+.event-dropdown-header {
+  padding: 8px 12px 6px;
+  font-size: 10px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .06em; color: var(--ink4);
+  border-bottom: 1px solid var(--border);
+}
+.event-dropdown-item {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  width: 100%; padding: 9px 12px; background: none; border: none;
+  cursor: pointer; color: var(--ink2); font-size: 13px; text-align: left;
+  transition: background .12s;
+}
+.event-dropdown-item:hover { background: var(--panel); color: var(--ink); }
+.event-dropdown-item--active { color: var(--accent); font-weight: 600; }
+.event-dropdown-name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.event-dropdown-empty { padding: 10px 12px; font-size: 12px; color: var(--ink4); }
+
+.dropdown-enter-active, .dropdown-leave-active { transition: opacity .15s, transform .15s; }
+.dropdown-enter-from, .dropdown-leave-to { opacity: 0; transform: translateY(-6px); }
 
 .topbar-right {
   display: flex; align-items: center; gap: 6px;

@@ -4,6 +4,8 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class Team extends Model
 {
@@ -88,6 +90,29 @@ class Team extends Model
     public function destinationAirport()
     {
         return $this->belongsTo(Airport::class, 'destination_airport_id');
+    }
+
+    public function flights(): HasMany
+    {
+        return $this->hasMany(TeamFlight::class, 'team_id');
+    }
+
+    public function stays(): HasMany
+    {
+        return $this->hasMany(TeamStay::class, 'team_id');
+    }
+
+    /**
+     * Get the current/latest stay for this team (for event-specific context).
+     */
+    public function stay(): HasOne
+    {
+        return $this->hasOne(TeamStay::class, 'team_id')->latestOfMany();
+    }
+
+    public function eventAssignments(): HasMany
+    {
+        return $this->hasMany(EventTeam::class, 'team_id');
     }
 
     /**

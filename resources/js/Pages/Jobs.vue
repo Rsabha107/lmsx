@@ -84,7 +84,7 @@
         </div>
       </div>
       <div class="page-header-actions">
-        <RefreshButton :only="['schedule']" />
+        <RefreshButton :only="['schedule']" @refresh="handleRefresh" />
         <Button variant="secondary" size="sm">
           <template #icon><svg-icon name="filter" :size="14" /></template>
           Filter
@@ -125,7 +125,10 @@
           >
             <div class="jl-col-job">
               <span class="jl-job-id">{{ job.id }}</span>
-              <span class="jl-job-phase">{{ job.kind || '—' }}</span>
+              <div style="display: flex; align-items: center; gap: 4px; flex-wrap: wrap;">
+                <span class="jl-job-phase">{{ job.kind || '—' }}</span>
+                <span v-if="job.date" class="jl-job-date">{{ formatDate(job.date) }}</span>
+              </div>
             </div>
             <div class="jl-col-stage">
               <status-pill :tone="statusTone(job.status)" :dot="true" size="sm">
@@ -133,7 +136,10 @@
               </status-pill>
             </div>
             <div class="jl-col-route">
-              <span class="jl-team">{{ job.team }}</span>
+              <div style="display: flex; align-items: center; gap: 4px; flex-wrap: wrap;">
+                <span class="jl-team">{{ job.team }}</span>
+                <span v-if="job.event_name" class="jl-event-badge">{{ job.event_code || job.event_name }}</span>
+              </div>
               <span class="jl-route">{{ job.from }} → {{ job.to }}</span>
             </div>
             <div class="jl-col-progress">
@@ -170,7 +176,13 @@
         <div class="detail-card">
           <div class="detail-header-top">
             <span class="team-badge">{{ selectedJob.code }}</span>
-            <div class="detail-id">{{ selectedJob.id }} · {{ selectedJob.team }}</div>
+            <div>
+              <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 2px;">
+                <div class="detail-id">{{ selectedJob.id }} · {{ selectedJob.team }}</div>
+                <span v-if="selectedJob.event_name" class="detail-event-badge">{{ selectedJob.event_code || selectedJob.event_name }}</span>
+              </div>
+              <div v-if="selectedJob.date" class="detail-date">{{ formatDateLong(selectedJob.date) }}</div>
+            </div>
             <status-pill :tone="statusTone(selectedJob.status)" :dot="true" size="sm">
               {{ statusLabel(selectedJob.status) }}
             </status-pill>
@@ -188,7 +200,7 @@
             {{ selectedJob.from }} → {{ selectedJob.to }} · {{ selectedJob.vehicle }} · {{ selectedJob.pax }} pax
           </div>
 
-          <div :class="['detail-stats', selectedJob.status === 'completed' && timeVariance ? 'detail-stats--five' : '']">
+          <div :class="['detail-stats', (selectedJob.status === 'completed' && timeVariance) || selectedJob.updated_at ? 'detail-stats--five' : '']">
             <mini-stat label="Window" :value="`${selectedJob.dep} – ${selectedJob.arr}`"/>
             <mini-stat label="Progress" :value="`${progressPercentage}%`"/>
             <mini-stat label="Checks" :value="`${doneCount}/${totalChecks}`"/>
@@ -197,13 +209,11 @@
               label="Time Variance" 
               :value="timeVariance" 
               :tone="timeVarianceTone"/>
+            <mini-stat 
+              v-else-if="selectedJob.updated_at" 
+              label="Last Update" 
+              :value="formatTimeAgo(selectedJob.updated_at)"/>
             <mini-stat label="Status" :value="statusLabel(selectedJob.status)" :tone="statusTone(selectedJob.status)"/>
-          </div>
-
-          <div class="detail-full-link">
-            <span @click="$inertia.visit(`/job/${selectedJob.id}`)" style="color: var(--accent); cursor: pointer; text-decoration: none; font-size: 13px; font-weight: 600;">
-              Full detail →
-            </span>
           </div>
         </div>
 
@@ -224,11 +234,17 @@
             <div class="crew-list">
               <div v-for="(person, label) in crewMembers" :key="label" class="crew-item">
                 <div class="crew-avatar">
-                  {{ getInitials(person) }}
+                  {{ getInitials(person.name) }}
                 </div>
                 <div class="crew-info">
-                  <div class="crew-name">{{ person }}</div>
+                  <div class="crew-name">{{ person.name }}</div>
                   <div class="crew-role">{{ label }}</div>
+                  <a v-if="person.phone" :href="`tel:${person.phone}`" class="crew-phone">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/>
+                    </svg>
+                    {{ person.phone }}
+                  </a>
                 </div>
                 <status-pill tone="ok" :dot="true" size="sm">On shift</status-pill>
               </div>
@@ -259,14 +275,20 @@
           <label class="override-label">CHECKPOINT</label>
           <select v-model="overrideCheckpoint" class="override-select">
             <option v-for="cp in selectedJob?.checkpoints" :key="cp.id" :value="cp">
-              {{ cp.label || cp.name }} — {{ cp.status || cp.state }} (scheduled {{ cp.at }})
+              {{ cp.label || cp.name }} — {{ cp.status || cp.state }} (scheduled {{ cp.at }}){{ (cp.requires_photo || cp.requiresPhoto || cp.requires_signature || cp.requiresSignature) ? ' 📋' : '' }}
             </option>
           </select>
+          <div v-if="overrideCheckpoint?.requires_photo || overrideCheckpoint?.requiresPhoto || overrideCheckpoint?.requires_signature || overrideCheckpoint?.requiresSignature" class="override-field-hint">
+            <strong>Evidence required:</strong> 
+            <span v-if="overrideCheckpoint?.requires_photo || overrideCheckpoint?.requiresPhoto">Photo</span>
+            <span v-if="(overrideCheckpoint?.requires_photo || overrideCheckpoint?.requiresPhoto) && (overrideCheckpoint?.requires_signature || overrideCheckpoint?.requiresSignature)"> and </span>
+            <span v-if="overrideCheckpoint?.requires_signature || overrideCheckpoint?.requiresSignature">Signature</span>
+          </div>
         </div>
 
         <div class="override-field">
           <label class="override-label">NEW STATE</label>
-          <div class="override-states">
+          <div class="override-states" :style="{ gridTemplateColumns: `repeat(${overrideStates.length}, 1fr)` }">
             <button v-for="s in overrideStates" :key="s.value"
               :class="['override-state-btn', `override-state-btn--${s.value}`, overrideState === s.value ? 'override-state-btn--active' : '']"
               @click="overrideState = s.value">
@@ -277,7 +299,7 @@
           </div>
         </div>
 
-        <div v-if="overrideState !== 'missed' && overrideState !== 'skipped'" class="override-two-col">
+        <div v-if="overrideState === 'done'" class="override-two-col">
           <div class="override-field">
             <label class="override-label">ACTUAL TIME</label>
             <input type="time" v-model="overrideTime" class="override-input" />
@@ -308,6 +330,47 @@
           <textarea v-model="overrideNotes" class="override-textarea" placeholder="Additional notes (optional)" rows="3" />
         </div>
 
+        <!-- Photo Upload (if required) -->
+        <div v-if="overrideState === 'done' && (overrideCheckpoint?.requires_photo || overrideCheckpoint?.requiresPhoto)" class="override-field">
+          <label class="override-label">PHOTO (REQUIRED)</label>
+          <input 
+            type="file" 
+            accept="image/*" 
+            @change="handlePhotoUpload" 
+            class="override-file-input"
+            ref="photoInput"
+          />
+          <div v-if="overridePhotoPreview" class="photo-preview">
+            <img :src="overridePhotoPreview" alt="Photo preview" @click="openPhotoLightbox" style="cursor: pointer;" />
+            <button type="button" @click="clearPhoto" class="clear-photo-btn">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                <path d="M12 4L4 12M4 4L12 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+              </svg>
+            </button>
+          </div>
+          <div class="override-field-hint">Upload a photo as evidence</div>
+        </div>
+
+        <!-- Signature Canvas (if required) -->
+        <div v-if="overrideState === 'done' && (overrideCheckpoint?.requires_signature || overrideCheckpoint?.requiresSignature)" class="override-field">
+          <label class="override-label">SIGNATURE (REQUIRED)</label>
+          <div class="signature-pad-wrapper">
+            <canvas 
+              ref="signatureCanvas" 
+              @mousedown="startSignature" 
+              @mousemove="drawSignature" 
+              @mouseup="endSignature" 
+              @mouseleave="endSignature"
+              @touchstart.prevent="startSignature" 
+              @touchmove.prevent="drawSignature" 
+              @touchend.prevent="endSignature"
+              class="signature-canvas"
+            ></canvas>
+            <button type="button" @click="clearSignature" class="clear-signature-btn">Clear Signature</button>
+          </div>
+          <div class="override-field-hint">Sign with your mouse or finger</div>
+        </div>
+
         <label class="override-notify">
           <input type="checkbox" v-model="overrideNotify" class="override-notify-check" />
           <div class="override-notify-text">
@@ -322,16 +385,28 @@
           <span class="override-signed-as">Signed as <strong>Logistics Manager</strong></span>
           <div style="display:flex;gap:8px;">
             <Button variant="secondary" size="sm" @click="showOverrideModal = false" :disabled="overrideProcessing">Cancel</Button>
-            <Button variant="primary" size="sm" :disabled="!overrideReason || overrideProcessing" :processing="overrideProcessing" @click="submitOverride">Override &amp; log</Button>
+            <Button variant="primary" size="sm" :disabled="!canSubmitOverride" :processing="overrideProcessing" @click="submitOverride">Override &amp; log</Button>
           </div>
         </div>
       </template>
     </Modal>
+
+    <!-- Photo Lightbox -->
+    <div v-if="showPhotoLightbox" class="photo-lightbox" @click="closePhotoLightbox">
+      <div class="photo-lightbox-content" @click.stop>
+        <img :src="overridePhotoPreview" alt="Photo full view" />
+        <button type="button" @click="closePhotoLightbox" class="photo-lightbox-close">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+            <path d="M18 6L6 18M6 6L18 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+        </button>
+      </div>
+    </div>
   </app-layout>
 </template>
 
 <script setup>
-import { ref, computed } from 'vue';
+import { ref, computed, nextTick, watch } from 'vue';
 import { router } from '@inertiajs/vue3';
 import AppLayout from '../Components/AppLayout.vue';
 import StatusPill from '../Components/StatusPill.vue';
@@ -404,6 +479,18 @@ function jobStepsText(job) {
 
 function selectJob(job) {
   selectedJob.value = job;
+}
+
+function handleRefresh() {
+  // Store the current job ID before refresh
+  const currentJobId = selectedJob.value?.id;
+  
+  // After refresh completes, re-select the same job if it was selected
+  if (currentJobId) {
+    nextTick(() => {
+      selectedJob.value = props.schedule.find(j => j.id === currentJobId) || null;
+    });
+  }
 }
 
 function jobProgress(job) {
@@ -483,13 +570,51 @@ const timeVarianceTone = computed(() => {
 const crewMembers = computed(() => {
   if (!selectedJob.value) return {};
   return {
-    Supervisor: selectedJob.value.supervisor,
-    Driver: selectedJob.value.driver,
+    Supervisor: {
+      name: selectedJob.value.supervisor,
+      phone: selectedJob.value.supervisor_phone,
+    },
+    Driver: {
+      name: selectedJob.value.driver,
+      phone: selectedJob.value.driver_phone,
+    },
   };
 });
 
 function getInitials(name) {
   return name.split(' ').map(s => s[0]).join('').slice(0, 2);
+}
+
+function formatDate(dateString) {
+  if (!dateString) return '';
+  const date = new Date(dateString);
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${month}/${day}`;
+}
+
+function formatDateLong(dateString) {
+  if (!dateString) return '';
+  const date = new Date(dateString);
+  const options = { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' };
+  return date.toLocaleDateString('en-US', options);
+}
+
+function formatTimeAgo(dateString) {
+  if (!dateString) return '—';
+  const date = new Date(dateString);
+  const now = new Date();
+  const diffMs = now - date;
+  const diffMins = Math.floor(diffMs / 60000);
+  
+  if (diffMins < 1) return 'Just now';
+  if (diffMins < 60) return `${diffMins}m ago`;
+  
+  const diffHours = Math.floor(diffMins / 60);
+  if (diffHours < 24) return `${diffHours}h ago`;
+  
+  const diffDays = Math.floor(diffHours / 24);
+  return `${diffDays}d ago`;
 }
 
 const filters = computed(() => [
@@ -559,24 +684,56 @@ const overrideTime = ref('');
 const overrideReason = ref('');
 const overrideNotes = ref('');
 const overrideNotify = ref(true);
+const overridePhoto = ref(null);
+const overridePhotoPreview = ref(null);
+const overrideSignature = ref(null);
+const photoInput = ref(null);
+const signatureCanvas = ref(null);
+const isDrawing = ref(false);
+const signatureContext = ref(null);
+const showPhotoLightbox = ref(false);
 
-const overrideStates = [
-  { value: 'done',    label: 'Done',    icon: '✓', desc: 'Confirm completion manually' },
-  { value: 'missed',  label: 'Missed',  icon: '✕', desc: 'Mark as failed or not reached' },
-  { value: 'skipped', label: 'Skipped', icon: '↷', desc: 'No longer applies to this job' },
-];
+const overrideStates = computed(() => {
+  return [
+    { value: 'done', label: 'Done', icon: '✓', desc: 'Confirm completion manually' },
+    { value: 'skipped', label: 'Skipped', icon: '↷', desc: 'No longer applies to this job' }
+  ];
+});
 
 function openOverrideModal() {
   const active = selectedJob.value?.checkpoints?.find(c => c.status === 'active' || c.state === 'active');
   overrideCheckpoint.value = active ?? selectedJob.value?.checkpoints?.[0] ?? null;
+  
+  // Debug checkpoint requirements
+  console.log('Checkpoint data:', {
+    checkpoint: overrideCheckpoint.value,
+    requires_photo: overrideCheckpoint.value?.requires_photo,
+    requires_signature: overrideCheckpoint.value?.requires_signature,
+    requiresPhoto: overrideCheckpoint.value?.requiresPhoto,
+    requiresSignature: overrideCheckpoint.value?.requiresSignature
+  });
+  
+  // Set initial state - if checkpoint requires evidence, start with 'done', otherwise 'done'
+  const requiresEvidence = overrideCheckpoint.value?.requires_photo || overrideCheckpoint.value?.requiresPhoto || 
+                           overrideCheckpoint.value?.requires_signature || overrideCheckpoint.value?.requiresSignature;
   overrideState.value = 'done';
+  
   const now = new Date();
   overrideTime.value = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
   overrideReason.value = '';
   overrideNotes.value = '';
   overrideNotify.value = true;
+  overridePhoto.value = null;
+  overridePhotoPreview.value = null;
+  overrideSignature.value = null;
   overrideProcessing.value = false;
+  showPhotoLightbox.value = false;
   showOverrideModal.value = true;
+  
+  // Initialize signature canvas after modal opens
+  nextTick(() => {
+    initSignatureCanvas();
+  });
 }
 
 const overrideVarianceMinutes = computed(() => {
@@ -594,6 +751,122 @@ const overrideVarianceText = computed(() => {
   const abs = Math.abs(v);
   return v > 0 ? `+${abs} min late` : `${abs} min early`;
 });
+
+const canSubmitOverride = computed(() => {
+  if (!overrideReason.value || overrideProcessing.value) return false;
+  
+  // Check if state is 'done' and checkpoint requires photo or signature
+  if (overrideState.value === 'done') {
+    const needsPhoto = overrideCheckpoint.value?.requires_photo || overrideCheckpoint.value?.requiresPhoto;
+    const needsSignature = overrideCheckpoint.value?.requires_signature || overrideCheckpoint.value?.requiresSignature;
+    if (needsPhoto && !overridePhoto.value) return false;
+    if (needsSignature && !overrideSignature.value) return false;
+  }
+  
+  return true;
+});
+
+// Photo handling
+function handlePhotoUpload(event) {
+  const file = event.target.files[0];
+  if (file) {
+    console.log('Photo selected:', {
+      name: file.name,
+      size: file.size,
+      type: file.type
+    });
+    
+    // Validate file
+    if (!file.type.startsWith('image/')) {
+      alert('Please select a valid image file');
+      return;
+    }
+    
+    if (file.size > 10 * 1024 * 1024) { // 10MB
+      alert('Photo must be less than 10MB');
+      return;
+    }
+    
+    overridePhoto.value = file;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      overridePhotoPreview.value = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  }
+}
+
+function clearPhoto() {
+  overridePhoto.value = null;
+  overridePhotoPreview.value = null;
+  if (photoInput.value) {
+    photoInput.value.value = '';
+  }
+}
+
+function openPhotoLightbox() {
+  console.log('Opening photo lightbox');
+  showPhotoLightbox.value = true;
+}
+
+function closePhotoLightbox() {
+  console.log('Closing photo lightbox');
+  showPhotoLightbox.value = false;
+}
+
+// Signature handling
+function initSignatureCanvas() {
+  if (!signatureCanvas.value) return;
+  
+  const canvas = signatureCanvas.value;
+  canvas.width = canvas.offsetWidth;
+  canvas.height = 150;
+  signatureContext.value = canvas.getContext('2d');
+  
+  if (signatureContext.value) {
+    signatureContext.value.strokeStyle = '#111827';
+    signatureContext.value.lineWidth = 2;
+    signatureContext.value.lineCap = 'round';
+  }
+}
+
+function startSignature(e) {
+  if (!signatureCanvas.value || !signatureContext.value) {
+    // Initialize if not ready
+    initSignatureCanvas();
+    if (!signatureContext.value) return;
+  }
+  
+  isDrawing.value = true;
+  const rect = signatureCanvas.value.getBoundingClientRect();
+  const x = (e.clientX || e.touches[0].clientX) - rect.left;
+  const y = (e.clientY || e.touches[0].clientY) - rect.top;
+  signatureContext.value.beginPath();
+  signatureContext.value.moveTo(x, y);
+}
+
+function drawSignature(e) {
+  if (!isDrawing.value || !signatureContext.value || !signatureCanvas.value) return;
+  
+  const rect = signatureCanvas.value.getBoundingClientRect();
+  const x = (e.clientX || e.touches?.[0]?.clientX) - rect.left;
+  const y = (e.clientY || e.touches?.[0]?.clientY) - rect.top;
+  signatureContext.value.lineTo(x, y);
+  signatureContext.value.stroke();
+}
+
+function endSignature() {
+  if (!isDrawing.value || !signatureCanvas.value) return;
+  isDrawing.value = false;
+  overrideSignature.value = signatureCanvas.value.toDataURL();
+}
+
+function clearSignature() {
+  if (signatureContext.value && signatureCanvas.value) {
+    signatureContext.value.clearRect(0, 0, signatureCanvas.value.width, signatureCanvas.value.height);
+    overrideSignature.value = null;
+  }
+}
 
 function startJob() {
   if (!selectedJob.value) return;
@@ -638,20 +911,64 @@ function startJob() {
 function submitOverride() {
   if (!overrideReason.value || !overrideCheckpoint.value) return;
 
+  // Validate required photo
+  const needsPhoto = overrideCheckpoint.value?.requires_photo || overrideCheckpoint.value?.requiresPhoto;
+  const needsSignature = overrideCheckpoint.value?.requires_signature || overrideCheckpoint.value?.requiresSignature;
+  
+  if (overrideState.value === 'done' && needsPhoto && !overridePhoto.value) {
+    alert('Please upload a photo as required by this checkpoint.');
+    return;
+  }
+
+  // Validate required signature
+  if (overrideState.value === 'done' && needsSignature && !overrideSignature.value) {
+    alert('Please provide a signature as required by this checkpoint.');
+    return;
+  }
+
   overrideProcessing.value = true;
   
   const checkpointId = overrideCheckpoint.value.id || overrideCheckpoint.value.dbId;
   
-  // Build payload
-  const payload = {
-    state: overrideState.value,
-    reason: overrideReason.value,
-    notes: overrideNotes.value || null,
-  };
+  // Build FormData for file uploads
+  const formData = new FormData();
+  formData.append('state', overrideState.value);
+  formData.append('reason', overrideReason.value);
+  if (overrideNotes.value) formData.append('notes', overrideNotes.value);
 
   // Add actual time only for 'done' state
   if (overrideState.value === 'done') {
-    payload.actual_time = overrideTime.value;
+    formData.append('actual_time', overrideTime.value);
+    
+    // Add photo if provided
+    if (overridePhoto.value && overridePhoto.value instanceof File) {
+      console.log('Appending photo to FormData:', {
+        name: overridePhoto.value.name,
+        size: overridePhoto.value.size,
+        type: overridePhoto.value.type
+      });
+      
+      // Create a new File object with a safe filename if needed
+      const safeFilename = overridePhoto.value.name.replace(/[^a-zA-Z0-9.-]/g, '_');
+      const fileToUpload = new File([overridePhoto.value], safeFilename, { type: overridePhoto.value.type });
+      
+      formData.append('photo', fileToUpload);
+    }
+    
+    // Add signature if required and provided
+    if (needsSignature && overrideSignature.value) {
+      formData.append('signature_data', overrideSignature.value);
+    }
+  }
+  
+  // Debug: Log FormData contents
+  console.log('FormData entries:');
+  for (let [key, value] of formData.entries()) {
+    if (value instanceof File) {
+      console.log(`${key}:`, { name: value.name, size: value.size, type: value.type });
+    } else {
+      console.log(`${key}:`, value);
+    }
   }
 
   // Get CSRF token
@@ -661,15 +978,19 @@ function submitOverride() {
   fetch(`/jobs/checkpoint/${checkpointId}/override`, {
     method: 'POST',
     headers: {
-      'Content-Type': 'application/json',
       'Accept': 'application/json',
       'X-CSRF-TOKEN': csrfToken || '',
     },
-    body: JSON.stringify(payload),
+    body: formData,
   })
     .then(response => {
       if (!response.ok) {
-        throw new Error('Network response was not ok');
+        // Try to get validation errors
+        return response.json().then(data => {
+          throw new Error(data.message || `Server returned ${response.status}`);
+        }).catch(() => {
+          throw new Error(`Server returned ${response.status}: ${response.statusText}`);
+        });
       }
       return response.json();
     })
@@ -695,7 +1016,7 @@ function submitOverride() {
     .catch(error => {
       overrideProcessing.value = false;
       console.error('Error updating checkpoint:', error);
-      alert('Failed to update checkpoint. Please try again.');
+      alert('Failed to update checkpoint: ' + error.message);
     });
 }
 
@@ -838,9 +1159,8 @@ function submitOverride() {
   display: flex; flex-direction: column; gap: 2px; min-width: 0;
 }
 .jl-job-id {
-  font-size: 12px; font-weight: 700; color: var(--ink);
+  font-size: 10px; font-weight: 700; color: var(--ink);
   font-family: var(--font-mono, monospace);
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .jl-job-type {
   font-size: 10px; color: var(--ink3); font-weight: 500;
@@ -848,6 +1168,16 @@ function submitOverride() {
 .jl-job-phase {
   font-size: 10px; color: var(--ink3); font-weight: 500;
   text-transform: capitalize;
+}
+
+.jl-job-date {
+  font-size: 9px;
+  font-weight: 600;
+  color: var(--ink3);
+  background: var(--panel);
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-family: var(--font-mono, monospace);
 }
 
 .jl-col-stage {
@@ -864,6 +1194,17 @@ function submitOverride() {
 .jl-route {
   font-size: 10px; color: var(--ink3);
   word-break: break-word;
+}
+
+.jl-event-badge {
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--accent);
+  background: var(--accent-soft, rgba(99, 102, 241, 0.1));
+  padding: 1px 5px;
+  border-radius: 3px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
 }
 
 .jl-col-progress {
@@ -958,14 +1299,31 @@ function submitOverride() {
   display: inline-flex; align-items: center; justify-content: center;
 }
 .detail-id {
-  font-size: 18px; font-weight: 700; color: var(--ink); letter-spacing: -0.3px;
-  line-height: 34px;
+  font-size: 15px; font-weight: 700; color: var(--ink); letter-spacing: -0.3px;
+  line-height: 1.3;
 }
 @media (max-width: 640px) {
   .detail-id {
-    font-size: 16px;
-    line-height: 28px;
+    font-size: 14px;
   }
+}
+
+.detail-event-badge {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--accent);
+  background: var(--accent-soft, rgba(99, 102, 241, 0.1));
+  padding: 2px 8px;
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.detail-date {
+  font-size: 11px;
+  color: var(--ink3);
+  font-weight: 500;
+  margin-top: 2px;
 }
 .detail-subtitle {
   font-size: 12px; color: var(--ink3);
@@ -988,10 +1346,6 @@ function submitOverride() {
   .detail-stats--five {
     grid-template-columns: repeat(2, 1fr);
   }
-}
-
-.detail-full-link {
-  padding-top: 14px;
 }
 
 .detail-grid {
@@ -1088,6 +1442,27 @@ function submitOverride() {
   font-size: 11px; color: var(--ink3);
 }
 
+.crew-phone {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--accent);
+  text-decoration: none;
+  margin-top: 2px;
+  font-family: var(--font-mono, monospace);
+  transition: color 0.15s;
+}
+
+.crew-phone:hover {
+  color: var(--accent-fg, #4338ca);
+  text-decoration: underline;
+}
+
+.crew-phone svg {
+  flex-shrink: 0;
+}
+
 /* Override modal */
 .btn--dark {
   background: #111827; color: #fff; border-color: #111827;
@@ -1134,7 +1509,7 @@ function submitOverride() {
 .override-field-hint { font-size: 11px; color: var(--ink4); }
 
 .override-states {
-  display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;
+  display: grid; gap: 8px;
 }
 
 .override-state-btn {
@@ -1163,6 +1538,12 @@ function submitOverride() {
 .override-state-btn--skipped.override-state-btn--active {
   border-color: var(--ink3); background: var(--panel);
 }
+
+.override-state-btn--success.override-state-btn--active {
+  border-color: #059669; background: #D1FAE5;
+}
+.override-state-btn--success.override-state-btn--active .override-state-icon,
+.override-state-btn--success.override-state-btn--active strong { color: #065F46; }
 
 .override-two-col {
   display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
@@ -1202,4 +1583,163 @@ function submitOverride() {
 }
 .override-signed-as { font-size: 12px; color: var(--ink3); }
 .override-signed-as strong { color: var(--ink); }
+
+/* Photo upload */
+.override-file-input {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface);
+  font-size: 13px;
+  color: var(--ink);
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.photo-preview {
+  position: relative;
+  margin-top: 8px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  overflow: hidden;
+  max-width: 300px;
+}
+
+.photo-preview img {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.clear-photo-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.6);
+  border: none;
+  color: white;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s;
+}
+
+.clear-photo-btn:hover {
+  background: rgba(0, 0, 0, 0.8);
+}
+
+/* Signature pad */
+.signature-pad-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.signature-canvas {
+  width: 100%;
+  height: 150px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: #FAFAFA;
+  cursor: crosshair;
+  touch-action: none;
+}
+
+.clear-signature-btn {
+  align-self: flex-end;
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--ink2);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+  font-family: inherit;
+}
+
+.clear-signature-btn:hover {
+  background: var(--panel);
+  border-color: var(--ink3);
+}
+
+/* Photo Lightbox */
+.photo-lightbox {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.95);
+  z-index: 99999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  cursor: zoom-out;
+  animation: fadeIn 0.2s ease-in-out;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.photo-lightbox-content {
+  position: relative;
+  max-width: 90vw;
+  max-height: 90vh;
+  cursor: default;
+  animation: zoomIn 0.2s ease-out;
+}
+
+@keyframes zoomIn {
+  from { transform: scale(0.9); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+
+.photo-lightbox-content img {
+  max-width: 100%;
+  max-height: 90vh;
+  width: auto;
+  height: auto;
+  display: block;
+  border-radius: 8px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+
+.photo-lightbox-close {
+  position: absolute;
+  top: -50px;
+  right: 0;
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: white;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s;
+  backdrop-filter: blur(10px);
+}
+
+.photo-lightbox-close:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+@media (max-width: 640px) {
+  .photo-lightbox-close {
+    top: 10px;
+    right: 10px;
+  }
+}
 </style>

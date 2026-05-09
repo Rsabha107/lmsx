@@ -12,6 +12,7 @@ class Plan extends Model
     use SoftDeletes;
 
     protected $fillable = [
+        'event_id',
         'code',
         'name',
         'date',
@@ -35,6 +36,14 @@ class Plan extends Model
     public function movementTemplate(): BelongsTo
     {
         return $this->belongsTo(MovementTemplate::class);
+    }
+
+    /**
+     * The event this plan belongs to.
+     */
+    public function event(): BelongsTo
+    {
+        return $this->belongsTo(Event::class);
     }
 
     /**

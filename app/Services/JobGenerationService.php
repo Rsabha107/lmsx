@@ -37,6 +37,7 @@ class JobGenerationService
             // Create the job
             $job = JobOperation::create([
                 'job_id' => $this->generateJobId(),
+                'event_id' => $movement->event_id,
                 'movement_id' => $movement->id,
                 'plan_id' => $movement->plan_id,
                 'team_id' => $movement->team_id,
@@ -108,6 +109,7 @@ class JobGenerationService
             
             JobCheckpoint::create([
                 'job_id' => $job->id,
+                'event_id' => $job->event_id,
                 'checkpoint_id' => $checkpoint->id,
                 'order' => $checkpoint->pivot->order,
                 'name' => $checkpoint->name,
@@ -160,10 +162,18 @@ class JobGenerationService
                 'name' => $planData['name'],
                 'date' => $planData['date'],
                 'status' => $planData['status'] ?? 'draft',
+                'event_id' => $planData['event_id'] ?? null,
                 'movement_template_id' => $template->id,
                 'notes' => $planData['notes'] ?? null,
                 'created_by' => $planData['created_by'] ?? (Auth::check() ? Auth::id() : null),
             ]);
+
+            // Get flight passenger count if flight_id is provided
+            $flightPassengerCount = null;
+            if (!empty($planData['flight_id'])) {
+                $flight = \App\Models\TeamFlight::find($planData['flight_id']);
+                $flightPassengerCount = $flight?->party_size_total;
+            }
 
             // Create movements from template legs
             $legs = $template->legs()->with('checkpointTemplate')->get();
@@ -181,13 +191,18 @@ class JobGenerationService
                 // Update current time for next movement
                 $currentTime = $scheduledArrival->copy();
                 
-                // Determine passenger count: prioritize team's party size, then template estimate
+                // Determine passenger count: prioritize flight > team > template estimate
                 $passengerCount = 0;
-                if ($teamId) {
+                if ($flightPassengerCount !== null) {
+                    // Use flight's passenger count if available
+                    $passengerCount = $flightPassengerCount;
+                } elseif ($teamId) {
+                    // Fall back to team's party size
                     $team = Team::find($teamId);
                     $passengerCount = $team?->party_size_total ?? 0;
                 }
                 if ($passengerCount === 0) {
+                    // Finally, use template estimate
                     $passengerCount = $leg->estimated_passengers ?? 0;
                 }
                 
@@ -201,10 +216,26 @@ class JobGenerationService
                     ? $this->findAvailableDriver($scheduledDeparture, $scheduledArrival)
                     : null;
                 
+                // Determine if this movement should link to the flight
+                $movementFlightId = null;
+                if (!empty($planData['flight_id']) && in_array($leg->leg_type, ['arrival', 'departure'])) {
+                    $movementFlightId = $planData['flight_id'];
+                }
+                
+                // Determine if this movement should link to accommodation
+                $movementAccommodationId = null;
+                if (!empty($planData['accommodation_id'])) {
+                    // Link accommodation to relevant movement types (arrival, hotel transfer, etc.)
+                    $movementAccommodationId = $planData['accommodation_id'];
+                }
+                
                 Movement::create([
                     'code' => $this->generateMovementCode($plan),
                     'plan_id' => $plan->id,
+                    'event_id' => $plan->event_id,
                     'team_id' => $teamId,
+                    'flight_id' => $movementFlightId,
+                    'accommodation_id' => $movementAccommodationId,
                     'checkpoint_template_id' => $leg->checkpoint_template_id,
                     'kind' => $leg->leg_type,
                     'from_location' => $leg->from_location,

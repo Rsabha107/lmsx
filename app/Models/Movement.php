@@ -15,7 +15,10 @@ class Movement extends Model
     protected $fillable = [
         'code',
         'plan_id',
+        'event_id',
         'team_id',
+        'flight_id',
+        'accommodation_id',
         'checkpoint_template_id',
         'kind',
         'from_location',
@@ -57,11 +60,35 @@ class Movement extends Model
     }
 
     /**
+     * The event this movement belongs to.
+     */
+    public function event(): BelongsTo
+    {
+        return $this->belongsTo(Event::class);
+    }
+
+    /**
      * The team for this movement.
      */
     public function team(): BelongsTo
     {
         return $this->belongsTo(Team::class);
+    }
+
+    /**
+     * The flight associated with this movement (for arrivals/departures).
+     */
+    public function flight(): BelongsTo
+    {
+        return $this->belongsTo(TeamFlight::class, 'flight_id');
+    }
+
+    /**
+     * The accommodation associated with this movement.
+     */
+    public function accommodation(): BelongsTo
+    {
+        return $this->belongsTo(TeamStay::class, 'accommodation_id');
     }
 
     /**

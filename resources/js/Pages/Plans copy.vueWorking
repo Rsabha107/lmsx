@@ -855,15 +855,14 @@
             <span class="modal-title">New Plan</span>
             <button class="modal-close" @click="showNewPlan = false"><svg-icon name="x" /></button>
           </div>
-          <div class="new-plan-body">
-            <div class="modal-body">
-              <div v-if="!activeEvent" style="margin-bottom: 16px; padding: 12px; background: #FEF3C7; border: 1px solid #FCD34D; border-radius: 6px; font-size: 12px; color: #92400E;">
-                ⚠️ No active event selected. Please select an event from the dropdown above to create plans.
-              </div>
-              <div v-else style="margin-bottom: 16px; padding: 10px; background: var(--panel); border: 1px solid var(--border); border-radius: 6px; font-size: 12px;">
-                <div style="color: var(--ink3); margin-bottom: 4px; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600;">Creating plan for:</div>
-                <div style="color: var(--ink); font-weight: 500;">{{ activeEvent.name }}</div>
-              </div>
+          <div class="modal-body">
+            <div v-if="!activeEvent" style="margin-bottom: 16px; padding: 12px; background: #FEF3C7; border: 1px solid #FCD34D; border-radius: 6px; font-size: 12px; color: #92400E;">
+              ⚠️ No active event selected. Please select an event from the dropdown above to create plans.
+            </div>
+            <div v-else style="margin-bottom: 16px; padding: 10px; background: var(--panel); border: 1px solid var(--border); border-radius: 6px; font-size: 12px;">
+              <div style="color: var(--ink3); margin-bottom: 4px; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600;">Creating plan for:</div>
+              <div style="color: var(--ink); font-weight: 500;">{{ activeEvent.name }}</div>
+            </div>
             <div style="display: grid; grid-template-columns: 1fr 120px; gap: 12px;">
               <div class="form-field">
                 <label>Date <span style="color: #DC2626;">*</span></label>
@@ -904,22 +903,6 @@
               </select>
               <span v-if="newPlanErrors.team_id" style="color: #DC2626; font-size: 12px; margin-top: 4px; display: block;">{{ newPlanErrors.team_id }}</span>
             </div>
-            
-            <!-- Flight selector - only show if team has multiple flights -->
-            <div v-if="needsFlightSelection" class="form-field">
-              <label>Flight <span style="color: #DC2626;">*</span></label>
-              <select v-model="newPlanFlightId" :style="newPlanErrors.flight_id ? { borderColor: '#DC2626' } : {}">
-                <option :value="null">Select a flight...</option>
-                <option v-for="flight in selectedTeamFlights" :key="flight.id" :value="flight.id">
-                  {{ flight.flight_number || 'Flight' }}
-                  <template v-if="flight.origin_airport">from {{ flight.origin_airport.iata || flight.origin_airport.name }}</template>
-                  <template v-if="flight.scheduled_at"> - {{ new Date(flight.scheduled_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) }}</template>
-                  <template v-if="flight.party_size_total"> ({{ flight.party_size_total }} pax)</template>
-                </option>
-              </select>
-              <span v-if="newPlanErrors.flight_id" style="color: #DC2626; font-size: 12px; margin-top: 4px; display: block;">{{ newPlanErrors.flight_id }}</span>
-            </div>
-            
             <div class="form-field">
               <label>Based on template</label>
               <select v-model="newPlanTemplate">
@@ -975,7 +958,6 @@
                 <span style="font-weight: 700; white-space: nowrap;">Heads-up</span>
                 <span>· Vehicles &amp; drivers will be auto-assigned from the available pool. Conflicts will surface in the Conflicts tab.</span>
               </div>
-            </div>
             </div>
           </div>
           <div class="modal-footer">
@@ -1392,11 +1374,11 @@
           <!-- Footer -->
           <div class="modal-footer">
             <div class="gen-success-footer-hint">
-              All jobs visible in the <a :href="`/jobs?plan=${selectedPlanObj?.id}`" style="color: var(--accent); font-weight: 600; text-decoration: none;">Jobs</a> queue.
+              All jobs visible in the <a href="/jobs" style="color: var(--accent); font-weight: 600; text-decoration: none;">Jobs</a> queue.
             </div>
             <div style="display: flex; gap: 8px;">
               <Button variant="secondary" size="sm" @click="showGenSuccess = false">Close</Button>
-              <Button variant="primary" size="sm" @click="$inertia.visit(`/jobs?plan=${selectedPlanObj?.id}`)">Open Jobs queue →</Button>
+              <Button variant="primary" size="sm" @click="showGenSuccess = false">Open Jobs queue →</Button>
             </div>
           </div>
         </div>
@@ -1752,84 +1734,44 @@
 
           <!-- Form body -->
           <div class="modal-body" style="gap: 12px;">
-            <!-- Read-only Flight/Team Info Card -->
-            <div v-if="editingMovement?.flight || editingMovement?.team" style="padding: 14px; background: var(--panel); border: 1.5px solid var(--border); border-radius: 10px;">
-              <div style="font-size: 10px; font-weight: 700; letter-spacing: 0.8px; text-transform: uppercase; color: var(--ink3); margin-bottom: 10px;">
-                📋 MOVEMENT DETAILS
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+              <div class="form-field">
+                <label>PHASE</label>
+                <select v-model="emKind">
+                  <option value="">Select phase...</option>
+                  <option value="arrival">Arrival</option>
+                  <option value="departure">Departure</option>
+                  <option value="transfer">Transfer</option>
+                  <option value="training">Training</option>
+                  <option value="match">Match</option>
+                </select>
               </div>
-              
-              <div style="display: grid; gap: 12px;">
-                <!-- Flight Info (if exists) -->
-                <div v-if="editingMovement?.flight" style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px;">
-                  <div>
-                    <div style="font-size: 10px; font-weight: 600; text-transform: uppercase; color: var(--ink3); margin-bottom: 3px;">Flight</div>
-                    <div style="font-size: 13px; font-weight: 600; color: var(--ink);">
-                      {{ editingMovement.flight.flight_number || '—' }}
-                    </div>
-                  </div>
-                  <div>
-                    <div style="font-size: 10px; font-weight: 600; text-transform: uppercase; color: var(--ink3); margin-bottom: 3px;">Route</div>
-                    <div style="font-size: 13px; color: var(--ink);">
-                      {{ editingMovement.flight.origin_airport?.iata || '—' }} 
-                      → 
-                      {{ editingMovement.flight.destination_airport?.iata || '—' }}
-                    </div>
-                  </div>
-                  <div>
-                    <div style="font-size: 10px; font-weight: 600; text-transform: uppercase; color: var(--ink3); margin-bottom: 3px;">Passengers</div>
-                    <div style="font-size: 13px; color: var(--ink);">
-                      {{ editingMovement.flight.party_size_total || 0 }} pax
-                    </div>
-                  </div>
-                  <div>
-                    <div style="font-size: 10px; font-weight: 600; text-transform: uppercase; color: var(--ink3); margin-bottom: 3px;">Scheduled</div>
-                    <div style="font-size: 13px; color: var(--ink);">
-                      {{ editingMovement.flight.scheduled_at ? formatDateTime(editingMovement.flight.scheduled_at) : '—' }}
-                    </div>
-                  </div>
+              <div class="form-field">
+                <label>TEAM</label>
+                <div v-if="!activeEvent" style="margin-bottom: 8px; padding: 8px; background: #FEF3C7; border: 1px solid #FCD34D; border-radius: 4px; font-size: 11px; color: #92400E;">
+                  ⚠️ No active event selected
                 </div>
-
-                <!-- Team Info -->
-                <div v-if="editingMovement?.team">
-                  <div style="font-size: 10px; font-weight: 600; text-transform: uppercase; color: var(--ink3); margin-bottom: 3px;">Team</div>
-                  <div style="font-size: 13px; font-weight: 600; color: var(--ink);">
-                    {{ editingMovement.team.team_name || editingMovement.team.team }} ({{ editingMovement.team.code }})
-                  </div>
+                <select v-model="emTeamId">
+                  <option value="">Select team...</option>
+                  <option v-for="team in props.teams" :key="team.id" :value="team.id">
+                    {{ team.team_name }} ({{ team.code }})
+                  </option>
+                </select>
+                <div v-if="activeEvent" style="font-size: 10px; color: var(--ink3); margin-top: 4px;">
+                  Showing teams from: {{ activeEvent.name }}
                 </div>
-
-                <!-- Phase and Route -->
-                <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px;">
-                  <div>
-                    <div style="font-size: 10px; font-weight: 600; text-transform: uppercase; color: var(--ink3); margin-bottom: 3px;">Phase</div>
-                    <span v-if="emKind" :class="['kind-badge', `kind-badge--${emKind}`]">{{ emKind }}</span>
-                    <span v-else style="font-size: 13px; color: var(--ink3);">—</span>
-                  </div>
-                  <div>
-                    <div style="font-size: 10px; font-weight: 600; text-transform: uppercase; color: var(--ink3); margin-bottom: 3px;">Route</div>
-                    <div style="font-size: 13px; color: var(--ink);">
-                      {{ emFrom || '—' }} → {{ emTo || '—' }}
-                    </div>
-                  </div>
-                </div>
-              </div>
-              
-              <div style="margin-top: 8px; padding: 8px; background: var(--surface); border-radius: 6px; font-size: 11px; color: var(--ink3); display: flex; align-items: center; gap: 6px;">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
-                </svg>
-                Flight and team details are read-only. Adjust operational fields below.
               </div>
             </div>
-
-            <!-- Divider -->
-            <div v-if="editingMovement?.flight || editingMovement?.team" style="height: 1px; background: var(--border); margin: 4px 0;"></div>
-
-            <!-- Operational Fields Header -->
-            <div style="font-size: 10px; font-weight: 700; letter-spacing: 0.8px; text-transform: uppercase; color: var(--ink3); margin-bottom: -4px;">
-              ⚙️ OPERATIONAL ADJUSTMENTS
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+              <div class="form-field">
+                <label>FROM</label>
+                <input type="text" v-model="emFrom" placeholder="e.g. Hotel Aurora" />
+              </div>
+              <div class="form-field">
+                <label>TO</label>
+                <input type="text" v-model="emTo" placeholder="e.g. Stadium Azure" />
+              </div>
             </div>
-
-            <!-- Editable Operational Fields -->
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
               <div class="form-field">
                 <label>WINDOW START</label>
@@ -1859,15 +1801,25 @@
                   </option>
                 </select>
               </div>
+              <div class="form-field">
+                <label>FIELD SUPERVISOR</label>
+                <select v-model="emFieldSupervisorId">
+                  <option value="">Select supervisor...</option>
+                  <option v-for="supervisor in props.supervisors" :key="supervisor.id" :value="supervisor.id">
+                    {{ supervisor.name }}
+                  </option>
+                </select>
+              </div>
             </div>
-            <div class="form-field">
-              <label>FIELD SUPERVISOR</label>
-              <select v-model="emFieldSupervisorId">
-                <option value="">Select supervisor...</option>
-                <option v-for="supervisor in props.supervisors" :key="supervisor.id" :value="supervisor.id">
-                  {{ supervisor.name }}
-                </option>
-              </select>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+              <div class="form-field">
+                <label>PASSENGERS</label>
+                <input type="number" v-model="emPassengers" placeholder="0" min="0" />
+              </div>
+              <div class="form-field">
+                <label>FLIGHT NUMBER</label>
+                <input type="text" v-model="emFlightNumber" placeholder="e.g. AF123" />
+              </div>
             </div>
             <div class="form-field">
               <label>NOTES</label>
@@ -2110,7 +2062,6 @@ import CheckpointTimeline from '../Components/CheckpointTimeline.vue';
 const props = defineProps({
   schedule: { type: Array, default: () => [] },
   activeEvent: { type: Object, default: null },
-  activePlan: { type: [Number, String], default: null },
   plans: { type: Array, default: () => [] },
   movementTemplates: { type: Array, default: () => [] },
   teams: { type: Array, default: () => [] },
@@ -2126,8 +2077,6 @@ const newPlanDate = ref('');
 const newPlanStartTime = ref('09:00');
 const newPlanName = ref('');
 const newPlanTeamId = ref(null);
-const newPlanFlightId = ref(null);
-const newPlanAccommodationId = ref(null);
 const newPlanTemplate = ref('');
 const newPlanProcessing = ref(false);
 const newPlanErrors = ref({});
@@ -2172,56 +2121,50 @@ const plans = [
 // Use props.plans if available, otherwise fallback to mock plans
 const allPlans = computed(() => props.plans?.length ? props.plans : plans);
 
-// Initialize activePlan from backend prop (session-based, shared with Jobs page)
-const activePlan = ref(props.activePlan);
+// Initialize activePlan from localStorage if available and valid
+const storedPlanId = localStorage.getItem('lmsx_active_plan');
+let initialPlanId = null;
+
+// Convert stored ID to match the type of IDs in the plans array
+if (storedPlanId) {
+  const plansList = props.plans?.length ? props.plans : plans;
+  // Check if the stored plan ID exists in the current plans
+  const planExists = plansList.some(p => String(p.id) === String(storedPlanId));
+  if (planExists) {
+    // Keep the ID in its original type (could be number or string)
+    const matchingPlan = plansList.find(p => String(p.id) === String(storedPlanId));
+    initialPlanId = matchingPlan ? matchingPlan.id : null;
+  } else {
+    // Invalid/outdated plan ID, clear from storage
+    localStorage.removeItem('lmsx_active_plan');
+  }
+}
 
 // Handle team selection change to update date and start time from team's arrival
 function handleTeamChange() {
   newPlanErrors.value.team_id = '';
-  
-  // Reset flight and accommodation selection when team changes
-  newPlanFlightId.value = null;
-  newPlanAccommodationId.value = null;
 
   if (newPlanTeamId.value && props.teams) {
     const selectedTeam = props.teams.find(t => t.id === newPlanTeamId.value);
 
-    if (selectedTeam) {
-      // Auto-select flight if only one exists
-      if (selectedTeam.flights && selectedTeam.flights.length === 1) {
-        newPlanFlightId.value = selectedTeam.flights[0].id;
-      }
-      
-      // Auto-select accommodation if team has one
-      if (selectedTeam.stay) {
-        newPlanAccommodationId.value = selectedTeam.stay.id;
-      }
-      
-      if (selectedTeam.arrival_date_time) {
-        const dt = selectedTeam.arrival_date_time;
-        const dateMatch = dt.match(/(\d{4}-\d{2}-\d{2})/);
-        if (dateMatch) newPlanDate.value = dateMatch[1];
-        const timeMatch = dt.match(/[T ](\d{2}):(\d{2})/);
-        if (timeMatch) newPlanStartTime.value = `${timeMatch[1]}:${timeMatch[2]}`;
-      }
+    if (selectedTeam && selectedTeam.arrival_date_time) {
+      const dt = selectedTeam.arrival_date_time;
+      const dateMatch = dt.match(/(\d{4}-\d{2}-\d{2})/);
+      if (dateMatch) newPlanDate.value = dateMatch[1];
+      const timeMatch = dt.match(/[T ](\d{2}):(\d{2})/);
+      if (timeMatch) newPlanStartTime.value = `${timeMatch[1]}:${timeMatch[2]}`;
     }
   }
 }
 
-// Watch for changes to activePlan and persist to backend session
+const activePlan = ref(initialPlanId);
+
+// Watch for changes to activePlan and persist to localStorage
 watch(activePlan, (newValue) => {
   if (newValue) {
-    // Send to backend session (shared with Jobs page)
-    fetch('/session/active-plan', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || '',
-      },
-      body: JSON.stringify({ plan_id: newValue }),
-    }).catch(error => {
-      console.error('Failed to update active plan in session:', error);
-    });
+    localStorage.setItem('lmsx_active_plan', newValue);
+  } else {
+    localStorage.removeItem('lmsx_active_plan');
   }
 });
 
@@ -2254,7 +2197,7 @@ const addTeamProcessing = ref(false);
 const addTeamErrors = ref({});
 
 // Initialize activeTab based on whether there's a valid stored plan
-const activeTab = ref(props.activePlan ? 'movements' : 'plans');
+const activeTab = ref(initialPlanId ? 'movements' : 'plans');
 
 const showPreviewModal = ref(false);
 const selectedTemplate = ref(null);
@@ -2835,19 +2778,6 @@ const selectedNewPlanTemplate = computed(() => {
   return props.movementTemplates.find(t => t.id === newPlanTemplate.value);
 });
 
-const selectedNewPlanTeam = computed(() => {
-  if (!newPlanTeamId.value) return null;
-  return props.teams.find(t => t.id === newPlanTeamId.value);
-});
-
-const selectedTeamFlights = computed(() => {
-  return selectedNewPlanTeam.value?.flights || [];
-});
-
-const needsFlightSelection = computed(() => {
-  return selectedTeamFlights.value.length > 1;
-});
-
 function previewLegTime(index, type) {
   const legs = selectedNewPlanTemplate.value?.legs;
   if (!legs) return '—';
@@ -2893,17 +2823,6 @@ const allFilteredPlansEmpty = computed(() => groupedFilteredPlans.value.every(g 
 
 function formatDateTime(dateString) {
   if (!dateString) return '';
-  
-  // Handle "YYYY-MM-DD HH:mm:ss" format without timezone conversion
-  if (typeof dateString === 'string' && dateString.match(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}/)) {
-    const [datePart, timePart] = dateString.split(' ');
-    const [year, month, day] = datePart.split('-');
-    const [hour, minute] = timePart.split(':');
-    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    return `${day} ${monthNames[parseInt(month) - 1]} ${hour}:${minute}`;
-  }
-  
-  // Fallback: just return date for other formats
   const date = new Date(dateString);
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -2969,12 +2888,6 @@ function createPlan() {
     return;
   }
   
-  // Validate flight selection if team has multiple flights
-  if (needsFlightSelection.value && !newPlanFlightId.value) {
-    newPlanErrors.value.flight_id = 'Please select a flight';
-    return;
-  }
-  
   newPlanProcessing.value = true;
   
   router.post('/plans', {
@@ -2982,8 +2895,6 @@ function createPlan() {
     start_time: newPlanStartTime.value || '09:00',
     name: newPlanName.value || null,
     team_id: newPlanTeamId.value || null,
-    flight_id: newPlanFlightId.value || null,
-    accommodation_id: newPlanAccommodationId.value || null,
     movement_template_id: newPlanTemplate.value || null,
   }, {
     onSuccess: () => {
@@ -2992,8 +2903,6 @@ function createPlan() {
       newPlanStartTime.value = '09:00';
       newPlanName.value = '';
       newPlanTeamId.value = null;
-      newPlanFlightId.value = null;
-      newPlanAccommodationId.value = null;
       newPlanTemplate.value = '';
       newPlanErrors.value = {};
     },
@@ -3280,13 +3189,18 @@ function submitEditMovement() {
   
   editMovementProcessing.value = true;
   
-  // Only send operational fields (not read-only flight/team data)
   router.put(`/movements/${editingMovement.value.id}`, {
+    team_id: emTeamId.value || null,
+    kind: emKind.value || null,
+    from_location: emFrom.value || null,
+    to_location: emTo.value || null,
     window_start: emWindowStart.value || null,
     window_end: emWindowEnd.value || null,
     vehicle_id: emVehicleId.value || null,
     driver_id: emDriverId.value || null,
     field_supervisor_id: emFieldSupervisorId.value || null,
+    passengers: emPassengers.value || null,
+    flight_number: emFlightNumber.value || null,
     notes: emNotes.value || null,
   }, {
     onSuccess: () => {
@@ -3657,11 +3571,6 @@ function statusLabel(s) { return statusMap[s]?.label ?? s; }
 /* Generate Jobs Modal */
 .gen-modal {
   max-width: 740px;
-}
-
-.new-plan-body {
-  max-height: 560px;
-  overflow-y: auto;
 }
 
 .modal-eyebrow {

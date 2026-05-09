@@ -44,8 +44,10 @@ Route::post('/logout', [AuthController::class, 'logout'])->name('logout')->middl
 require __DIR__.'/web/core.php';
 require __DIR__.'/web/jobs.php';
 require __DIR__.'/web/fleet.php';
+require __DIR__.'/web/events.php';
 require __DIR__.'/web/analytics.php';
 require __DIR__.'/web/admin.php';
+require __DIR__.'/web/plans.php';
 
-// Legacy routes (to be refactored)
+// Legacy routes (templates and admin - to be refactored)
 require __DIR__.'/EXAMPLE_ROUTES.php';

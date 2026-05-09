@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Event;
 use App\Models\GameMatch;
 use App\Models\Movement;
 use Carbon\Carbon;
@@ -13,8 +14,9 @@ class KitTruckDashboardController extends Controller
 {
     public function index(Request $request)
     {
-        $kind       = $request->query('kind', 'match');
-        $filterDate = $request->query('date');
+        $kind        = $request->query('kind', 'match');
+        $filterDate  = $request->query('date');
+        $filterEvent = $request->query('event');
 
         // Load movements of the selected kind with all needed relations
         $movements = Movement::with([
@@ -24,6 +26,7 @@ class KitTruckDashboardController extends Controller
             'job.checkpoints'                  => fn ($q) => $q->orderBy('order'),
         ])
             ->where('kind', $kind)
+            ->when(!empty($filterEvent), fn ($q) => $q->where('event_id', $filterEvent))
             ->when($filterDate, fn ($q) => $q->whereDate('window_start', $filterDate))
             ->orderBy('window_start')
             ->get();
@@ -136,6 +139,7 @@ class KitTruckDashboardController extends Controller
 
         // ── Date filter options from movement window_start for the selected kind ──
         $dates = Movement::where('kind', $kind)
+            ->when(!empty($filterEvent), fn ($q) => $q->where('event_id', $filterEvent))
             ->selectRaw('DATE(window_start) as d')
             ->groupBy('d')
             ->orderBy('d')
@@ -145,12 +149,16 @@ class KitTruckDashboardController extends Controller
                 'label' => Carbon::parse($d)->format('D j M'),
             ]);
 
+        // ── Event filter options ──
+        $events = Event::orderBy('name')->get(['id', 'name']);
+
         return Inertia::render('KitTruckDashboard', [
             'rows'       => $rows,
             'columns'    => $columns,
             'kindCounts' => $kindCounts,
             'dates'      => $dates,
-            'filters'    => ['kind' => $kind, 'date' => $filterDate],
+            'events'     => $events,
+            'filters'    => ['kind' => $kind, 'date' => $filterDate, 'event' => $filterEvent],
         ]);
     }
 }

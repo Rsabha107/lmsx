@@ -61,7 +61,49 @@
 
               <!-- Content -->
               <div style="flex: 1; padding: 4px 0 14px;">
-                <div style="font-size: 13px; font-weight: 600; color: var(--ink); line-height: 20px;">{{ cp.label }}</div>
+                <div style="display: flex; align-items: center; gap: 5px; flex-wrap: wrap;">
+                  <span style="font-size: 13px; font-weight: 600; color: var(--ink); line-height: 20px;">{{ cp.label }}</span>
+                  <!-- Photo badge -->
+                  <span v-if="cp.requires_photo"
+                        @click="cp.has_photo && cp.photo_url ? openPhotoViewer(cp.photo_url, cp.label) : null"
+                        :style="{ 
+                          display: 'inline-flex', 
+                          alignItems: 'center', 
+                          gap: '2px', 
+                          fontSize: '10px', 
+                          fontWeight: 600, 
+                          padding: '1px 5px', 
+                          borderRadius: '3px', 
+                          background: cp.has_photo ? '#f0fdf4' : '#fffbeb', 
+                          color: cp.has_photo ? '#166534' : '#92400e',
+                          cursor: cp.has_photo && cp.photo_url ? 'pointer' : 'default',
+                          transition: 'all 0.15s'
+                        }"
+                        :class="{ 'evidence-badge-hover': cp.has_photo && cp.photo_url }">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+                    {{ cp.has_photo ? 'View' : 'Required' }}
+                  </span>
+                  <!-- Signature badge -->
+                  <span v-if="cp.requires_signature"
+                        @click="cp.has_signature && cp.signature_url ? openSignatureViewer(cp.signature_url, cp.label) : null"
+                        :style="{ 
+                          display: 'inline-flex', 
+                          alignItems: 'center', 
+                          gap: '2px', 
+                          fontSize: '10px', 
+                          fontWeight: 600, 
+                          padding: '1px 5px', 
+                          borderRadius: '3px', 
+                          background: cp.has_signature ? '#f0fdf4' : '#fffbeb', 
+                          color: cp.has_signature ? '#166534' : '#92400e',
+                          cursor: cp.has_signature && cp.signature_url ? 'pointer' : 'default',
+                          transition: 'all 0.15s'
+                        }"
+                        :class="{ 'evidence-badge-hover': cp.has_signature && cp.signature_url }">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>
+                    {{ cp.has_signature ? 'View' : 'Required' }}
+                  </span>
+                </div>
                 <div v-if="cp.status === 'active'" style="font-size: 12px; color: var(--accent); margin-top: 2px;">Awaiting supervisor confirmation</div>
               </div>
 
@@ -165,6 +207,36 @@
         </div>
       </div>
     </div>
+
+    <!-- Photo Viewer Modal -->
+    <teleport to="body">
+      <transition name="fade-modal">
+        <div v-if="showPhotoViewer" @click="closePhotoViewer" class="evidence-viewer-overlay">
+          <div class="evidence-viewer-content" @click.stop>
+            <button @click="closePhotoViewer" class="evidence-viewer-close">
+              <svg-icon name="x" :size="20" />
+            </button>
+            <img v-if="currentPhoto" :src="currentPhoto" alt="Checkpoint photo" class="evidence-viewer-image" />
+            <div v-if="currentEvidenceName" class="evidence-viewer-label">{{ currentEvidenceName }}</div>
+          </div>
+        </div>
+      </transition>
+    </teleport>
+
+    <!-- Signature Viewer Modal -->
+    <teleport to="body">
+      <transition name="fade-modal">
+        <div v-if="showSignatureViewer" @click="closeSignatureViewer" class="evidence-viewer-overlay">
+          <div class="evidence-viewer-content" @click.stop>
+            <button @click="closeSignatureViewer" class="evidence-viewer-close">
+              <svg-icon name="x" :size="20" />
+            </button>
+            <img v-if="currentSignature" :src="currentSignature" alt="Checkpoint signature" class="evidence-viewer-image" />
+            <div v-if="currentEvidenceName" class="evidence-viewer-label">Signature - {{ currentEvidenceName }}</div>
+          </div>
+        </div>
+      </transition>
+    </teleport>
 
     <!-- Override Modal -->
     <teleport to="body">
@@ -294,6 +366,39 @@ const overrideTime = ref('');
 const overrideReason = ref('');
 const overrideNote = ref('');
 const overrideNotify = ref(true);
+
+// Photo/Signature viewer state
+const showPhotoViewer = ref(false);
+const showSignatureViewer = ref(false);
+const currentPhoto = ref(null);
+const currentSignature = ref(null);
+const currentEvidenceName = ref(null);
+
+function openPhotoViewer(photoUrl, checkpointName) {
+  if (!photoUrl) return;
+  currentPhoto.value = photoUrl;
+  currentEvidenceName.value = checkpointName;
+  showPhotoViewer.value = true;
+}
+
+function closePhotoViewer() {
+  showPhotoViewer.value = false;
+  currentPhoto.value = null;
+  currentEvidenceName.value = null;
+}
+
+function openSignatureViewer(signatureUrl, checkpointName) {
+  if (!signatureUrl) return;
+  currentSignature.value = signatureUrl;
+  currentEvidenceName.value = checkpointName;
+  showSignatureViewer.value = true;
+}
+
+function closeSignatureViewer() {
+  showSignatureViewer.value = false;
+  currentSignature.value = null;
+  currentEvidenceName.value = null;
+}
 
 const selectedCheckpoint = computed(() =>
   props.checkpoints.find(cp => cp.id === overrideCheckpoint.value) ?? null
@@ -795,6 +900,92 @@ function saveOverride() {
   .modal-body {
     max-height: 60vh;
     overflow-y: auto;
+  }
+}
+
+/* Evidence viewer (photo/signature) */
+.evidence-viewer-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.92);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  padding: 20px;
+  cursor: zoom-out;
+}
+
+.evidence-viewer-content {
+  position: relative;
+  max-width: 90vw;
+  max-height: 90vh;
+  cursor: default;
+  animation: zoomIn 0.2s ease-out;
+}
+
+@keyframes zoomIn {
+  from { transform: scale(0.95); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+
+.evidence-viewer-image {
+  max-width: 100%;
+  max-height: 85vh;
+  width: auto;
+  height: auto;
+  display: block;
+  border-radius: 8px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+
+.evidence-viewer-close {
+  position: absolute;
+  top: -50px;
+  right: 0;
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: white;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s;
+  backdrop-filter: blur(10px);
+}
+
+.evidence-viewer-close:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.evidence-viewer-label {
+  position: absolute;
+  bottom: -40px;
+  left: 0;
+  right: 0;
+  text-align: center;
+  color: white;
+  font-size: 13px;
+  font-weight: 600;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+
+.evidence-badge-hover:hover {
+  transform: scale(1.05);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+@media (max-width: 640px) {
+  .evidence-viewer-close {
+    top: 10px;
+    right: 10px;
+  }
+  
+  .evidence-viewer-label {
+    bottom: 10px;
   }
 }
 </style>

@@ -5,6 +5,7 @@
  * Routes for managing fleet, teams, and contacts
  */
 
+use App\Http\Controllers\EventTeamsController;
 use App\Http\Controllers\KitTruckDashboardController;
 use App\Http\Controllers\LmsController;
 use App\Http\Controllers\MatchesController;
@@ -35,6 +36,9 @@ Route::middleware('auth')->group(function () {
         Route::put('/{id}', [MatchesController::class, 'update'])->name('update');
         Route::delete('/{id}', [MatchesController::class, 'destroy'])->name('destroy');
     });
+    
+    // Event Teams Management
+    Route::get('/event-teams', [EventTeamsController::class, 'index'])->name('event-teams');
     
     // Contacts Management
     Route::prefix('contacts')->name('contacts.')->group(function () {

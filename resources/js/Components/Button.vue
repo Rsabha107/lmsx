@@ -10,8 +10,8 @@
 defineProps({
   variant: {
     type: String,
-    default: 'primary', // primary (dark), secondary (light), ghost
-    validator: (value) => ['primary', 'secondary', 'ghost'].includes(value)
+    default: 'primary', // primary (dark), secondary (light), ghost, danger
+    validator: (value) => ['primary', 'secondary', 'ghost', 'danger'].includes(value)
   },
   size: {
     type: String,
@@ -119,5 +119,21 @@ defineEmits(['click'])
 .btn--ghost:hover:not(:disabled) {
   background: var(--panel);
   color: var(--ink);
+}
+
+.btn--danger {
+  background: #ef4444;
+  color: #fff;
+  border-color: #ef4444;
+}
+
+.btn--danger:hover:not(:disabled) {
+  background: #dc2626;
+  border-color: #dc2626;
+}
+
+.btn--danger .btn-spinner {
+  border-color: rgba(255, 255, 255, 0.3);
+  border-top-color: #fff;
 }
 </style>

@@ -7,6 +7,8 @@ use App\Models\CheckpointTemplate;
 use App\Models\MovementTemplate;
 use App\Models\Plan;
 use App\Models\Movement;
+use App\Models\Event;
+use App\Models\EventTeam;
 use App\Services\JobGenerationService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -32,10 +34,19 @@ class PlanManagementController extends Controller
     /**
      * Display a listing of plans.
      */
-    public function index()
+    public function index(Request $request)
     {
+        $activeEventId = $request->session()->get('active_event_id');
+        Log::info('Plans page accessed via PlanManagementController', ['active_event_id' => $activeEventId]);
+        
+        // Get active event
+        $activeEvent = $activeEventId ? Event::with('country')->find($activeEventId) : null;
+        
         $plans = Plan::with([
                 'movements.team', 
+                'movements.flight.originAirport',
+                'movements.flight.destinationAirport',
+                'movements.accommodation',
                 'movements.vehicle', 
                 'movements.driver',
                 'movements.fieldSupervisor',
@@ -43,6 +54,9 @@ class PlanManagementController extends Controller
                 'movements.job.checkpoints.completedBy', // Load job checkpoints for status
                 'movementTemplate'
             ])
+            ->when($activeEventId, function ($query) use ($activeEventId) {
+                $query->where('event_id', $activeEventId);
+            })
             ->latest()
             ->get()
             ->map(function ($plan) {
@@ -107,16 +121,30 @@ class PlanManagementController extends Controller
             ->orderBy('name')
             ->get();
 
-        // Load teams with all necessary relationships for the "By Team" view
-        $teams = \App\Models\Team::with([
-                'originAirport',
-                'destinationAirport',
-                'country',
-                'classification'
-            ])
-            ->active()
-            ->orderBy('team_name')
-            ->get();
+        // Load teams from active event only
+        $teams = collect();
+        if ($activeEventId) {
+            $teams = EventTeam::where('event_id', $activeEventId)
+                ->with([
+                    'team.originAirport',
+                    'team.destinationAirport',
+                    'team.country',
+                    'team.classification',
+                    'team.flights' => function ($query) {
+                        $query->where('direction', 'arrival')
+                              ->with(['destinationAirport', 'originAirport'])
+                              ->orderBy('scheduled_at');
+                    },
+                    'team.stay'
+                ])
+                ->get()
+                ->map(function ($et) {
+                    return $et->team;
+                })
+                ->filter()
+                ->sortBy('team_name')
+                ->values();
+        }
 
         // Load vehicles and drivers for movement editing
         $vehicles = \App\Models\Vehicle::select('id', 'code', 'vehicle_type', 'capacity')
@@ -244,7 +272,12 @@ class PlanManagementController extends Controller
             ->values()
             ->all();
 
+        // Get active plan from session (shared with Jobs page)
+        $activePlanId = $request->session()->get('active_plan_id');
+
         return Inertia::render('Plans', [
+            'activeEvent' => $activeEvent,
+            'activePlan' => $activePlanId,
             'plans' => $plans,
             'movementTemplates' => $movementTemplates,
             'teams' => $teams,
@@ -277,15 +310,33 @@ class PlanManagementController extends Controller
     {
         Log::info('Creating plan', ['request' => $request->all()]);
         
+        // Get active event from session
+        $activeEventId = session('active_event_id');
+        
         $validated = $request->validate([
             'date' => 'required|date',
             'name' => 'nullable|string|max:255',
             'team_id' => 'nullable|exists:teams,id',
+            'flight_id' => 'nullable|exists:team_flights,id',
             'start_time' => 'nullable|date_format:H:i',
             'movement_template_id' => 'nullable|exists:movement_templates,id',
             'team_assignments' => 'nullable|array', // ['default' => team_id] or [1 => team1_id, 2 => team2_id]
             'notes' => 'nullable|string',
         ]);
+        
+        // If flight_id is provided, use flight's arrival time
+        $startTime = $validated['start_time'] ?? '09:00';
+        if (!empty($validated['flight_id'])) {
+            $flight = \App\Models\TeamFlight::find($validated['flight_id']);
+            if ($flight) {
+                // Use actual, estimated, or scheduled time (in that priority)
+                $arrivalDateTime = $flight->actual_at ?? $flight->estimated_at ?? $flight->scheduled_at;
+                if ($arrivalDateTime) {
+                    $startTime = $arrivalDateTime->format('H:i');
+                    $validated['date'] = $arrivalDateTime->format('Y-m-d');
+                }
+            }
+        }
 
         // Use provided name or auto-generate based on date and template
         $planName = $validated['name'] ?? $this->generatePlanName($validated['date'], $validated['movement_template_id'] ?? null);
@@ -310,8 +361,7 @@ class PlanManagementController extends Controller
 
             // Only generate movements if we have team assignments
             if ($teamAssignments) {
-                // Build base_time from date + start_time (without timezone conversion)
-                $startTime = $validated['start_time'] ?? '09:00';
+                // Build base_time from date + start_time (already computed above)
                 $baseTime = Carbon::createFromFormat('Y-m-d H:i', $validated['date'] . ' ' . $startTime, config('app.timezone'));
                 
                 $plan = $this->jobService->createPlanFromTemplate(
@@ -321,6 +371,9 @@ class PlanManagementController extends Controller
                         'date' => $validated['date'],
                         'base_time' => $baseTime,
                         'status' => 'draft',
+                        'event_id' => $activeEventId,
+                        'flight_id' => $validated['flight_id'] ?? null,
+                        'accommodation_id' => $validated['accommodation_id'] ?? null,
                         'created_by' => Auth::id(),
                         'notes' => $validated['notes'] ?? null,
                     ],
@@ -338,6 +391,7 @@ class PlanManagementController extends Controller
             'name' => $planName,
             'date' => $validated['date'],
             'status' => 'draft',
+            'event_id' => $activeEventId,
             'movement_template_id' => $validated['movement_template_id'] ?? null,
             'notes' => $validated['notes'] ?? null,
             'created_by' => Auth::id(),
@@ -562,6 +616,7 @@ class PlanManagementController extends Controller
                 Movement::create([
                     'code' => $this->generateMovementCode($plan),
                     'plan_id' => $plan->id,
+                    'event_id' => $plan->event_id,
                     'team_id' => $team->id,
                     'checkpoint_template_id' => $leg->checkpoint_template_id,
                     'kind' => $leg->leg_type ?? 'transfer',
@@ -593,6 +648,7 @@ class PlanManagementController extends Controller
         // Otherwise, add a single manual movement (existing functionality)
         $validated = $request->validate([
             'team_id' => 'required|exists:teams,id',
+            'flight_id' => 'nullable|exists:team_flights,id',
             'checkpoint_template_id' => 'required|exists:checkpoint_templates,id',
             'kind' => 'required|in:arrival,departure,transfer,training,match',
             'from_location' => 'required|string',
@@ -607,6 +663,7 @@ class PlanManagementController extends Controller
         $movement = Movement::create([
             'code' => $this->generateMovementCode($plan),
             'plan_id' => $plan->id,
+            'event_id' => $plan->event_id,
             ...$validated,
             'status' => 'scheduled',
             'source' => 'manual',
@@ -690,23 +747,18 @@ class PlanManagementController extends Controller
     }
 
     /**
-     * Update a movement's details.
+     * Update a movement's details (operational fields only).
      */
     public function updateMovement(Request $request, Movement $movement)
     {
+        // Only allow updating operational fields
+        // Core fields (team, flight, kind, locations, passengers) are read-only if linked to a flight
         $validated = $request->validate([
-            'team_id' => 'nullable|exists:teams,id',
-            'kind' => 'nullable|string|in:arrival,departure,transfer,training,match',
-            'from_location' => 'nullable|string|max:255',
-            'to_location' => 'nullable|string|max:255',
             'window_start' => 'nullable|date',
             'window_end' => 'nullable|date',
             'vehicle_id' => 'nullable|exists:vehicles,id',
             'driver_id' => 'nullable|exists:drivers,id',
             'field_supervisor_id' => 'nullable|exists:users,id',
-            'checkpoint_template_id' => 'nullable|exists:checkpoint_templates,id',
-            'passengers' => 'nullable|integer|min:0',
-            'flight_number' => 'nullable|string|max:50',
             'notes' => 'nullable|string',
         ]);
 

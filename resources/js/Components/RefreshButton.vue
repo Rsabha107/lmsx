@@ -33,6 +33,8 @@ const props = defineProps({
   }
 });
 
+const emit = defineEmits(['refresh']);
+
 const isLoading = ref(false);
 
 function handleRefresh() {
@@ -41,6 +43,9 @@ function handleRefresh() {
   const options = {
     onFinish: () => {
       isLoading.value = false;
+    },
+    onSuccess: () => {
+      emit('refresh');
     }
   };
   

@@ -26,6 +26,7 @@ class JobOperationController extends Controller
     public function index(Request $request)
     {
         $query = JobOperation::with([
+            'event',
             'movement.team',
             'movement.plan',
             'vehicle',
@@ -69,6 +70,7 @@ class JobOperationController extends Controller
     public function show(JobOperation $job)
     {
         $job->load([
+            'event',
             'movement.team',
             'movement.plan',
             'movement.checkpointTemplate',

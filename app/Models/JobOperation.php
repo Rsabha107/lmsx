@@ -12,6 +12,7 @@ class JobOperation extends Model
 
     protected $fillable = [
         'job_id',
+        'event_id',
         'movement_id',
         'plan_id',
         'team_id',
@@ -36,6 +37,14 @@ class JobOperation extends Model
         'checkpoints_total' => 'integer',
         'progress_percentage' => 'decimal:2',
     ];
+
+    /**
+     * The event this job belongs to.
+     */
+    public function event(): BelongsTo
+    {
+        return $this->belongsTo(Event::class);
+    }
 
     /**
      * The movement this job was generated from.

@@ -17,6 +17,11 @@ use App\Models\MovementTemplate;
 use App\Models\JobOperation;
 use App\Models\JobCheckpoint;
 use App\Models\User;
+use App\Models\Event;
+use App\Models\EventTeam;
+use App\Models\Plan;
+use App\Models\Movement;
+use App\Services\CheckpointUploadService;
 use App\Services\FlightSyncService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\JsonResponse;
@@ -45,10 +50,66 @@ class LmsController extends Controller
         ]);
     }
 
-    public function plans(): Response
+    public function plans(Request $request): Response
     {
+        $activeEventId = $request->session()->get('active_event_id');
+        Log::info('Plans page accessed', ['active_event_id' => $activeEventId]);
+        // Get active event
+        $activeEvent = $activeEventId ? Event::with('country')->find($activeEventId) : null;
+
+        // Get teams from active event
+        $teams = [];
+        if ($activeEventId) {
+            $teams = EventTeam::where('event_id', $activeEventId)
+                ->with(['team.country'])
+                ->get()
+                ->map(function ($et) {
+                    return $et->team;
+                })
+                ->filter()
+                ->values();
+        }
+
+        // Get plans for active event
+        $plans = Plan::with(['movements.team'])
+            ->when($activeEventId, function ($query) use ($activeEventId) {
+                $query->where('event_id', $activeEventId);
+            })
+            ->orderBy('date', 'desc')
+            ->get()
+            ->map(function ($plan) {
+                return [
+                    'id' => $plan->id,
+                    'name' => $plan->name,
+                    'code' => $plan->code,
+                    'date' => $plan->date,
+                    'status' => $plan->status,
+                    'movements_count' => $plan->movements->count(),
+                    'teams_count' => $plan->movements->pluck('team_id')->unique()->count(),
+                ];
+            });
+
         return Inertia::render('Plans', [
             'schedule' => LmsData::schedule(),
+            'activeEvent' => $activeEvent,
+            'plans' => $plans,
+            'movementTemplates' => MovementTemplate::with(['legs' => function ($query) {
+                $query->orderBy('order');
+            }])
+                ->orderBy('code')
+                ->get(),
+            'teams' => $teams,
+            'movementsByTeam' => [],
+            'vehicles' => Vehicle::orderBy('name')->get(),
+            'drivers' => Driver::orderBy('name')->get(),
+            'supervisors' => User::whereHas('roles', function ($query) {
+                $query->where('name', 'supervisor');
+            })
+                ->orWhereHas('roles', function ($query) {
+                    $query->where('name', 'admin');
+                })
+                ->orderBy('name')
+                ->get(),
         ]);
     }
 
@@ -58,19 +119,19 @@ class LmsController extends Controller
             'checkpoints' => Checkpoint::withCount('checkpointTemplates as usage_count')
                 ->orderBy('code')
                 ->get(),
-            'checkpointTemplates' => CheckpointTemplate::with(['checkpoints' => function($query) {
-                    $query->orderBy('checkpoint_checkpoint_template.order');
-                }])
+            'checkpointTemplates' => CheckpointTemplate::with(['checkpoints' => function ($query) {
+                $query->orderBy('checkpoint_checkpoint_template.order');
+            }])
                 ->withCount('checkpoints as checkpoint_count')
                 ->orderBy('code')
                 ->get(),
-            'movementTemplates' => MovementTemplate::with(['legs' => function($query) {
-                    $query->orderBy('order');
-                }])
+            'movementTemplates' => MovementTemplate::with(['legs' => function ($query) {
+                $query->orderBy('order');
+            }])
                 ->orderBy('code')
                 ->get()
-                ->map(function($template) {
-                    $template->setRelation('legs', $template->legs->map(function($leg) {
+                ->map(function ($template) {
+                    $template->setRelation('legs', $template->legs->map(function ($leg) {
                         return [
                             'id' => $leg->id,
                             'order' => $leg->order,
@@ -105,16 +166,25 @@ class LmsController extends Controller
                 ];
             });
 
-        // Get selected plan (from query param or default to first plan)
+        // Get selected plan (from query param, session, or default to first plan)
         $selectedPlanId = $request->query('plan');
         if ($selectedPlanId) {
             $selectedPlanId = (int) $selectedPlanId; // Cast to integer
-        } elseif ($plans->isNotEmpty()) {
-            $selectedPlanId = $plans->first()['id'];
+            // Store in session for persistence
+            $request->session()->put('active_plan_id', $selectedPlanId);
+        } else {
+            // Try to get from session
+            $selectedPlanId = $request->session()->get('active_plan_id');
+            // If not in session, default to first plan
+            if (!$selectedPlanId && $plans->isNotEmpty()) {
+                $selectedPlanId = $plans->first()['id'];
+                $request->session()->put('active_plan_id', $selectedPlanId);
+            }
         }
 
         // Build job query with plan filter
         $jobsQuery = JobOperation::with([
+            'event',
             'movement.team',
             'vehicle',
             'driver',
@@ -132,7 +202,7 @@ class LmsController extends Controller
             ->map(function ($job) {
                 $movement = $job->movement;
                 $team = $movement?->team;
-                
+
                 return [
                     'id' => $job->job_id ?? 'J-' . $job->id,
                     'team' => $team?->team_name ?? 'Unknown Team',
@@ -142,6 +212,9 @@ class LmsController extends Controller
                     'to' => $movement?->to_location ?? 'Unknown',
                     'dep' => $movement?->window_start?->format('H:i') ?? '--:--',
                     'arr' => $movement?->window_end?->format('H:i') ?? '--:--',
+                    'date' => $movement?->date?->format('Y-m-d') ?? $movement?->window_start?->format('Y-m-d') ?? now()->format('Y-m-d'),
+                    'event_name' => $job->event?->name ?? null,
+                    'event_code' => $job->event?->code ?? null,
                     'pax' => $movement?->passengers ?? 0,
                     'vehicle' => $job->vehicle ? ($job->vehicle->code ?? $job->vehicle->plate_number ?? $job->vehicle->vehicle_type ?? 'Unassigned') : 'Unassigned',
                     'status' => $job->status,
@@ -151,11 +224,14 @@ class LmsController extends Controller
                     'checksComplete' => $job->checkpoints_completed ?? 0,
                     'checksTotal' => $job->checkpoints_total ?? 0,
                     'supervisor' => $job->supervisor?->name ?? 'Unassigned',
+                    'supervisor_phone' => $job->supervisor?->phone ?? null,
                     'driver' => $job->driver?->name ?? 'Unassigned',
+                    'driver_phone' => $job->driver?->phone ?? null,
+                    'updated_at' => $job->updated_at?->format('Y-m-d H:i') ?? null,
                     'checkpoints' => $job->checkpoints->map(function ($checkpoint) {
                         // Determine the time to display
                         $displayTime = null;
-                        
+
                         if ($checkpoint->state === 'done' && $checkpoint->completed_at) {
                             // Show actual completion time for done checkpoints
                             $displayTime = $checkpoint->completed_at->format('H:i');
@@ -163,7 +239,7 @@ class LmsController extends Controller
                             // Show scheduled time for pending/active checkpoints
                             $displayTime = $checkpoint->scheduled_at->format('H:i');
                         }
-                        
+
                         return [
                             'id' => $checkpoint->id, // Use actual database ID
                             'dbId' => $checkpoint->id, // Explicit database ID
@@ -182,6 +258,8 @@ class LmsController extends Controller
                             'requires_signature' => $checkpoint->requires_signature,
                             'has_photo' => $checkpoint->photo_path ? true : false,
                             'has_signature' => $checkpoint->signature_path ? true : false,
+                            'photo_url' => $checkpoint->photo_path ? route('checkpoint.photo', $checkpoint->id) : null,
+                            'signature_url' => $checkpoint->signature_path ? route('checkpoint.signature', $checkpoint->id) : null,
                         ];
                     })->toArray(),
                 ];
@@ -209,7 +287,7 @@ class LmsController extends Controller
             ->map(function ($job) {
                 $movement = $job->movement;
                 $team = $movement?->team;
-                
+
                 return [
                     'id' => $job->job_id ?? 'J-' . $job->id,
                     'team' => $team?->team_name ?? 'Unknown Team',
@@ -245,21 +323,22 @@ class LmsController extends Controller
         // Try to find in database first
         $dbJob = null;
         $dbCheckpoints = [];
-        
+
         $jobOperation = JobOperation::with([
+            'event',
             'movement.team',
             'vehicle',
             'driver',
             'supervisor',
             'checkpoints.completedBy'
         ])->where('job_id', $id)
-          ->orWhere('id', $id)
-          ->first();
+            ->orWhere('id', $id)
+            ->first();
 
         if ($jobOperation) {
             $movement = $jobOperation->movement;
             $team = $movement?->team;
-            
+
             $dbJob = [
                 'id' => $jobOperation->job_id ?? 'J-' . $jobOperation->id,
                 'team' => $team?->team_name ?? 'Unknown Team',
@@ -295,6 +374,8 @@ class LmsController extends Controller
                     'requires_signature' => $checkpoint->requires_signature,
                     'has_photo' => $checkpoint->photo_path ? true : false,
                     'has_signature' => $checkpoint->signature_path ? true : false,
+                    'photo_url' => $checkpoint->photo_path ? route('checkpoint.photo', $checkpoint->id) : null,
+                    'signature_url' => $checkpoint->signature_path ? route('checkpoint.signature', $checkpoint->id) : null,
                 ];
             })->toArray();
         }
@@ -302,7 +383,7 @@ class LmsController extends Controller
         // Get mock data as fallback
         $mockJob = collect(LmsData::schedule())->firstWhere('id', $id)
             ?? collect(LmsData::schedule())->first();
-        
+
         if ($mockJob) {
             $mockJob['source'] = 'mock';
         }
@@ -320,6 +401,7 @@ class LmsController extends Controller
     public function jobDetail(string $id): Response|RedirectResponse
     {
         $jobOperation = JobOperation::with([
+            'event',
             'movement.team',
             'movement',
             'vehicle',
@@ -365,12 +447,12 @@ class LmsController extends Controller
             // Calculate estimated time based on checkpoint position
             $totalCheckpoints = $jobOperation->checkpoints->count();
             $scheduledTime = '--:--';
-            
+
             if ($movement->window_start && $movement->window_end && $totalCheckpoints > 0) {
                 $departure = \Carbon\Carbon::parse($movement->window_start);
                 $arrival = \Carbon\Carbon::parse($movement->window_end);
                 $totalMinutes = $departure->diffInMinutes($arrival);
-                
+
                 // Distribute checkpoints evenly across the journey
                 $minutesPerCheckpoint = $totalMinutes / ($totalCheckpoints + 1);
                 $estimatedTime = $departure->copy()->addMinutes($minutesPerCheckpoint * ($index + 1));
@@ -387,12 +469,14 @@ class LmsController extends Controller
                 'requires_signature' => $cp->requires_signature,
                 'has_photo' => $cp->photo_path ? true : false,
                 'has_signature' => $cp->signature_path ? true : false,
+                'photo_url' => $cp->photo_path ? route('checkpoint.photo', $cp->id) : null,
+                'signature_url' => $cp->signature_path ? route('checkpoint.signature', $cp->id) : null,
             ];
         });
 
         // Build crew members array
         $crewMembers = [];
-        
+
         if ($jobOperation->supervisor) {
             $crewMembers[] = [
                 'name' => $jobOperation->supervisor->name,
@@ -607,9 +691,9 @@ class LmsController extends Controller
     public function updateTeam(Request $request, string $code): RedirectResponse
     {
         Log::info('Updating team', ['code' => $code, 'request' => $request->all()]);
-        
+
         $team = Team::where('code', $code)->firstOrFail();
-        
+
         $validated = $request->validate([
             'code' => 'required|string|max:10',
             'team_name' => 'required|string|max:255',
@@ -646,7 +730,7 @@ class LmsController extends Controller
     public function destroyTeam(string $code): RedirectResponse
     {
         Log::info('Deleting team', ['code' => $code]);
-        
+
         $team = Team::where('code', $code)->firstOrFail();
         $team->delete();
 
@@ -681,108 +765,155 @@ class LmsController extends Controller
      */
     public function overrideCheckpoint(Request $request, string $checkpointId): JsonResponse
     {
-        $validated = $request->validate([
-            'state' => 'required|in:done,missed,skipped',
-            'actual_time' => 'nullable|date_format:H:i',
-            'reason' => 'required|string|max:255',
-            'notes' => 'nullable|string',
-        ]);
-
-        $checkpoint = JobCheckpoint::with('job')->findOrFail($checkpointId);
-        
-        // Get current user or use a default user for now (supervisor)
-        // In production, you'd use auth()->user()
-        $user = User::first(); // TODO: Replace with actual authenticated user
-
-        $updateData = [
-            'state' => $validated['state'],
-            'was_overridden' => true,
-            'override_reason' => $validated['reason'],
-            'override_notes' => $validated['notes'] ?? null,
-            'overridden_by' => $user->id,
-            'overridden_at' => now(),
-        ];
-
-        // Handle based on state
-        if ($validated['state'] === 'done' && $validated['actual_time']) {
-            $updateData['override_actual_time'] = $validated['actual_time'];
-            // Use the same date as scheduled_at but with the actual time provided
-            if ($checkpoint->scheduled_at) {
-                $scheduledDateTime = \Carbon\Carbon::parse($checkpoint->scheduled_at);
-                list($hours, $minutes) = explode(':', $validated['actual_time']);
-                $actualDateTime = $scheduledDateTime->copy()->setTime((int)$hours, (int)$minutes, 0);
-            } else {
-                // Fallback to today's date if no scheduled time
-                $actualDateTime = \Carbon\Carbon::createFromFormat('H:i', $validated['actual_time']);
-            }
-            
-            $updateData['completed_at'] = $actualDateTime;
-            $updateData['completed_by'] = $user->id;
-            $updateData['completion_method'] = 'web';
-            $updateData['notes'] = $validated['notes'] ?? null;
-            
-            // Calculate duration based on scheduled time
-            if ($checkpoint->scheduled_at) {
-                $scheduledTime = \Carbon\Carbon::parse($checkpoint->scheduled_at);
-                $updateData['actual_duration_seconds'] = abs($actualDateTime->diffInSeconds($scheduledTime));
-            }
-            // Fallback: If checkpoint was started, use start time
-            elseif ($checkpoint->started_at) {
-                $updateData['actual_duration_seconds'] = $actualDateTime->diffInSeconds($checkpoint->started_at);
-            }
-            // Last resort: use estimated duration
-            elseif ($checkpoint->estimated_minutes) {
-                $updateData['actual_duration_seconds'] = $checkpoint->estimated_minutes * 60;
-            }
-            
-            // Check if on time based on movement's window_end (not individual checkpoint scheduled_at)
-            $job = $checkpoint->job;
-            $movement = $job->movement;
-            if ($movement && $movement->window_end) {
-                $windowEnd = \Carbon\Carbon::parse($movement->window_end);
-                $delayMinutes = $actualDateTime->diffInMinutes($windowEnd, false);
-                // On-time if completed before or at window_end
-                $updateData['is_on_time'] = $delayMinutes <= 0;
-                // Only store positive delays (after window_end)
-                $updateData['delay_minutes'] = max(0, -$delayMinutes);
-            }
-        } elseif ($validated['state'] === 'skipped') {
-            $updateData['skip_reason'] = $validated['reason'];
-            $updateData['skipped_by'] = $user->id;
-            $updateData['skipped_at'] = now();
-            $updateData['notes'] = $validated['notes'] ?? null;
-        } elseif ($validated['state'] === 'missed') {
-            $updateData['skip_reason'] = $validated['reason'];
-            $updateData['skipped_by'] = $user->id;
-            $updateData['skipped_at'] = now();
-            $updateData['exception_type'] = 'missed';
-            $updateData['notes'] = $validated['notes'] ?? null;
-        }
-
-        $checkpoint->update($updateData);
-
-        // Update job progress
-        $job = $checkpoint->job;
-        $job->updateProgress();
-
-        // Auto-start job if it's still pending
-        if ($job->fresh()->status === 'pending') {
-            $job->update(['status' => 'in-progress']);
-        }
-
-        // Auto-complete job if all checkpoints are done
-        if ($job->fresh()->checkpoints_completed === $job->checkpoints_total) {
-            $job->update([
-                'status' => 'completed',
-                'completed_at' => now(),
+        $uploadService = app(CheckpointUploadService::class);
+        try {
+            Log::info('Override checkpoint called', [
+                'checkpoint_id' => $checkpointId,
+                'has_photo' => $request->hasFile('photo'),
+                'request_all' => $request->all(), // Log all request data for debugging (including files info, but not file contents)
+                // 'request_all' => $request->except(['photo', 'signature_data'])
             ]);
-        }
 
-        return response()->json([
-            'success' => true,
-            'message' => 'Checkpoint updated successfully',
-            'checkpoint' => $checkpoint->fresh(),
-        ]);
+            $validated = $request->validate([
+                'state' => 'required|in:done,skipped',
+                'actual_time' => 'nullable|date_format:H:i',
+                'reason' => 'required|string|max:255',
+                'notes' => 'nullable|string',
+                'photo' => 'nullable|image|max:10240', // Max 10MB
+                'signature_data' => 'nullable|string', // Base64 encoded image
+            ]);
+
+            $checkpoint = JobCheckpoint::with('job')->findOrFail($checkpointId);
+
+            // Get current user or use a default user for now (supervisor)
+            // In production, you'd use auth()->user()
+            $user = User::first(); // TODO: Replace with actual authenticated user
+
+            $updateData = [
+                'state' => $validated['state'],
+                'was_overridden' => true,
+                'override_reason' => $validated['reason'],
+                'override_notes' => $validated['notes'] ?? null,
+                'overridden_by' => $user->id,
+                'overridden_at' => now(),
+            ];
+
+            // Handle based on state
+            if (($validated['state'] === 'done' || $validated['state'] === 'success') && $validated['actual_time']) {
+                $updateData['override_actual_time'] = $validated['actual_time'];
+                // Use the same date as scheduled_at but with the actual time provided
+                if ($checkpoint->scheduled_at) {
+                    $scheduledDateTime = \Carbon\Carbon::parse($checkpoint->scheduled_at);
+                    list($hours, $minutes) = explode(':', $validated['actual_time']);
+                    $actualDateTime = $scheduledDateTime->copy()->setTime((int)$hours, (int)$minutes, 0);
+                } else {
+                    // Fallback to today's date if no scheduled time
+                    $actualDateTime = \Carbon\Carbon::createFromFormat('H:i', $validated['actual_time']);
+                }
+
+                $updateData['completed_at'] = $actualDateTime;
+                $updateData['completed_by'] = $user->id;
+                $updateData['completion_method'] = 'web';
+                $updateData['notes'] = $validated['notes'] ?? null;
+
+                // Handle photo upload
+                if ($request->hasFile('photo') && $request->file('photo')->isValid()) {
+                    $updateData['photo_path'] = $uploadService->storePhoto(
+                        $request->file('photo'),
+                        $checkpointId,
+                        $checkpoint->job_id
+                    );
+                }
+
+                // Handle signature data (base64)
+                if ($request->filled('signature_data')) {
+                    $signaturePath = $uploadService->storeSignature(
+                        $request->input('signature_data'),
+                        $checkpointId,
+                        $checkpoint->job_id
+                    );
+
+                    if ($signaturePath) {
+                        $updateData['signature_path'] = $signaturePath;
+                    }
+                }
+
+                // Calculate duration based on scheduled time
+                if ($checkpoint->scheduled_at) {
+                    $scheduledTime = \Carbon\Carbon::parse($checkpoint->scheduled_at);
+                    $updateData['actual_duration_seconds'] = abs($actualDateTime->diffInSeconds($scheduledTime));
+                }
+                // Fallback: If checkpoint was started, use start time
+                elseif ($checkpoint->started_at) {
+                    $updateData['actual_duration_seconds'] = $actualDateTime->diffInSeconds($checkpoint->started_at);
+                }
+                // Last resort: use estimated duration
+                elseif ($checkpoint->estimated_minutes) {
+                    $updateData['actual_duration_seconds'] = $checkpoint->estimated_minutes * 60;
+                }
+
+                // Check if on time based on movement's window_end (not individual checkpoint scheduled_at)
+                $job = $checkpoint->job;
+                $movement = $job->movement;
+                if ($movement && $movement->window_end) {
+                    $windowEnd = \Carbon\Carbon::parse($movement->window_end);
+                    $delayMinutes = $actualDateTime->diffInMinutes($windowEnd, false);
+                    // On-time if completed before or at window_end
+                    $updateData['is_on_time'] = $delayMinutes <= 0;
+                    // Only store positive delays (after window_end)
+                    $updateData['delay_minutes'] = max(0, -$delayMinutes);
+                }
+            } elseif ($validated['state'] === 'skipped') {
+                $updateData['skip_reason'] = $validated['reason'];
+                $updateData['skipped_by'] = $user->id;
+                $updateData['skipped_at'] = now();
+                $updateData['notes'] = $validated['notes'] ?? null;
+            } elseif ($validated['state'] === 'missed') {
+                $updateData['skip_reason'] = $validated['reason'];
+                $updateData['skipped_by'] = $user->id;
+                $updateData['skipped_at'] = now();
+                $updateData['exception_type'] = 'missed';
+                $updateData['notes'] = $validated['notes'] ?? null;
+            }
+
+            $checkpoint->update($updateData);
+
+            // Update job progress
+            $job = $checkpoint->job;
+            $job->updateProgress();
+
+            // Auto-start job if it's still pending
+            if ($job->fresh()->status === 'pending') {
+                $job->update(['status' => 'in-progress']);
+            }
+
+            // Auto-complete job if all checkpoints are done
+            if ($job->fresh()->checkpoints_completed === $job->checkpoints_total) {
+                $job->update([
+                    'status' => 'completed',
+                    'completed_at' => now(),
+                ]);
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Checkpoint updated successfully',
+                'checkpoint' => $checkpoint->fresh(),
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Override checkpoint failed', [
+                'checkpoint_id' => $checkpointId,
+                'error' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to override checkpoint: ' . $e->getMessage()
+            ], 500);
+        }
     }
 
     /**
@@ -798,7 +929,7 @@ class LmsController extends Controller
         ]);
 
         $checkpoint = JobCheckpoint::with('job')->findOrFail($checkpointId);
-        
+
         if ($checkpoint->state === 'done') {
             return response()->json([
                 'success' => false,
@@ -820,9 +951,10 @@ class LmsController extends Controller
         if (!empty($validated['photo'])) {
             $photoPath = $this->saveBase64File(
                 $validated['photo'],
-                'checkpoints/photos',
+                'photos',
                 $checkpoint->job_id,
-                'photo'
+                'photo',
+                $checkpoint->id
             );
             if ($photoPath) {
                 $updateData['photo_path'] = $photoPath;
@@ -833,9 +965,10 @@ class LmsController extends Controller
         if (!empty($validated['signature'])) {
             $signaturePath = $this->saveBase64File(
                 $validated['signature'],
-                'checkpoints/signatures',
+                'signatures',
                 $checkpoint->job_id,
-                'signature'
+                'signature',
+                $checkpoint->id
             );
             if ($signaturePath) {
                 $updateData['signature_path'] = $signaturePath;
@@ -853,15 +986,15 @@ class LmsController extends Controller
                 // Fallback to today's date if no scheduled time
                 $actualDateTime = \Carbon\Carbon::createFromFormat('H:i', $validated['actual_time']);
             }
-            
+
             $updateData['completed_at'] = $actualDateTime;
-            
+
             // Calculate duration based on scheduled time
             if ($checkpoint->scheduled_at) {
                 $scheduledTime = \Carbon\Carbon::parse($checkpoint->scheduled_at);
                 $updateData['actual_duration_seconds'] = abs($actualDateTime->diffInSeconds($scheduledTime));
             }
-            
+
             // Check if on time based on movement's window_end (not individual checkpoint scheduled_at)
             $job = $checkpoint->job;
             $movement = $job->movement;
@@ -906,7 +1039,7 @@ class LmsController extends Controller
     /**
      * Save base64 encoded file to private storage
      */
-    private function saveBase64File(string $base64Data, string $directory, int $jobId, string $type): ?string
+    private function saveBase64File(string $base64Data, string $directory, int $jobId, string $type, int $checkpointId): ?string
     {
         try {
             // Extract the base64 string (remove data:image/...;base64, prefix)
@@ -924,13 +1057,16 @@ class LmsController extends Controller
                 return null;
             }
 
-            // Generate unique filename
+            // Generate unique filename with checkpoint ID
             $timestamp = now()->format('YmdHis');
-            $filename = "job_{$jobId}_{$type}_{$timestamp}.{$extension}";
-            $filePath = "{$directory}/{$filename}";
+            $filename = "checkpoint_{$checkpointId}_{$type}_{$timestamp}.{$extension}";
+            
+            // Store in job-specific directory
+            $jobDirectory = "jobs/{$jobId}/{$directory}";
+            $filePath = "{$jobDirectory}/{$filename}";
 
-            // Save to private storage (storage/app/private/...)
-            Storage::disk('local')->put("private/{$filePath}", $fileData);
+            // Save to private storage (storage/app/...)
+            Storage::disk('local')->put($filePath, $fileData);
 
             return $filePath;
         } catch (\Exception $e) {
@@ -940,20 +1076,27 @@ class LmsController extends Controller
     }
 
     /**
-     * Retrieve checkpoint photo
+     * Retrieve checkpoint photo (with backward compatibility)
      */
     public function getCheckpointPhoto(string $checkpointId)
     {
         $checkpoint = JobCheckpoint::findOrFail($checkpointId);
-        
+
         if (!$checkpoint->photo_path) {
             abort(404, 'Photo not found');
         }
 
-        $filePath = "private/{$checkpoint->photo_path}";
-        
+        $filePath = $checkpoint->photo_path;
+
+        // Check new location first, then fall back to old location
         if (!Storage::disk('local')->exists($filePath)) {
-            abort(404, 'Photo file not found');
+            // Try old location for backward compatibility
+            $oldPath = str_replace('jobs/' . $checkpoint->job_id . '/', '', $filePath);
+            if (Storage::disk('local')->exists($oldPath)) {
+                $filePath = $oldPath;
+            } else {
+                abort(404, 'Photo file not found');
+            }
         }
 
         $file = Storage::disk('local')->get($filePath);
@@ -964,20 +1107,27 @@ class LmsController extends Controller
     }
 
     /**
-     * Retrieve checkpoint signature
+     * Retrieve checkpoint signature (with backward compatibility)
      */
     public function getCheckpointSignature(string $checkpointId)
     {
         $checkpoint = JobCheckpoint::findOrFail($checkpointId);
-        
+
         if (!$checkpoint->signature_path) {
             abort(404, 'Signature not found');
         }
 
-        $filePath = "private/{$checkpoint->signature_path}";
-        
+        $filePath = $checkpoint->signature_path;
+
+        // Check new location first, then fall back to old location
         if (!Storage::disk('local')->exists($filePath)) {
-            abort(404, 'Signature file not found');
+            // Try old location for backward compatibility
+            $oldPath = str_replace('jobs/' . $checkpoint->job_id . '/', '', $filePath);
+            if (Storage::disk('local')->exists($oldPath)) {
+                $filePath = $oldPath;
+            } else {
+                abort(404, 'Signature file not found');
+            }
         }
 
         $file = Storage::disk('local')->get($filePath);
@@ -1013,7 +1163,7 @@ class LmsController extends Controller
         ]);
 
         $job = JobOperation::findOrFail($jobId);
-        
+
         $job->update([
             'status' => $validated['status'],
         ]);

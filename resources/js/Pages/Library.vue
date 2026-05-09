@@ -380,6 +380,10 @@
           <input v-model="newCheckpoint.requires_signature" type="checkbox" id="new-requires-signature" style="width: 16px; height: 16px;" />
           <label for="new-requires-signature" style="font-size: 12px; font-weight: 600; color: var(--ink); cursor: pointer;">Requires Signature</label>
         </div>
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <input v-model="newCheckpoint.requires_baggage_count" type="checkbox" id="new-requires-baggage-count" style="width: 16px; height: 16px;" />
+          <label for="new-requires-baggage-count" style="font-size: 12px; font-weight: 600; color: var(--ink); cursor: pointer;">Requires Baggage Count</label>
+        </div>
       </div>
       <template #footer>
         <div style="display: flex; flex-direction: column; gap: 8px;">
@@ -450,6 +454,10 @@
         <div style="display: flex; align-items: center; gap: 8px;">
           <input v-model="editingCheckpoint.requires_signature" type="checkbox" id="edit-requires-signature" style="width: 16px; height: 16px;" />
           <label for="edit-requires-signature" style="font-size: 12px; font-weight: 600; color: var(--ink); cursor: pointer;">Requires Signature</label>
+        </div>
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <input v-model="editingCheckpoint.requires_baggage_count" type="checkbox" id="edit-requires-baggage-count" style="width: 16px; height: 16px;" />
+          <label for="edit-requires-baggage-count" style="font-size: 12px; font-weight: 600; color: var(--ink); cursor: pointer;">Requires Baggage Count</label>
         </div>
       </div>
       <template #footer>
@@ -1157,6 +1165,7 @@ const newCheckpoint = ref({
   capture_method: 'manual',
   requires_photo: false,
   requires_signature: false,
+  requires_baggage_count: false,
   is_active: true,
 });
 

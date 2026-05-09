@@ -43,6 +43,8 @@ class DatabaseSeeder extends Seeder
             CheckpointLibrarySeeder::class,
             CheckpointTemplateLibrarySeeder::class,
             MovementTemplateLibrarySeeder::class,
+            LogisticsCheckpointSeeder::class,
+            MatchDayCheckpointSeeder::class,
             
             // Sample data for demonstration
             SampleMovementsSeeder::class,

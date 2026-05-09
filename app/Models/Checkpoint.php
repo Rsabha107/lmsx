@@ -16,12 +16,14 @@ class Checkpoint extends Model
         'capture_method',
         'requires_photo',
         'requires_signature',
+        'requires_baggage_count',
         'is_active',
     ];
 
     protected $casts = [
         'requires_photo' => 'boolean',
         'requires_signature' => 'boolean',
+        'requires_baggage_count' => 'boolean',
         'is_active' => 'boolean',
     ];
 

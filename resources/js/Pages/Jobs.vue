@@ -313,6 +313,20 @@
           </div>
         </div>
 
+        <!-- Baggage Count (if required) -->
+        <div v-if="overrideState === 'done' && (overrideCheckpoint?.checkpoint?.requires_baggage_count || overrideCheckpoint?.requires_baggage_count)" class="override-two-col">
+          <div class="override-field">
+            <label class="override-label">BAGS LOADED</label>
+            <input type="number" v-model.number="overrideBagsLoaded" min="0" class="override-input" placeholder="0" />
+            <div class="override-field-hint">Number of bags</div>
+          </div>
+          <div class="override-field">
+            <label class="override-label">OVERSIZED PIECES</label>
+            <input type="number" v-model.number="overrideOversizedPieces" min="0" class="override-input" placeholder="0" />
+            <div class="override-field-hint">Number of oversized items</div>
+          </div>
+        </div>
+
         <div class="override-field">
           <label class="override-label">REASON (REQUIRED)</label>
           <select v-model="overrideReason" class="override-select">
@@ -538,19 +552,13 @@ const timeVariance = computed(() => {
   
   selectedJob.value.checkpoints.forEach(checkpoint => {
     if ((checkpoint.state === 'done' || checkpoint.status === 'done') && 
-        checkpoint.scheduled_at && 
-        checkpoint.completed_at) {
-      // Parse times (format: "HH:mm")
-      const [sh, sm] = checkpoint.scheduled_at.split(':').map(Number);
-      const [ch, cm] = checkpoint.completed_at.split(':').map(Number);
-      
-      if (!isNaN(sh) && !isNaN(sm) && !isNaN(ch) && !isNaN(cm)) {
-        const scheduledMinutes = sh * 60 + sm;
-        const completedMinutes = ch * 60 + cm;
-        const variance = completedMinutes - scheduledMinutes;
-        totalVarianceMinutes += variance;
-        hasVariance = true;
-      }
+        checkpoint.scheduled_ts && 
+        checkpoint.completed_ts) {
+      // Use timestamps for accurate calculation (handles dates and midnight crossover)
+      const varianceSeconds = checkpoint.completed_ts - checkpoint.scheduled_ts;
+      const varianceMinutes = Math.round(varianceSeconds / 60);
+      totalVarianceMinutes += varianceMinutes;
+      hasVariance = true;
     }
   });
   
@@ -684,6 +692,8 @@ const overrideTime = ref('');
 const overrideReason = ref('');
 const overrideNotes = ref('');
 const overrideNotify = ref(true);
+const overrideBagsLoaded = ref(0);
+const overrideOversizedPieces = ref(0);
 const overridePhoto = ref(null);
 const overridePhotoPreview = ref(null);
 const overrideSignature = ref(null);
@@ -723,6 +733,8 @@ function openOverrideModal() {
   overrideReason.value = '';
   overrideNotes.value = '';
   overrideNotify.value = true;
+  overrideBagsLoaded.value = overrideCheckpoint.value?.bags_loaded || 0;
+  overrideOversizedPieces.value = overrideCheckpoint.value?.oversized_pieces || 0;
   overridePhoto.value = null;
   overridePhotoPreview.value = null;
   overrideSignature.value = null;
@@ -737,12 +749,28 @@ function openOverrideModal() {
 }
 
 const overrideVarianceMinutes = computed(() => {
-  const scheduledTime = overrideCheckpoint.value?.scheduled_at || overrideCheckpoint.value?.at;
-  if (!scheduledTime || !overrideTime.value) return null;
-  const [sh, sm] = scheduledTime.split(':').map(Number);
+  if (!overrideCheckpoint.value?.scheduled_ts || !overrideTime.value) return null;
+  
+  // Parse the time input (HH:mm)
   const [ah, am] = overrideTime.value.split(':').map(Number);
-  if (isNaN(sh) || isNaN(sm) || isNaN(ah) || isNaN(am)) return null;
-  return (ah * 60 + am) - (sh * 60 + sm);
+  if (isNaN(ah) || isNaN(am)) return null;
+  
+  // Get scheduled timestamp and extract scheduled hour
+  const scheduledDate = new Date(overrideCheckpoint.value.scheduled_ts * 1000);
+  const scheduledHour = scheduledDate.getHours();
+  
+  // Create actual datetime using TODAY's date (matching backend logic)
+  const actualDate = new Date();
+  actualDate.setHours(ah, am, 0, 0);
+  
+  // Midnight crossover detection (scheduled late night, actual early morning = next day)
+  if (scheduledHour >= 18 && ah < 6) {
+    actualDate.setDate(actualDate.getDate() + 1);
+  }
+  
+  // Calculate variance in minutes using timestamps
+  const varianceSeconds = Math.floor(actualDate.getTime() / 1000) - overrideCheckpoint.value.scheduled_ts;
+  return Math.round(varianceSeconds / 60);
 });
 
 const overrideVarianceText = computed(() => {
@@ -940,6 +968,12 @@ function submitOverride() {
   // Add actual time only for 'done' state
   if (overrideState.value === 'done') {
     formData.append('actual_time', overrideTime.value);
+    
+    // Add baggage count if required
+    if (overrideCheckpoint.value?.checkpoint?.requires_baggage_count || overrideCheckpoint.value?.requires_baggage_count) {
+      formData.append('bags_loaded', overrideBagsLoaded.value);
+      formData.append('oversized_pieces', overrideOversizedPieces.value);
+    }
     
     // Add photo if provided
     if (overridePhoto.value && overridePhoto.value instanceof File) {

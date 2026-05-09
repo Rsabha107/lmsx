@@ -189,7 +189,8 @@ class LmsController extends Controller
             'vehicle',
             'driver',
             'supervisor',
-            'checkpoints.completedBy'
+            'checkpoints.completedBy',
+            'checkpoints.checkpoint'
         ]);
 
         // Filter by plan if selected
@@ -250,12 +251,17 @@ class LmsController extends Controller
                             'at' => $displayTime,
                             'scheduled_at' => $checkpoint->scheduled_at?->format('H:i'),
                             'completed_at' => $checkpoint->completed_at?->format('H:i'),
+                            'scheduled_ts' => $checkpoint->scheduled_at?->timestamp,
+                            'completed_ts' => $checkpoint->completed_at?->timestamp,
                             'by' => $checkpoint->completedBy?->name ?? ($checkpoint->state === 'done' ? 'System' : null),
                             'completion_method' => $checkpoint->completion_method,
                             'estimated_minutes' => $checkpoint->estimated_minutes,
                             'actual_duration_seconds' => $checkpoint->actual_duration_seconds,
                             'requires_photo' => $checkpoint->requires_photo,
                             'requires_signature' => $checkpoint->requires_signature,
+                            'requires_baggage_count' => $checkpoint->checkpoint?->requires_baggage_count ?? false,
+                            'bags_loaded' => $checkpoint->bags_loaded,
+                            'oversized_pieces' => $checkpoint->oversized_pieces,
                             'has_photo' => $checkpoint->photo_path ? true : false,
                             'has_signature' => $checkpoint->signature_path ? true : false,
                             'photo_url' => $checkpoint->photo_path ? route('checkpoint.photo', $checkpoint->id) : null,
@@ -280,7 +286,8 @@ class LmsController extends Controller
             'vehicle',
             'driver',
             'supervisor',
-            'checkpoints.completedBy'
+            'checkpoints.completedBy',
+            'checkpoints.checkpoint'
         ])
             ->join('movements', 'jobs_operations.movement_id', '=', 'movements.id')
             ->orderBy('movements.window_start', 'asc')
@@ -783,11 +790,13 @@ class LmsController extends Controller
                 'actual_time' => 'nullable|date_format:H:i',
                 'reason' => 'required|string|max:255',
                 'notes' => 'nullable|string',
+                'bags_loaded' => 'nullable|integer|min:0',
+                'oversized_pieces' => 'nullable|integer|min:0',
                 'photo' => 'nullable|image|max:10240', // Max 10MB
                 'signature_data' => 'nullable|string', // Base64 encoded image
             ]);
 
-            $checkpoint = JobCheckpoint::with('job')->findOrFail($checkpointId);
+            $checkpoint = JobCheckpoint::with(['job', 'checkpoint'])->findOrFail($checkpointId);
 
             // Get current user or use a default user for now (supervisor)
             // In production, you'd use auth()->user()
@@ -805,20 +814,37 @@ class LmsController extends Controller
             // Handle based on state
             if (($validated['state'] === 'done' || $validated['state'] === 'success') && $validated['actual_time']) {
                 $updateData['override_actual_time'] = $validated['actual_time'];
-                // Use the same date as scheduled_at but with the actual time provided
+                
+                // Use TODAY's date as the base, not the scheduled date
+                list($hours, $minutes) = explode(':', $validated['actual_time']);
+                $actualDateTime = \Carbon\Carbon::today()->setTime((int)$hours, (int)$minutes, 0);
+                
+                // Handle midnight crossover: if actual time is very early (e.g., 00:39) and scheduled time
+                // was late (e.g., 14:19), assume the completion happened early next day
                 if ($checkpoint->scheduled_at) {
                     $scheduledDateTime = \Carbon\Carbon::parse($checkpoint->scheduled_at);
-                    list($hours, $minutes) = explode(':', $validated['actual_time']);
-                    $actualDateTime = $scheduledDateTime->copy()->setTime((int)$hours, (int)$minutes, 0);
-                } else {
-                    // Fallback to today's date if no scheduled time
-                    $actualDateTime = \Carbon\Carbon::createFromFormat('H:i', $validated['actual_time']);
+                    $scheduledHour = $scheduledDateTime->hour;
+                    $actualHour = (int)$hours;
+                    
+                    // If scheduled late (after 18:00) and actual is very early (before 06:00),
+                    // it likely crossed midnight to tomorrow
+                    if ($scheduledHour >= 18 && $actualHour < 6) {
+                        $actualDateTime->addDay();
+                    }
                 }
-
+                
                 $updateData['completed_at'] = $actualDateTime;
                 $updateData['completed_by'] = $user->id;
                 $updateData['completion_method'] = 'web';
                 $updateData['notes'] = $validated['notes'] ?? null;
+
+                // Add baggage count if provided
+                if (isset($validated['bags_loaded'])) {
+                    $updateData['bags_loaded'] = $validated['bags_loaded'];
+                }
+                if (isset($validated['oversized_pieces'])) {
+                    $updateData['oversized_pieces'] = $validated['oversized_pieces'];
+                }
 
                 // Handle photo upload
                 if ($request->hasFile('photo') && $request->file('photo')->isValid()) {
@@ -932,7 +958,7 @@ class LmsController extends Controller
             'photo' => 'nullable|string',
         ]);
 
-        $checkpoint = JobCheckpoint::with('job')->findOrFail($checkpointId);
+        $checkpoint = JobCheckpoint::with(['job', 'checkpoint'])->findOrFail($checkpointId);
 
         if ($checkpoint->state === 'done') {
             return response()->json([
@@ -981,14 +1007,22 @@ class LmsController extends Controller
 
         // Set completion time
         if (!empty($validated['actual_time'])) {
-            // Use the same date as scheduled_at but with the actual time provided
+            // Use TODAY's date as the base, not the scheduled date
+            list($hours, $minutes) = explode(':', $validated['actual_time']);
+            $actualDateTime = \Carbon\Carbon::today()->setTime((int)$hours, (int)$minutes, 0);
+            
+            // Handle midnight crossover: if actual time is very early (e.g., 00:39) and scheduled time
+            // was late (e.g., 14:19), assume the completion happened early next day
             if ($checkpoint->scheduled_at) {
                 $scheduledDateTime = \Carbon\Carbon::parse($checkpoint->scheduled_at);
-                list($hours, $minutes) = explode(':', $validated['actual_time']);
-                $actualDateTime = $scheduledDateTime->copy()->setTime((int)$hours, (int)$minutes, 0);
-            } else {
-                // Fallback to today's date if no scheduled time
-                $actualDateTime = \Carbon\Carbon::createFromFormat('H:i', $validated['actual_time']);
+                $scheduledHour = $scheduledDateTime->hour;
+                $actualHour = (int)$hours;
+                
+                // If scheduled late (after 18:00) and actual is very early (before 06:00),
+                // it likely crossed midnight to tomorrow
+                if ($scheduledHour >= 18 && $actualHour < 6) {
+                    $actualDateTime->addDay();
+                }
             }
 
             $updateData['completed_at'] = $actualDateTime;

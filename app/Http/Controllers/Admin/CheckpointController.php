@@ -74,6 +74,7 @@ class CheckpointController extends Controller
             'capture_method' => 'required|in:auto,manual,gps,photo,signature',
             'requires_photo' => 'boolean',
             'requires_signature' => 'boolean',
+            'requires_baggage_count' => 'boolean',
             'is_active' => 'boolean',
         ]);
 
@@ -134,6 +135,7 @@ class CheckpointController extends Controller
             'capture_method' => 'required|in:auto,manual,gps,photo,signature',
             'requires_photo' => 'boolean',
             'requires_signature' => 'boolean',
+            'requires_baggage_count' => 'boolean',
             'is_active' => 'boolean',
         ]);
 

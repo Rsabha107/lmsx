@@ -28,6 +28,7 @@ class KitTruckDashboardController extends Controller
             'movement.team.country',
             'movement.match',
             'checkpoints' => fn ($q) => $q->orderBy('order'),
+            'checkpoints.checkpoint', // Load checkpoint library reference
         ])
             ->whereHas('movement', function($q) use ($kind) {
                 $q->where('kind', $kind);
@@ -104,18 +105,25 @@ class KitTruckDashboardController extends Controller
 
         // ── Build column definitions ───────────────────────────────────────
         // Use job checkpoint snapshots (have order + snapshotted name)
-        $columnMap = []; // order => name
+        $columnMap = []; // order => [name, requires_baggage_count]
         foreach ($jobs as $job) {
             foreach ($job->checkpoints ?? [] as $jcp) {
                 if (!isset($columnMap[$jcp->order])) {
-                    $columnMap[$jcp->order] = $jcp->name;
+                    $columnMap[$jcp->order] = [
+                        'name' => $jcp->name,
+                        'requires_baggage_count' => $jcp->checkpoint?->requires_baggage_count ?? false,
+                    ];
                 }
             }
         }
 
         ksort($columnMap);
         $columns = array_values(array_map(
-            fn ($order, $name) => ['order' => (int) $order, 'name' => $name],
+            fn ($order, $data) => [
+                'order' => (int) $order, 
+                'name' => $data['name'],
+                'requires_baggage_count' => $data['requires_baggage_count'],
+            ],
             array_keys($columnMap),
             $columnMap
         ));

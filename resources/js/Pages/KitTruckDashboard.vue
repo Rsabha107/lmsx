@@ -128,11 +128,17 @@
               >{{ col.name }}</th>
             </tr>
 
-            <!-- Row 2: Planned / Actual -->
+            <!-- Row 2: Planned / Actual OR Baggage Count -->
             <tr>
               <template v-for="col in columns" :key="col.order">
-                <th class="mv-th mv-th--sub mv-th--planned">Planned</th>
-                <th class="mv-th mv-th--sub mv-th--actual">Actual</th>
+                <template v-if="col.requires_baggage_count">
+                  <th class="mv-th mv-th--sub mv-th--baggage">Bags Loaded</th>
+                  <th class="mv-th mv-th--sub mv-th--baggage">Oversized Pieces</th>
+                </template>
+                <template v-else>
+                  <th class="mv-th mv-th--sub mv-th--planned">Planned</th>
+                  <th class="mv-th mv-th--sub mv-th--actual">Actual</th>
+                </template>
               </template>
             </tr>
           </thead>
@@ -201,17 +207,27 @@
 
                 <!-- Dynamic checkpoint pairs -->
                 <template v-for="col in columns" :key="col.order">
-                  <td class="mv-td mv-td--time mv-td--planned">
-                    {{ cpField(row, col.order, 'scheduled_at') || '—' }}
-                  </td>
-                  <td class="mv-td mv-td--time" :class="cpHighlight(row, col.order)">
-                    <span class="actual-val">{{ cpField(row, col.order, 'completed_at') || '—' }}</span>
-                    <span
-                      v-if="cpDelta(row, col.order) !== null"
-                      class="delta-badge"
-                      :class="cpDelta(row, col.order) > 0 ? 'delta-badge--late' : 'delta-badge--early'"
-                    >{{ cpDeltaLabel(row, col.order) }}</span>
-                  </td>
+                  <template v-if="col.requires_baggage_count">
+                    <td class="mv-td mv-td--center mv-td--baggage">
+                      <span class="baggage-count">{{ cpField(row, col.order, 'bags_loaded') ?? '—' }}</span>
+                    </td>
+                    <td class="mv-td mv-td--center mv-td--baggage">
+                      <span class="baggage-count">{{ cpField(row, col.order, 'oversized_pieces') ?? '—' }}</span>
+                    </td>
+                  </template>
+                  <template v-else>
+                    <td class="mv-td mv-td--time mv-td--planned">
+                      {{ cpField(row, col.order, 'scheduled_at') || '—' }}
+                    </td>
+                    <td class="mv-td mv-td--time" :class="cpHighlight(row, col.order)">
+                      <span class="actual-val">{{ cpField(row, col.order, 'completed_at') || '—' }}</span>
+                      <span
+                        v-if="cpDelta(row, col.order) !== null"
+                        class="delta-badge"
+                        :class="cpDelta(row, col.order) > 0 ? 'delta-badge--late' : 'delta-badge--early'"
+                      >{{ cpDeltaLabel(row, col.order) }}</span>
+                    </td>
+                  </template>
                 </template>
               </tr>
             </template>
@@ -491,10 +507,11 @@ function setEvent(event) {
   min-width: 144px;
 }
 
-/* Sub-header row (Planned / Actual) */
+/* Sub-header row (Planned / Actual / Baggage) */
 .mv-th--sub     { background: var(--bg); font-size: 10px; font-weight: 500; position: sticky; top: 33px; z-index: 3; box-shadow: 0 1px 0 var(--border); }
 .mv-th--planned { border-left: 2px solid var(--border); color: var(--ink4); }
 .mv-th--actual  { color: var(--ink2); }
+.mv-th--baggage { border-left: 2px solid var(--border); color: var(--accent); }
 
 /* Group date divider */
 .mv-group-label {
@@ -579,6 +596,26 @@ function setEvent(event) {
 }
 .delta-badge--late  { color: #DC2626; }
 .delta-badge--early { color: #2563EB; }
+
+/* Baggage count */
+.mv-td--baggage { 
+  background: var(--accent-soft) !important;
+  border-left: 2px solid var(--border);
+}
+.baggage-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 4px;
+  background: var(--surface);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--accent-fg);
+  font-variant-numeric: tabular-nums;
+}
 
 .mono { font-family: var(--font-mono, monospace); font-size: 12px; color: var(--ink3); }
 

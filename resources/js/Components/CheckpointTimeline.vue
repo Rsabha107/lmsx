@@ -221,9 +221,15 @@ function formatTime(value) {
 }
 
 function getTimeColor(cp) {
+  // Use timestamps for accurate comparison (handles dates and midnight crossover)
+  if (cp.completed_ts && cp.scheduled_ts) {
+    return cp.completed_ts > cp.scheduled_ts ? '#d97706' : '#16a34a';
+  }
+  
+  // Fallback for old data without timestamps
   if (!cp.completed_at || !cp.scheduled_at) return 'var(--ink3)';
   
-  // Parse times for comparison
+  // Parse times for comparison (legacy fallback - has midnight crossover bug)
   const parseTime = (value) => {
     const m = String(value).match(/(\d{2}):(\d{2})/);
     if (m) return parseInt(m[1]) * 60 + parseInt(m[2]);

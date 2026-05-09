@@ -1,0 +1,183 @@
+<?php
+
+namespace Database\Seeders;
+
+use App\Models\Checkpoint;
+use Illuminate\Database\Seeder;
+
+class MatchDayCheckpointSeeder extends Seeder
+{
+    public function run(): void
+    {
+        $checkpoints = [
+            [
+                'code'                => 'CK069',
+                'name'                => 'GWC AHD Time at RSP',
+                'category'            => 'Logistics',
+                'type'                => 'arrival',
+                'description'         => 'GWC advance team arrives at Restricted Staging Point (RSP)',
+                'capture_method'      => 'manual',
+                'requires_photo'      => false,
+                'requires_signature'  => false,
+            ],
+            [
+                'code'                => 'CK070',
+                'name'                => 'RSP Search Start',
+                'category'            => 'Logistics',
+                'type'                => 'dispatch',
+                'description'         => 'Security search of kit truck begins at RSP',
+                'capture_method'      => 'manual',
+                'requires_photo'      => false,
+                'requires_signature'  => false,
+            ],
+            [
+                'code'                => 'CK071',
+                'name'                => 'RSP Search End',
+                'category'            => 'Logistics',
+                'type'                => 'dispatch',
+                'description'         => 'Security search of kit truck completed at RSP',
+                'capture_method'      => 'manual',
+                'requires_photo'      => false,
+                'requires_signature'  => false,
+            ],
+            [
+                'code'                => 'CK072',
+                'name'                => 'RSP Departure',
+                'category'            => 'Logistics',
+                'type'                => 'departure',
+                'description'         => 'Kit truck departs RSP towards team hotel',
+                'capture_method'      => 'manual',
+                'requires_photo'      => false,
+                'requires_signature'  => false,
+            ],
+            [
+                'code'                => 'CK073',
+                'name'                => 'GWC Arrival at Hotel',
+                'category'            => 'Logistics',
+                'type'                => 'arrival',
+                'description'         => 'GWC kit truck arrives at team base camp hotel (TBCH)',
+                'capture_method'      => 'manual',
+                'requires_photo'      => false,
+                'requires_signature'  => false,
+            ],
+            [
+                'code'                => 'CK074',
+                'name'                => 'Hotel Loading',
+                'category'            => 'Logistics',
+                'type'                => 'boarding',
+                'description'         => 'Kit and equipment loading onto truck begins at hotel',
+                'capture_method'      => 'manual',
+                'requires_photo'      => false,
+                'requires_signature'  => false,
+                'requires_baggage_count' => true,
+            ],
+            [
+                'code'                => 'CK076',
+                'name'                => 'Bags / Pieces Loaded',
+                'category'            => 'Logistics',
+                'type'                => 'boarding',
+                'description'         => 'Total bags and oversized pieces counted and loaded',
+                'capture_method'      => 'manual',
+                'requires_photo'      => false,
+                'requires_signature'  => false,
+                'requires_baggage_count' => true,
+            ],
+            [
+                'code'                => 'CK077',
+                'name'                => 'Departure Time from Hotel',
+                'category'            => 'Logistics',
+                'type'                => 'departure',
+                'description'         => 'Kit truck departs team hotel towards stadium',
+                'capture_method'      => 'manual',
+                'requires_photo'      => false,
+                'requires_signature'  => false,
+            ],
+            [
+                'code'                => 'CK078',
+                'name'                => 'GWC Arrival at Stadium',
+                'category'            => 'Logistics',
+                'type'                => 'arrival',
+                'description'         => 'GWC kit truck arrives at the match stadium',
+                'capture_method'      => 'manual',
+                'requires_photo'      => false,
+                'requires_signature'  => false,
+            ],
+            [
+                'code'                => 'CK079',
+                'name'                => 'Stadium Handover',
+                'category'            => 'Logistics',
+                'type'                => 'handoff',
+                'description'         => 'Kit handed over to stadium / team staff at venue',
+                'capture_method'      => 'manual',
+                'requires_photo'      => false,
+                'requires_signature'  => false,
+            ],
+            [
+                'code'                => 'CK080',
+                'name'                => 'Final Whistle',
+                'category'            => 'Logistics',
+                'type'                => 'dispatch',
+                'description'         => 'Match final whistle — triggers post-match kit collection',
+                'capture_method'      => 'manual',
+                'requires_photo'      => false,
+                'requires_signature'  => false,
+            ],
+            [
+                'code'                => 'CK081',
+                'name'                => 'Loading Start Time',
+                'category'            => 'Logistics',
+                'type'                => 'boarding',
+                'description'         => 'Post-match kit loading onto truck begins at stadium',
+                'capture_method'      => 'manual',
+                'requires_photo'      => false,
+                'requires_signature'  => false,
+                'requires_baggage_count' => true,
+            ],
+            [
+                'code'                => 'CK082',
+                'name'                => 'Stadium End Time',
+                'category'            => 'Logistics',
+                'type'                => 'departure',
+                'description'         => 'All post-match activities at stadium concluded',
+                'capture_method'      => 'manual',
+                'requires_photo'      => false,
+                'requires_signature'  => false,
+            ],
+            [
+                'code'                => 'CK083',
+                'name'                => 'GWC Departure from Stadium',
+                'category'            => 'Logistics',
+                'type'                => 'departure',
+                'description'         => 'Kit truck departs stadium returning to hotel',
+                'capture_method'      => 'manual',
+                'requires_photo'      => false,
+                'requires_signature'  => false,
+            ],
+            [
+                'code'                => 'CK084',
+                'name'                => 'Arrival to Hotel',
+                'category'            => 'Logistics',
+                'type'                => 'arrival',
+                'description'         => 'Kit truck arrives back at team hotel post-match',
+                'capture_method'      => 'manual',
+                'requires_photo'      => false,
+                'requires_signature'  => false,
+            ],
+            [
+                'code'                => 'CK085',
+                'name'                => 'Hotel Unloading End',
+                'category'            => 'Logistics',
+                'type'                => 'boarding',
+                'description'         => 'Post-match kit unloading at hotel completed',
+                'capture_method'      => 'manual',
+                'requires_photo'      => false,
+                'requires_signature'  => false,
+                'requires_baggage_count' => true,
+            ],
+        ];
+
+        foreach ($checkpoints as $checkpoint) {
+            Checkpoint::firstOrCreate(['code' => $checkpoint['code']], $checkpoint);
+        }
+    }
+}

@@ -282,7 +282,9 @@ class LmsController extends Controller
             'supervisor',
             'checkpoints.completedBy'
         ])
-            ->orderBy('created_at', 'desc')
+            ->join('movements', 'jobs_operations.movement_id', '=', 'movements.id')
+            ->orderBy('movements.window_start', 'asc')
+            ->select('jobs_operations.*')
             ->get()
             ->map(function ($job) {
                 $movement = $job->movement;
@@ -290,6 +292,7 @@ class LmsController extends Controller
 
                 return [
                     'id' => $job->job_id ?? 'J-' . $job->id,
+                    'jobId' => $job->job_id,
                     'team' => $team?->team_name ?? 'Unknown Team',
                     'code' => $team?->code ?? 'UNK',
                     'kind' => $movement?->kind ?? 'transfer',
@@ -297,6 +300,7 @@ class LmsController extends Controller
                     'to' => $movement?->to_location ?? 'Unknown',
                     'dep' => $movement?->window_start?->format('H:i') ?? '--:--',
                     'arr' => $movement?->window_end?->format('H:i') ?? '--:--',
+                    'window_start' => $movement?->window_start?->format('Y-m-d H:i') ?? null,
                     'pax' => $movement?->passengers ?? 0,
                     'vehicle' => $job->vehicle ? ($job->vehicle->code ?? $job->vehicle->plate_number ?? $job->vehicle->vehicle_type ?? 'Unassigned') : 'Unassigned',
                     'status' => $job->status,

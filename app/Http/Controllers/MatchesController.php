@@ -2,8 +2,10 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Event;
 use App\Models\GameMatch;
 use App\Models\Team;
+use App\Models\Venue;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 
@@ -14,15 +16,19 @@ class MatchesController extends Controller
      */
     public function index()
     {
-        $matches = GameMatch::with(['team1', 'team2'])
+        $matches = GameMatch::with(['team1', 'team2', 'event', 'venue.country'])
             ->orderBy('match_date', 'asc')
             ->get();
 
         $teams = Team::orderBy('team_name', 'asc')->get();
+        $events = Event::with(['venues', 'eventTeams.team'])->orderBy('name', 'asc')->get();
+        $venues = Venue::with('country')->orderBy('name', 'asc')->get();
 
         return Inertia::render('Matches', [
             'matches' => $matches,
             'teams' => $teams,
+            'events' => $events,
+            'venues' => $venues,
         ]);
     }
 
@@ -33,8 +39,8 @@ class MatchesController extends Controller
     {
         $validated = $request->validate([
             'match_number' => 'required|string|max:50|unique:matches,match_number',
-            'event' => 'nullable|string|max:255',
-            'venue' => 'nullable|string|max:255',
+            'event_id' => 'nullable|integer|exists:events,id',
+            'venue_id' => 'nullable|integer|exists:venues,id',
             'team1_id' => 'nullable|string|exists:teams,code',
             'team2_id' => 'nullable|string|exists:teams,code',
             'stage' => 'nullable|string|max:100',
@@ -70,8 +76,8 @@ class MatchesController extends Controller
 
         $validated = $request->validate([
             'match_number' => 'required|string|max:50|unique:matches,match_number,' . $match->id,
-            'event' => 'nullable|string|max:255',
-            'venue' => 'nullable|string|max:255',
+            'event_id' => 'nullable|integer|exists:events,id',
+            'venue_id' => 'nullable|integer|exists:venues,id',
             'team1_id' => 'nullable|string|exists:teams,code',
             'team2_id' => 'nullable|string|exists:teams,code',
             'stage' => 'nullable|string|max:100',

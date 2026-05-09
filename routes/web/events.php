@@ -13,6 +13,10 @@ Route::middleware('auth')->prefix('events')->name('events.')->group(function () 
     Route::post('/{id}/teams',                   [EventsController::class, 'assignTeam'])->name('assign-team');
     Route::delete('/{id}/teams/{teamCode}',      [EventsController::class, 'removeTeam'])->name('remove-team');
 
+    // Event venues
+    Route::post('/{id}/venues',                  [EventsController::class, 'assignVenue'])->name('assign-venue');
+    Route::delete('/{id}/venues/{venueId}',      [EventsController::class, 'removeVenue'])->name('remove-venue');
+
     // Team flights
     Route::post('/{id}/teams/{teamCode}/flights',    [TeamFlightsController::class, 'store'])->name('flights.store');
     Route::put('/{id}/flights/{flightId}',           [TeamFlightsController::class, 'update'])->name('flights.update');

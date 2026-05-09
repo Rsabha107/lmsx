@@ -102,10 +102,12 @@
                 <th class="mv-th" rowspan="2">Flight</th>
                 <th class="mv-th" rowspan="2">Date</th>
                 <th class="mv-th mv-th--left mv-th--wide" rowspan="2">From</th>
+                <th class="mv-th mv-th--left mv-th--wide" rowspan="2">To</th>
                 <th class="mv-th mv-th--left mv-th--wide" rowspan="2">Hotel</th>
               </template>
               <template v-else-if="filters.kind === 'departure'">
                 <th class="mv-th" rowspan="2">Date</th>
+                <th class="mv-th mv-th--left mv-th--wide" rowspan="2">From</th>
                 <th class="mv-th mv-th--left mv-th--wide" rowspan="2">Hotel</th>
                 <th class="mv-th mv-th--left mv-th--wide" rowspan="2">To</th>
               </template>
@@ -174,10 +176,12 @@
                   <td class="mv-td mv-td--center mono">{{ row.flight_number || '—' }}</td>
                   <td class="mv-td mv-td--center mono">{{ row.match_date_label || '—' }}</td>
                   <td class="mv-td mv-td--muted">{{ row.from_location || '—' }}</td>
+                  <td class="mv-td mv-td--muted">{{ row.to_location || '—' }}</td>
                   <td class="mv-td mv-td--muted">{{ row.hotel || '—' }}</td>
                 </template>
                 <template v-else-if="filters.kind === 'departure'">
                   <td class="mv-td mv-td--center mono">{{ row.match_date_label || '—' }}</td>
+                  <td class="mv-td mv-td--muted">{{ row.from_location || '—' }}</td>
                   <td class="mv-td mv-td--muted">{{ row.hotel || '—' }}</td>
                   <td class="mv-td mv-td--muted">{{ row.to_location || '—' }}</td>
                 </template>
@@ -270,9 +274,10 @@ const kindLabel = computed(() =>
 // Static columns per kind: PMA + kind-cols + Status col
 const staticCols = computed(() => {
   switch (props.filters.kind) {
-    case 'match':    return 7;
-    case 'arrival':  return 6;
-    default:         return 5;
+    case 'match':     return 7;
+    case 'arrival':   return 7;
+    case 'departure': return 6;
+    default:          return 5;
   }
 });
 

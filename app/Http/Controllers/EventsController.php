@@ -10,6 +10,7 @@ use App\Models\Team;
 use App\Models\TeamClassification;
 use App\Models\TeamFlight;
 use App\Models\TeamStay;
+use App\Models\Venue;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -20,7 +21,7 @@ class EventsController extends Controller
 {
     public function index(): Response
     {
-        $events = Event::with(['country', 'eventTeams.team', 'eventTeams.classification'])
+        $events = Event::with(['country', 'eventTeams.team', 'eventTeams.classification', 'venues.country'])
                        ->orderBy('start_date', 'desc')
                        ->get();
 
@@ -50,6 +51,7 @@ class EventsController extends Controller
             'classifications' => TeamClassification::active()->orderBy('name')->get(),
             'countries'       => Country::active()->orderBy('country_name')->get(),
             'airports'        => Airport::orderBy('name')->get(),
+            'venues'          => Venue::with('country')->orderBy('name')->get(),
         ]);
     }
 
@@ -129,5 +131,33 @@ class EventsController extends Controller
                  ->delete();
 
         return redirect()->back()->with('success', 'Team removed from event.');
+    }
+
+    // Assign a venue to an event
+    public function assignVenue(Request $request, int $id): RedirectResponse
+    {
+        $event = Event::findOrFail($id);
+
+        $validated = $request->validate([
+            'venue_id' => 'required|integer|exists:venues,id',
+            'purpose'  => 'nullable|string|max:100',
+            'notes'    => 'nullable|string',
+        ]);
+
+        $event->venues()->attach($validated['venue_id'], [
+            'purpose' => $validated['purpose'] ?? null,
+            'notes'   => $validated['notes'] ?? null,
+        ]);
+
+        return redirect()->back()->with('success', 'Venue assigned to event.');
+    }
+
+    // Remove a venue from an event
+    public function removeVenue(int $id, int $venueId): RedirectResponse
+    {
+        $event = Event::findOrFail($id);
+        $event->venues()->detach($venueId);
+
+        return redirect()->back()->with('success', 'Venue removed from event.');
     }
 }

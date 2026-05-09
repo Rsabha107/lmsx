@@ -104,11 +104,11 @@
             <div class="mc-info">
               <div class="mc-info-row" v-if="match.venue">
                 <svg-icon name="home" :size="12" />
-                <span>{{ match.venue }}</span>
+                <span>{{ match.venue.name }}</span>
               </div>
               <div class="mc-info-row" v-if="match.event">
                 <svg-icon name="calendar" :size="12" />
-                <span>{{ match.event }}</span>
+                <span>{{ match.event.name }}</span>
               </div>
               <div class="mc-info-row" v-if="match.match_date">
                 <svg-icon name="clock" :size="12" />
@@ -162,8 +162,8 @@
               <td class="code-cell">
                 <span class="match-badge-sm">{{ match.match_number }}</span>
               </td>
-              <td v-if="visibleColumns.event">{{ match.event || '—' }}</td>
-              <td v-if="visibleColumns.venue">{{ match.venue || '—' }}</td>
+              <td v-if="visibleColumns.event">{{ match.event?.name || '—' }}</td>
+              <td v-if="visibleColumns.venue">{{ match.venue?.name || '—' }}</td>
               <td class="team-cell">
                 <div class="team-display">
                   <span class="team-code">{{ match.team1?.code || '—' }}</span>
@@ -223,11 +223,11 @@
               </div>
               <div class="detail-row">
                 <span class="detail-label">Event</span>
-                <span class="detail-value">{{ selectedMatch.event || '—' }}</span>
+                <span class="detail-value">{{ selectedMatch.event?.name || '—' }}</span>
               </div>
               <div class="detail-row">
                 <span class="detail-label">Venue</span>
-                <span class="detail-value">{{ selectedMatch.venue || '—' }}</span>
+                <span class="detail-value">{{ selectedMatch.venue?.name || '—' }}</span>
               </div>
               <div class="detail-row">
                 <span class="detail-label">Stage</span>
@@ -319,12 +319,22 @@
         <div class="form-row">
           <div class="form-group">
             <label class="form-label">Event</label>
-            <input v-model="formData.event" type="text" class="form-input" placeholder="Event name" />
+            <select v-model="formData.event_id" class="form-input">
+              <option value="">Select Event</option>
+              <option v-for="event in events" :key="event.id" :value="event.id">
+                {{ event.name }}
+              </option>
+            </select>
           </div>
 
           <div class="form-group">
             <label class="form-label">Venue</label>
-            <input v-model="formData.venue" type="text" class="form-input" placeholder="Stadium or venue" />
+            <select v-model="formData.venue_id" class="form-input" :disabled="!formData.event_id">
+              <option value="">{{ formData.event_id ? 'Select Venue' : 'Select Event First' }}</option>
+              <option v-for="venue in availableVenues" :key="venue.id" :value="venue.id">
+                {{ venue.name }}<span v-if="venue.city"> - {{ venue.city }}</span>
+              </option>
+            </select>
           </div>
         </div>
 
@@ -332,9 +342,9 @@
         <div class="form-row">
           <div class="form-group">
             <label class="form-label">Team 1</label>
-            <select v-model="formData.team1_id" class="form-input">
-              <option value="">Select Team 1</option>
-              <option v-for="team in teams" :key="team.code" :value="team.code">
+            <select v-model="formData.team1_id" class="form-input" :disabled="!formData.event_id">
+              <option value="">{{ formData.event_id ? 'Select Team 1' : 'Select Event First' }}</option>
+              <option v-for="team in availableTeams" :key="team.code" :value="team.code">
                 {{ team.code }} - {{ team.team_name }}
               </option>
             </select>
@@ -342,9 +352,9 @@
 
           <div class="form-group">
             <label class="form-label">Team 2</label>
-            <select v-model="formData.team2_id" class="form-input">
-              <option value="">Select Team 2</option>
-              <option v-for="team in teams" :key="team.code" :value="team.code">
+            <select v-model="formData.team2_id" class="form-input" :disabled="!formData.event_id">
+              <option value="">{{ formData.event_id ? 'Select Team 2' : 'Select Event First' }}</option>
+              <option v-for="team in availableTeams" :key="team.code" :value="team.code">
                 {{ team.code }} - {{ team.team_name }}
               </option>
             </select>
@@ -415,12 +425,22 @@
         <div class="form-row">
           <div class="form-group">
             <label class="form-label">Event</label>
-            <input v-model="formData.event" type="text" class="form-input" placeholder="Event name" />
+            <select v-model="formData.event_id" class="form-input">
+              <option value="">Select Event</option>
+              <option v-for="event in events" :key="event.id" :value="event.id">
+                {{ event.name }}
+              </option>
+            </select>
           </div>
 
           <div class="form-group">
             <label class="form-label">Venue</label>
-            <input v-model="formData.venue" type="text" class="form-input" placeholder="Stadium or venue" />
+            <select v-model="formData.venue_id" class="form-input" :disabled="!formData.event_id">
+              <option value="">{{ formData.event_id ? 'Select Venue' : 'Select Event First' }}</option>
+              <option v-for="venue in availableVenues" :key="venue.id" :value="venue.id">
+                {{ venue.name }}<span v-if="venue.city"> - {{ venue.city }}</span>
+              </option>
+            </select>
           </div>
         </div>
 
@@ -428,9 +448,9 @@
         <div class="form-row">
           <div class="form-group">
             <label class="form-label">Team 1</label>
-            <select v-model="formData.team1_id" class="form-input">
-              <option value="">Select Team 1</option>
-              <option v-for="team in teams" :key="team.code" :value="team.code">
+            <select v-model="formData.team1_id" class="form-input" :disabled="!formData.event_id">
+              <option value="">{{ formData.event_id ? 'Select Team 1' : 'Select Event First' }}</option>
+              <option v-for="team in availableTeams" :key="team.code" :value="team.code">
                 {{ team.code }} - {{ team.team_name }}
               </option>
             </select>
@@ -438,9 +458,9 @@
 
           <div class="form-group">
             <label class="form-label">Team 2</label>
-            <select v-model="formData.team2_id" class="form-input">
-              <option value="">Select Team 2</option>
-              <option v-for="team in teams" :key="team.code" :value="team.code">
+            <select v-model="formData.team2_id" class="form-input" :disabled="!formData.event_id">
+              <option value="">{{ formData.event_id ? 'Select Team 2' : 'Select Event First' }}</option>
+              <option v-for="team in availableTeams" :key="team.code" :value="team.code">
                 {{ team.code }} - {{ team.team_name }}
               </option>
             </select>
@@ -508,6 +528,14 @@ const props = defineProps({
     type: Array,
     required: true,
   },
+  events: {
+    type: Array,
+    default: () => [],
+  },
+  venues: {
+    type: Array,
+    default: () => [],
+  },
 });
 
 const selectedMatch = ref(null);
@@ -543,8 +571,8 @@ let kickOffPicker = null;
 const formData = ref({
   id: null,
   match_number: '',
-  event: '',
-  venue: '',
+  event_id: '',
+  venue_id: '',
   team1_id: '',
   team2_id: '',
   stage: '',
@@ -586,8 +614,8 @@ const filteredMatches = computed(() => {
     const query = searchQuery.value.toLowerCase();
     result = result.filter(match => 
       match.match_number?.toLowerCase().includes(query) ||
-      match.event?.toLowerCase().includes(query) ||
-      match.venue?.toLowerCase().includes(query) ||
+      match.event?.name?.toLowerCase().includes(query) ||
+      match.venue?.name?.toLowerCase().includes(query) ||
       match.stage?.toLowerCase().includes(query) ||
       match.team1?.team_name?.toLowerCase().includes(query) ||
       match.team2?.team_name?.toLowerCase().includes(query) ||
@@ -610,13 +638,41 @@ const upcomingMatches = computed(() => {
 });
 
 const uniqueVenues = computed(() => {
-  const venues = props.matches.map(m => m.venue).filter(Boolean);
+  const venues = props.matches.map(m => m.venue?.name).filter(Boolean);
   return new Set(venues).size;
 });
 
 const uniqueStages = computed(() => {
   const stages = props.matches.map(m => m.stage).filter(Boolean);
   return new Set(stages).size;
+});
+
+// Filter venues based on selected event
+const availableVenues = computed(() => {
+  if (!formData.value.event_id) {
+    return props.venues;
+  }
+  
+  const selectedEvent = props.events.find(e => e.id === parseInt(formData.value.event_id));
+  if (!selectedEvent || !selectedEvent.venues || selectedEvent.venues.length === 0) {
+    return props.venues;
+  }
+  
+  return selectedEvent.venues;
+});
+
+// Filter teams based on selected event
+const availableTeams = computed(() => {
+  if (!formData.value.event_id) {
+    return props.teams;
+  }
+  
+  const selectedEvent = props.events.find(e => e.id === parseInt(formData.value.event_id));
+  if (!selectedEvent || !selectedEvent.event_teams || selectedEvent.event_teams.length === 0) {
+    return props.teams;
+  }
+  
+  return selectedEvent.event_teams.map(et => et.team).filter(Boolean);
 });
 
 // Watch for modal opening to initialize flatpickr
@@ -642,6 +698,34 @@ watch(showEditModal, async (newVal) => {
   }
 });
 
+// Watch for event changes to reset venue if not available
+watch(() => formData.value.event_id, (newEventId) => {
+  if (newEventId) {
+    const selectedEvent = props.events.find(e => e.id === parseInt(newEventId));
+    
+    // Reset venue if not available in the selected event
+    if (formData.value.venue_id && selectedEvent && selectedEvent.venues) {
+      const isVenueAvailable = selectedEvent.venues.some(v => v.id === parseInt(formData.value.venue_id));
+      if (!isVenueAvailable) {
+        formData.value.venue_id = '';
+      }
+    }
+    
+    // Reset teams if not available in the selected event
+    if (selectedEvent && selectedEvent.event_teams) {
+      const availableTeamCodes = selectedEvent.event_teams.map(et => et.team?.code).filter(Boolean);
+      
+      if (formData.value.team1_id && !availableTeamCodes.includes(formData.value.team1_id)) {
+        formData.value.team1_id = '';
+      }
+      
+      if (formData.value.team2_id && !availableTeamCodes.includes(formData.value.team2_id)) {
+        formData.value.team2_id = '';
+      }
+    }
+  }
+});
+
 function selectMatch(match) {
   selectedMatch.value = match;
 }
@@ -655,8 +739,8 @@ function openAddModal() {
   formData.value = {
     id: null,
     match_number: '',
-    event: '',
-    venue: '',
+    event_id: '',
+    venue_id: '',
     team1_id: '',
     team2_id: '',
     stage: '',
@@ -672,8 +756,8 @@ function editMatch(match) {
   formData.value = {
     id: match.id,
     match_number: match.match_number,
-    event: match.event || '',
-    venue: match.venue || '',
+    event_id: match.event_id || '',
+    venue_id: match.venue_id || '',
     team1_id: match.team1_id || '',
     team2_id: match.team2_id || '',
     stage: match.stage || '',
@@ -743,8 +827,8 @@ function submitMatch() {
       formData.value = {
         id: null,
         match_number: '',
-        event: '',
-        venue: '',
+        event_id: '',
+        venue_id: '',
         team1_id: '',
         team2_id: '',
         stage: '',

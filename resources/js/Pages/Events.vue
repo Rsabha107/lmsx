@@ -113,30 +113,33 @@
           </div>
 
           <div class="detail-card-content">
+            <!-- Assigned Venues -->
             <div class="detail-section">
-              <h4 class="detail-section-title">Event Info</h4>
-              <div class="detail-row">
-                <span class="detail-label">Short Name</span>
-                <span class="detail-value">{{ selectedEvent.short_name || '—' }}</span>
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+                <h4 class="detail-section-title" style="margin:0;">
+                  Venues ({{ selectedEvent.venues?.length ?? 0 }})
+                </h4>
+                <Button variant="secondary" size="sm" @click="openVenueModal(selectedEvent)">
+                  <template #icon><svg-icon name="plus" :size="12" /></template>
+                  Assign
+                </Button>
               </div>
-              <div class="detail-row">
-                <span class="detail-label">Host Country</span>
-                <span class="detail-value">
-                  <span v-if="selectedEvent.country">{{ selectedEvent.country.flag }} {{ selectedEvent.country.country_name }}</span>
-                  <span v-else>—</span>
-                </span>
-              </div>
-              <div class="detail-row">
-                <span class="detail-label">Start Date</span>
-                <span class="detail-value mono">{{ formatDate(selectedEvent.start_date) }}</span>
-              </div>
-              <div class="detail-row">
-                <span class="detail-label">End Date</span>
-                <span class="detail-value mono">{{ formatDate(selectedEvent.end_date) }}</span>
-              </div>
-              <div v-if="selectedEvent.notes" class="detail-row">
-                <span class="detail-label">Notes</span>
-                <span class="detail-value">{{ selectedEvent.notes }}</span>
+              <div v-if="!selectedEvent.venues?.length" style="font-size:12px;color:var(--ink3);">No venues assigned yet.</div>
+              <div v-for="venue in selectedEvent.venues" :key="venue.id" class="assigned-venue-row">
+                <div class="assigned-venue-info">
+                  <div>
+                    <div style="font-size:13px;font-weight:500;">{{ venue.name }}</div>
+                    <div style="font-size:11px;color:var(--ink3);">
+                      <span v-if="venue.pivot.purpose" class="venue-purpose-badge">{{ venue.pivot.purpose }}</span>
+                      <span v-if="venue.city">{{ venue.city }}</span>
+                      <span v-if="venue.country"> · {{ venue.country.flag }} {{ venue.country.country_name }}</span>
+                      <span v-if="venue.capacity"> · {{ venue.capacity }} capacity</span>
+                    </div>
+                  </div>
+                </div>
+                <button class="remove-team-btn" @click="removeVenue(selectedEvent, venue.id)" title="Remove from event">
+                  <svg-icon name="x" :size="13" />
+                </button>
               </div>
             </div>
 
@@ -244,6 +247,44 @@
           <Button type="submit" variant="primary" size="sm" :disabled="processing">
             {{ processing ? 'Saving…' : (editingEvent ? 'Save Changes' : 'Create Event') }}
           </Button>
+        </div>
+      </form>
+    </Modal>
+
+    <!-- Assign Venue Modal -->
+    <Modal :show="showVenueModal" @close="showVenueModal = false" max-width="480px">
+      <template #title>Assign Venue to Event</template>
+      <form @submit.prevent="submitVenue" class="team-form">
+        <div class="form-group">
+          <label class="form-label">Venue <span class="required">*</span></label>
+          <select v-model="venueForm.venue_id" class="form-select" required>
+            <option value="">— Select venue —</option>
+            <option v-for="v in availableVenues" :key="v.id" :value="v.id">
+              {{ v.name }}
+              <span v-if="v.city"> · {{ v.city }}</span>
+              <span v-if="v.type"> · {{ v.type }}</span>
+            </option>
+          </select>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Purpose</label>
+            <select v-model="venueForm.purpose" class="form-select">
+              <option value="">— None —</option>
+              <option value="match">Match</option>
+              <option value="training">Training</option>
+              <option value="accommodation">Accommodation</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Notes</label>
+          <textarea v-model="venueForm.notes" class="form-input" rows="2" />
+        </div>
+        <div class="form-actions">
+          <Button type="button" variant="secondary" size="sm" @click="showVenueModal = false">Cancel</Button>
+          <Button type="submit" variant="primary" size="sm" :disabled="processing">Assign Venue</Button>
         </div>
       </form>
     </Modal>
@@ -525,6 +566,7 @@ const props = defineProps({
   classifications: { type: Array, required: true },
   countries:       { type: Array, required: true },
   airports:        { type: Array, default: () => [] },
+  venues:          { type: Array, default: () => [] },
 });
 
 // ── State ──────────────────────────────────────────────────────────────────
@@ -532,17 +574,20 @@ const searchQuery   = ref('');
 const filterStatus  = ref('');
 const selectedEvent = ref(null);
 
-const showEventModal  = ref(false);
-const showAssignModal = ref(false);
-const showDeleteModal = ref(false);
-const processing      = ref(false);
-const deleting        = ref(false);
-const editingEvent    = ref(null);
-const eventToDelete   = ref(null);
-const assigningEvent  = ref(null);
+const showEventModal   = ref(false);
+const showAssignModal  = ref(false);
+const showVenueModal   = ref(false);
+const showDeleteModal  = ref(false);
+const processing       = ref(false);
+const deleting         = ref(false);
+const editingEvent     = ref(null);
+const eventToDelete    = ref(null);
+const assigningEvent   = ref(null);
+const assigningVenueEvent = ref(null);
 
 const form = ref(emptyForm());
 const assignForm = ref({ team_code: '', group_pool: '', classification_type_id: '' });
+const venueForm = ref({ venue_id: '', purpose: '', notes: '' });
 
 function emptyForm() {
   return { name: '', short_name: '', host_country: '', start_date: '', end_date: '', status: 'upcoming', notes: '' };
@@ -562,6 +607,12 @@ const availableTeams = computed(() => {
   if (!assigningEvent.value) return props.teams;
   const assigned = new Set((assigningEvent.value.event_teams || []).map(et => et.team.code));
   return props.teams.filter(t => !assigned.has(t.code));
+});
+
+const availableVenues = computed(() => {
+  if (!assigningVenueEvent.value) return props.venues;
+  const assigned = new Set((assigningVenueEvent.value.venues || []).map(v => v.id));
+  return props.venues.filter(v => !assigned.has(v.id));
 });
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -645,6 +696,34 @@ function submitAssign() {
 
 function removeTeam(event, teamCode) {
   router.delete(`/events/${event.id}/teams/${teamCode}`, {
+    onSuccess: () => {
+      const updated = props.events.find(e => e.id === event.id);
+      if (updated) selectedEvent.value = updated;
+    },
+  });
+}
+
+// ── Venue assignment ───────────────────────────────────────────────────────
+function openVenueModal(event) {
+  assigningVenueEvent.value = event;
+  venueForm.value = { venue_id: '', purpose: '', notes: '' };
+  showVenueModal.value = true;
+}
+
+function submitVenue() {
+  processing.value = true;
+  router.post(`/events/${assigningVenueEvent.value.id}/venues`, venueForm.value, {
+    onFinish: () => {
+      processing.value = false;
+      showVenueModal.value = false;
+      const updated = props.events.find(e => e.id === assigningVenueEvent.value.id);
+      if (updated) selectedEvent.value = updated;
+    },
+  });
+}
+
+function removeVenue(event, venueId) {
+  router.delete(`/events/${event.id}/venues/${venueId}`, {
     onSuccess: () => {
       const updated = props.events.find(e => e.id === event.id);
       if (updated) selectedEvent.value = updated;
@@ -914,13 +993,13 @@ function fmtDT(dt) {
 .status-pill--completed { background:var(--panel); color:var(--ink3); }
 
 /* Detail card */
-.detail-card { width:320px; flex-shrink:0; background:var(--surface); border:1px solid var(--border); border-radius:12px; overflow:hidden; }
-.detail-card-header { display:flex; align-items:flex-start; justify-content:space-between; padding:16px; border-bottom:1px solid var(--border); }
+.detail-card { width:320px; flex-shrink:0; background:var(--surface); border:1px solid var(--border); border-radius:12px; overflow:hidden; max-height:calc(100vh - 40px); display:flex; flex-direction:column; }
+.detail-card-header { display:flex; align-items:flex-start; justify-content:space-between; padding:16px; border-bottom:1px solid var(--border); flex-shrink:0; }
 .detail-card-team-name { font-size:15px; font-weight:700; color:var(--ink); margin:0; }
 .detail-card-close { background:none; border:none; cursor:pointer; color:var(--ink3); padding:2px; border-radius:4px; }
 .detail-card-close:hover { background:var(--panel); }
-.detail-card-content { padding:0 16px; overflow-y:auto; max-height:calc(100vh - 260px); }
-.detail-card-footer { padding:12px 16px; border-top:1px solid var(--border); display:flex; gap:8px; justify-content:flex-end; }
+.detail-card-content { padding:0 16px; overflow-y:auto; flex:1; min-height:0; }
+.detail-card-footer { padding:12px 16px; border-top:1px solid var(--border); display:flex; gap:8px; justify-content:flex-end; flex-shrink:0; }
 .detail-section { padding:14px 0; border-bottom:1px solid var(--border); }
 .detail-section:last-child { border-bottom:none; }
 .detail-section-title { font-size:11px; font-weight:700; color:var(--ink3); text-transform:uppercase; letter-spacing:.06em; margin:0 0 10px; }
@@ -1000,6 +1079,12 @@ function fmtDT(dt) {
 /* Manage team button in detail panel */
 .manage-team-btn { background:none; border:none; cursor:pointer; color:var(--ink3); padding:4px; border-radius:4px; }
 .manage-team-btn:hover { background:var(--panel); color:var(--accent); }
+
+/* Assigned venue row */
+.assigned-venue-row { display:flex; align-items:center; justify-content:space-between; padding:7px 0; border-bottom:1px solid var(--border); }
+.assigned-venue-row:last-child { border-bottom:none; }
+.assigned-venue-info { display:flex; align-items:center; gap:8px; flex:1; }
+.venue-purpose-badge { display:inline-block; padding:2px 7px; border-radius:10px; font-size:10px; font-weight:700; text-transform:uppercase; background:#EFF6FF; color:#1d4ed8; margin-right:6px; }
 
 /* Empty state */
 .empty-state { font-size:12px; color:var(--ink3); padding:10px 0; text-align:center; }

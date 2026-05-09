@@ -8,6 +8,7 @@ use App\Services\FlightSyncService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 
 class TeamFlightsController extends Controller
 {
@@ -92,6 +93,9 @@ class TeamFlightsController extends Controller
             $arrEstimated = \Carbon\Carbon::parse($arr['scheduled'])->addMinutes((int) $arr['delay'])->toIso8601String();
         }
 
+        Log::info("Flight sync for TeamFlight ID {$teamFlight->id} ({$teamFlight->flight_number}): " . ($raw ? 'Data found' : 'No data') . ", dep actual: {$depActual}, arr actual: {$arrActual}, arr estimated: {$arrEstimated}"); 
+        Log::debug('Full flight data', ['raw' => $raw]);
+        
         return response()->json([
             'success'       => true,
             'date_mismatch' => !empty($raw['_date_mismatch']),

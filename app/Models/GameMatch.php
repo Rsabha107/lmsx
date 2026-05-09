@@ -9,8 +9,8 @@ class GameMatch extends Model
     protected $table = 'matches';
 
     protected $fillable = [
-        'event',
-        'venue',
+        'event_id',
+        'venue_id',
         'match_number',
         'team1_id',
         'team2_id',
@@ -25,6 +25,22 @@ class GameMatch extends Model
         'gates_opening' => 'datetime',
         'kick_off' => 'datetime',
     ];
+
+    /**
+     * Get the event.
+     */
+    public function event()
+    {
+        return $this->belongsTo(Event::class);
+    }
+
+    /**
+     * Get the venue.
+     */
+    public function venue()
+    {
+        return $this->belongsTo(Venue::class);
+    }
 
     /**
      * Get the first team.

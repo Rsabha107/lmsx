@@ -42,6 +42,10 @@
           </div>
 
           <div class="job-card-details">
+            <div v-if="job.window_start" class="detail-item detail-item--prominent">
+              <svg-icon name="calendar" :size="14" />
+              <span class="mono">{{ job.window_start }}</span>
+            </div>
             <div class="detail-item">
               <svg-icon name="clock" :size="14" />
               <span class="mono">{{ job.dep }} – {{ job.arr }}</span>
@@ -90,9 +94,16 @@ function selectJob(job) {
 
 const statusMap = {
   'in-progress': { tone: 'live', label: 'In Progress' },
+  'live': { tone: 'live', label: 'Live' },
+  'pending': { tone: 'primary', label: 'Scheduled' },
   'scheduled': { tone: 'primary', label: 'Scheduled' },
+  'dispatched': { tone: 'primary', label: 'Dispatched' },
   'delayed': { tone: 'warn', label: 'Delayed' },
+  'completed': { tone: 'ok', label: 'Done' },
   'done': { tone: 'ok', label: 'Done' },
+  'cancelled': { tone: 'neutral', label: 'Cancelled' },
+  'queued': { tone: 'neutral', label: 'Queued' },
+  'issue': { tone: 'warn', label: 'Issue' },
 };
 
 function statusTone(s) {
@@ -247,6 +258,15 @@ function statusLabel(s) {
   gap: 5px;
   font-size: 12px;
   color: var(--ink3);
+}
+
+.detail-item--prominent {
+  color: var(--ink);
+  font-weight: 600;
+  padding: 6px 8px;
+  background: var(--accent-soft);
+  border-radius: 6px;
+  flex-basis: 100%;
 }
 
 .job-card-alert {

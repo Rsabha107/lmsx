@@ -235,6 +235,7 @@ const navItems = [
     expandable: true,
     items: [
       { label: 'Events',        route: 'events',            icon: 'trophy' },
+      { label: 'Venues',        route: 'venues',            icon: 'building' },
       { label: 'Teams',         route: 'teams',             icon: 'team' },
       { label: 'Fleet',         route: 'fleet',             icon: 'fleet' },
       { label: 'Contacts',      route: 'contacts',          icon: 'contacts' },

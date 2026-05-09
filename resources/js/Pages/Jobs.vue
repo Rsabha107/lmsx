@@ -273,9 +273,9 @@
 
         <div class="override-field">
           <label class="override-label">CHECKPOINT</label>
-          <select v-model="overrideCheckpoint" class="override-select">
-            <option v-for="cp in selectedJob?.checkpoints" :key="cp.id" :value="cp">
-              {{ cp.label || cp.name }} — {{ cp.status || cp.state }} (scheduled {{ cp.at }}){{ (cp.requires_photo || cp.requiresPhoto || cp.requires_signature || cp.requiresSignature) ? ' 📋' : '' }}
+          <select v-model="overrideCheckpoint" class="override-select override-select--checkpoints">
+            <option v-for="cp in selectedJob?.checkpoints" :key="cp.id" :value="cp" :class="cp.state === 'done' ? 'checkpoint-option--done' : ''">
+              {{ cp.label || cp.name }} — {{ cp.status || cp.state }} {{ cp.state === 'done' && cp.scheduled_at && cp.completed_at ? `(${cp.scheduled_at} → ${cp.completed_at} ✓)` : `(scheduled ${cp.scheduled_at || cp.at})` }}{{ (cp.requires_photo || cp.requiresPhoto || cp.requires_signature || cp.requiresSignature) ? ' 📋' : '' }}
             </option>
           </select>
           <div v-if="overrideCheckpoint?.requires_photo || overrideCheckpoint?.requiresPhoto || overrideCheckpoint?.requires_signature || overrideCheckpoint?.requiresSignature" class="override-field-hint">
@@ -306,7 +306,7 @@
             <div class="override-field-hint">When it actually happened</div>
           </div>
           <div class="override-field">
-            <label class="override-label">VARIANCE VS. PLANNED ({{ overrideCheckpoint?.at || '—' }})</label>
+            <label class="override-label">VARIANCE VS. PLANNED ({{ overrideCheckpoint?.scheduled_at || overrideCheckpoint?.at || '—' }})</label>
             <div class="override-variance" :class="overrideVarianceMinutes > 0 ? 'is-late' : overrideVarianceMinutes < 0 ? 'is-early' : ''">
               {{ overrideVarianceText }}
             </div>
@@ -737,8 +737,9 @@ function openOverrideModal() {
 }
 
 const overrideVarianceMinutes = computed(() => {
-  if (!overrideCheckpoint.value?.at || !overrideTime.value) return null;
-  const [sh, sm] = overrideCheckpoint.value.at.split(':').map(Number);
+  const scheduledTime = overrideCheckpoint.value?.scheduled_at || overrideCheckpoint.value?.at;
+  if (!scheduledTime || !overrideTime.value) return null;
+  const [sh, sm] = scheduledTime.split(':').map(Number);
   const [ah, am] = overrideTime.value.split(':').map(Number);
   if (isNaN(sh) || isNaN(sm) || isNaN(ah) || isNaN(am)) return null;
   return (ah * 60 + am) - (sh * 60 + sm);
@@ -1504,6 +1505,21 @@ function submitOverride() {
 }
 .override-select:focus, .override-input:focus {
   border-color: var(--accent); box-shadow: 0 0 0 3px rgba(99,102,241,0.1);
+}
+
+.override-select--checkpoints {
+  font-family: var(--font-sans, sans-serif);
+}
+
+.override-select--checkpoints option {
+  padding: 8px;
+  line-height: 1.5;
+}
+
+/* Note: Limited styling support for option elements across browsers */
+.checkpoint-option--done {
+  color: #059669;
+  font-weight: 500;
 }
 
 .override-field-hint { font-size: 11px; color: var(--ink4); }

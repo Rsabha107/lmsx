@@ -44,6 +44,13 @@ class Event extends Model
                     ->withTimestamps();
     }
 
+    public function venues(): BelongsToMany
+    {
+        return $this->belongsToMany(Venue::class, 'event_venue')
+                    ->withPivot('purpose', 'notes')
+                    ->withTimestamps();
+    }
+
     public function scopeActive($query)
     {
         return $query->where('is_active', true);

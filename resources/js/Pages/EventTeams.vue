@@ -256,6 +256,23 @@
                     </svg>
                   </button>
                   <button
+                    class="fr-btn fr-btn--sync"
+                    :disabled="syncingFlightId === fl.id"
+                    @click="syncFlight(fl)"
+                    title="Sync from Flight Data API"
+                  >
+                    <span v-if="syncingFlightId === fl.id" class="spinner-sm"></span>
+                    <svg v-else width="13" height="13" viewBox="0 0 16 16" fill="none">
+                      <path
+                        d="M14 8C14 11.3137 11.3137 14 8 14C4.68629 14 2 11.3137 2 8C2 4.68629 4.68629 2 8 2C9.84843 2 11.5053 2.87158 12.5784 4.24996M12 2V5H9"
+                        stroke="currentColor"
+                        stroke-width="1.5"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                      />
+                    </svg>
+                  </button>
+                  <button
                     class="fr-btn fr-btn--del"
                     @click="deleteFlight(fl)"
                     title="Delete"
@@ -584,6 +601,92 @@
       </form>
     </Modal>
 
+    <!-- Sync Result Modal -->
+    <Modal :show="showSyncModal" @close="showSyncModal = false" max-width="560px">
+      <template #title>
+        <div style="display:flex;align-items:center;gap:8px">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M1 4v6h6"/><path d="M23 20v-6h-6"/>
+            <path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"/>
+          </svg>
+          <span>{{ syncResult?.flight_number }}</span>
+          <span v-if="syncResult?.airline" style="font-size:12px;color:var(--ink3);font-weight:400">{{ syncResult.airline }}</span>
+          <span v-if="syncResult?.flight_status" :class="['sync-status-badge', `sync-status--${syncResult.flight_status}`]">{{ syncResult.flight_status }}</span>
+        </div>
+      </template>
+
+      <div class="sync-modal-body">
+        <div v-if="syncResult?.date_mismatch" class="sync-mismatch-warn">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0;margin-top:1px"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          Data is for <strong>{{ syncResult.flight_date }}</strong> — your planned date is <strong>{{ syncResult.planned_date }}</strong>. Flight record was <strong>not</strong> updated.
+        </div>
+
+        <div class="sync-card">
+          <!-- Route bar -->
+          <div class="sync-route-bar">
+            <span class="sync-iata-big">{{ syncResult?.departure?.iata || '?' }}</span>
+            <div class="sync-route-middle">
+              <span class="sync-duration-label">{{ syncDuration }}</span>
+              <div class="sync-arrow-line">
+                <div class="sync-line-track"></div>
+                <svg class="sync-plane-icon" viewBox="0 0 24 24" fill="currentColor" width="16" height="16">
+                  <path d="M21 16v-2l-8-5V3.5c0-.83-.67-1.5-1.5-1.5S10 2.67 10 3.5V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5z"/>
+                </svg>
+              </div>
+            </div>
+            <span class="sync-iata-big">{{ syncResult?.arrival?.iata || '?' }}</span>
+          </div>
+
+          <!-- Airport info -->
+          <div class="sync-airports-grid">
+            <div class="sync-airport-section">
+              <div class="sync-airport-city">{{ syncResult?.departure?.airport || syncResult?.departure?.iata }}</div>
+              <div class="sync-airport-date">{{ formatSyncDate(syncResult?.departure?.scheduled) }}</div>
+              <div class="sync-detail-row">
+                <div class="sync-detail-col">
+                  <div class="sync-detail-label">{{ syncResult?.departure?.actual ? 'Departed' : 'Scheduled' }}</div>
+                  <div class="sync-detail-time-actual">{{ formatSyncTime(syncResult?.departure?.actual || syncResult?.departure?.scheduled) }}</div>
+                  <div v-if="syncResult?.departure?.actual" class="sync-detail-time-sched">{{ formatSyncTime(syncResult?.departure?.scheduled) }}</div>
+                </div>
+                <div class="sync-detail-col">
+                  <div class="sync-detail-label">Terminal</div>
+                  <div class="sync-detail-val">{{ syncResult?.departure?.terminal || '—' }}</div>
+                </div>
+                <div class="sync-detail-col">
+                  <div class="sync-detail-label">Gate</div>
+                  <div class="sync-detail-val">{{ syncResult?.departure?.gate || '—' }}</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="sync-divider-v"></div>
+
+            <div class="sync-airport-section sync-airport-section--right">
+              <div class="sync-airport-city">{{ syncResult?.arrival?.airport || syncResult?.arrival?.iata }}</div>
+              <div class="sync-airport-date">{{ formatSyncDate(syncResult?.arrival?.scheduled) }}</div>
+              <div class="sync-detail-row sync-detail-row--right">
+                <div class="sync-detail-col">
+                  <div class="sync-detail-label">{{ syncResult?.arrival?.actual ? 'Arrived' : (syncResult?.arrival?.estimated ? 'Estimated' : 'Scheduled') }}</div>
+                  <div class="sync-detail-time-actual">{{ formatSyncTime(syncResult?.arrival?.actual || syncResult?.arrival?.estimated || syncResult?.arrival?.scheduled) }}</div>
+                  <div v-if="syncResult?.arrival?.actual || syncResult?.arrival?.estimated" class="sync-detail-time-sched">{{ formatSyncTime(syncResult?.arrival?.scheduled) }}</div>
+                </div>
+                <div class="sync-detail-col">
+                  <div class="sync-detail-label">Terminal</div>
+                  <div class="sync-detail-val">{{ syncResult?.arrival?.terminal || '—' }}</div>
+                </div>
+                <div class="sync-detail-col">
+                  <div class="sync-detail-label">Gate</div>
+                  <div class="sync-detail-val">{{ syncResult?.arrival?.gate || '—' }}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="sync-card-footer">Updated just now · Source: AviationStack</div>
+        </div>
+      </div>
+    </Modal>
+
     <!-- Delete Confirmation Modal -->
     <DeleteConfirmModal
       :show="showDeleteModal"
@@ -683,6 +786,42 @@ function formatDateTime(value) {
 const showManageModal = ref(false);
 const managingTeam = ref(null);
 const processing = ref(false);
+
+// ── Sync Result Modal ──────────────────────────────────────────────────────
+const showSyncModal = ref(false);
+const syncResult = ref(null);
+const syncingFlightId = ref(null);
+
+const syncDuration = computed(() => {
+  const dep = syncResult.value?.departure?.scheduled;
+  const arr = syncResult.value?.arrival?.scheduled;
+  if (!dep || !arr) return '';
+  const diffMs = new Date(arr) - new Date(dep);
+  if (diffMs <= 0) return '';
+  const totalMins = Math.round(diffMs / 60000);
+  const h = Math.floor(totalMins / 60);
+  const m = totalMins % 60;
+  return h > 0 ? `${h}h ${m}m` : `${m}m`;
+});
+
+function formatSyncTime(isoStr) {
+  if (!isoStr) return '—';
+  const match = isoStr.match(/T(\d{2}):(\d{2})/);
+  if (!match) return '—';
+  let h = parseInt(match[1]);
+  const m = match[2];
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  h = h % 12 || 12;
+  return `${h}:${m} ${ampm}`;
+}
+
+function formatSyncDate(isoStr) {
+  if (!isoStr) return '—';
+  const match = isoStr.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!match) return '—';
+  const d = new Date(`${match[1]}-${match[2]}-${match[3]}T12:00:00Z`);
+  return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' });
+}
 
 function openManageModal(et) {
   managingTeam.value = et;
@@ -851,6 +990,45 @@ function deleteFlight(fl) {
     }?`,
     { type: "flight", id: fl.id }
   );
+}
+
+async function syncFlight(fl) {
+  if (!fl.flight_number) {
+    alert('Flight number is required to sync flight data.');
+    return;
+  }
+
+  syncingFlightId.value = fl.id;
+
+  try {
+    const csrf = document.querySelector('meta[name="csrf-token"]')?.content ?? '';
+    const response = await fetch(`/events/${managingTeam.value.event_id}/flights/${fl.id}/sync`, {
+      method: 'POST',
+      headers: {
+        'X-CSRF-TOKEN': csrf,
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+      },
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      alert(data.message || 'Failed to sync flight data. Please try again.');
+      return;
+    }
+
+    if (data.success) {
+      syncResult.value = data;
+      showSyncModal.value = true;
+      refreshManagingTeam();
+    }
+  } catch (error) {
+    console.error('Flight sync error:', error);
+    alert('Failed to sync flight data. Please try again.');
+  } finally {
+    syncingFlightId.value = null;
+  }
 }
 
 // ── Stays ──────────────────────────────────────────────────────────────────
@@ -1213,6 +1391,11 @@ function deleteStay(stay) {
   border-color: var(--accent);
   color: var(--accent);
 }
+.fr-btn--sync:hover {
+  border-color: #3b82f6;
+  color: #3b82f6;
+  background: #eff6ff;
+}
 .fr-btn--del:hover {
   border-color: #ef4444;
   color: #ef4444;
@@ -1255,6 +1438,167 @@ function deleteStay(stay) {
 .stay-delete-btn:hover {
   background: #ef4444;
   color: white;
+}
+
+/* Spinner */
+.spinner-sm {
+  width: 10px;
+  height: 10px;
+  border: 1.5px solid rgba(0,0,0,0.15);
+  border-top-color: currentColor;
+  border-radius: 50%;
+  display: inline-block;
+  animation: spin 0.6s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Sync Result Modal */
+.sync-modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.sync-mismatch-warn {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
+  background: #fef3c7;
+  border: 1px solid #f59e0b;
+  border-radius: 6px;
+  font-size: 12px;
+  color: #92400e;
+  line-height: 1.5;
+}
+.sync-status-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: capitalize;
+}
+.sync-status--landed { background: #d1fae5; color: #065f46; }
+.sync-status--active { background: #d1fae5; color: #065f46; }
+.sync-status--scheduled { background: #dbeafe; color: #1e40af; }
+.sync-status--cancelled { background: #fee2e2; color: #991b1b; }
+.sync-status--delayed { background: #fef3c7; color: #92400e; }
+
+.sync-card {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--surface);
+}
+.sync-route-bar {
+  display: flex;
+  align-items: center;
+  padding: 20px 24px 14px;
+  gap: 12px;
+}
+.sync-iata-big {
+  font-size: 34px;
+  font-weight: 700;
+  color: var(--ink);
+  letter-spacing: -0.5px;
+  flex-shrink: 0;
+}
+.sync-route-middle {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+.sync-duration-label {
+  font-size: 12px;
+  color: var(--ink3);
+}
+.sync-arrow-line {
+  width: 100%;
+  display: flex;
+  align-items: center;
+}
+.sync-line-track {
+  flex: 1;
+  height: 2px;
+  background: #8b1a1a;
+}
+.sync-plane-icon {
+  color: #8b1a1a;
+  flex-shrink: 0;
+  margin-left: -2px;
+}
+.sync-airports-grid {
+  display: flex;
+  padding: 0 24px 18px;
+}
+.sync-airport-section {
+  flex: 1;
+  min-width: 0;
+}
+.sync-airport-section--right {
+  text-align: right;
+}
+.sync-divider-v {
+  width: 1px;
+  background: var(--border);
+  margin: 0 20px;
+  flex-shrink: 0;
+  align-self: stretch;
+}
+.sync-airport-city {
+  font-size: 12px;
+  color: var(--ink3);
+  margin-bottom: 1px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sync-airport-date {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink2);
+  margin-bottom: 10px;
+}
+.sync-detail-row {
+  display: flex;
+  gap: 20px;
+}
+.sync-detail-row--right {
+  justify-content: flex-end;
+}
+.sync-detail-col {
+  min-width: 0;
+}
+.sync-detail-label {
+  font-size: 11px;
+  color: var(--ink3);
+  margin-bottom: 2px;
+}
+.sync-detail-time-actual {
+  font-size: 20px;
+  font-weight: 600;
+  color: #8b1a1a;
+  line-height: 1.2;
+}
+.sync-detail-time-sched {
+  font-size: 11px;
+  color: var(--ink3);
+  text-decoration: line-through;
+  margin-top: 1px;
+}
+.sync-detail-val {
+  font-size: 14px;
+  color: var(--ink2);
+  padding-top: 4px;
+}
+.sync-card-footer {
+  padding: 8px 24px;
+  border-top: 1px solid var(--border);
+  font-size: 11px;
+  color: var(--ink3);
+  background: var(--panel);
 }
 
 /* Empty state */

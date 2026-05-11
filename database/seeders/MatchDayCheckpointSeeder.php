@@ -12,7 +12,7 @@ class MatchDayCheckpointSeeder extends Seeder
         $checkpoints = [
             [
                 'code'                => 'CK069',
-                'name'                => 'GWC AHD Time at RSP',
+                'name'                => 'Arrival at RSP',
                 'category'            => 'Logistics',
                 'type'                => 'arrival',
                 'description'         => 'GWC advance team arrives at Restricted Staging Point (RSP)',
@@ -22,7 +22,7 @@ class MatchDayCheckpointSeeder extends Seeder
             ],
             [
                 'code'                => 'CK070',
-                'name'                => 'RSP Search Start',
+                'name'                => 'RSP Search And Security Check',
                 'category'            => 'Logistics',
                 'type'                => 'dispatch',
                 'description'         => 'Security search of kit truck begins at RSP',
@@ -31,28 +31,8 @@ class MatchDayCheckpointSeeder extends Seeder
                 'requires_signature'  => false,
             ],
             [
-                'code'                => 'CK071',
-                'name'                => 'RSP Search End',
-                'category'            => 'Logistics',
-                'type'                => 'dispatch',
-                'description'         => 'Security search of kit truck completed at RSP',
-                'capture_method'      => 'manual',
-                'requires_photo'      => false,
-                'requires_signature'  => false,
-            ],
-            [
-                'code'                => 'CK072',
-                'name'                => 'RSP Departure',
-                'category'            => 'Logistics',
-                'type'                => 'departure',
-                'description'         => 'Kit truck departs RSP towards team hotel',
-                'capture_method'      => 'manual',
-                'requires_photo'      => false,
-                'requires_signature'  => false,
-            ],
-            [
                 'code'                => 'CK073',
-                'name'                => 'GWC Arrival at Hotel',
+                'name'                => 'Arrival at Hotel',
                 'category'            => 'Logistics',
                 'type'                => 'arrival',
                 'description'         => 'GWC kit truck arrives at team base camp hotel (TBCH)',
@@ -62,7 +42,7 @@ class MatchDayCheckpointSeeder extends Seeder
             ],
             [
                 'code'                => 'CK074',
-                'name'                => 'Hotel Loading',
+                'name'                => 'Hotel Baggage Load',
                 'category'            => 'Logistics',
                 'type'                => 'boarding',
                 'description'         => 'Kit and equipment loading onto truck begins at hotel',
@@ -71,9 +51,10 @@ class MatchDayCheckpointSeeder extends Seeder
                 'requires_signature'  => false,
                 'requires_baggage_count' => true,
             ],
+
             [
                 'code'                => 'CK076',
-                'name'                => 'Bags / Pieces Loaded',
+                'name'                => 'Hotel Baggage Load Verification',
                 'category'            => 'Logistics',
                 'type'                => 'boarding',
                 'description'         => 'Total bags and oversized pieces counted and loaded',
@@ -84,7 +65,7 @@ class MatchDayCheckpointSeeder extends Seeder
             ],
             [
                 'code'                => 'CK077',
-                'name'                => 'Departure Time from Hotel',
+                'name'                => 'Departure from Hotel',
                 'category'            => 'Logistics',
                 'type'                => 'departure',
                 'description'         => 'Kit truck departs team hotel towards stadium',
@@ -94,10 +75,10 @@ class MatchDayCheckpointSeeder extends Seeder
             ],
             [
                 'code'                => 'CK078',
-                'name'                => 'GWC Arrival at Stadium',
+                'name'                => 'Arrival at Stadium',
                 'category'            => 'Logistics',
                 'type'                => 'arrival',
-                'description'         => 'GWC kit truck arrives at the match stadium',
+                'description'         => 'Kit truck arrives at the match stadium',
                 'capture_method'      => 'manual',
                 'requires_photo'      => false,
                 'requires_signature'  => false,
@@ -124,7 +105,7 @@ class MatchDayCheckpointSeeder extends Seeder
             ],
             [
                 'code'                => 'CK081',
-                'name'                => 'Loading Start Time',
+                'name'                => 'Stadium Baggage Loading',
                 'category'            => 'Logistics',
                 'type'                => 'boarding',
                 'description'         => 'Post-match kit loading onto truck begins at stadium',
@@ -132,16 +113,6 @@ class MatchDayCheckpointSeeder extends Seeder
                 'requires_photo'      => false,
                 'requires_signature'  => false,
                 'requires_baggage_count' => true,
-            ],
-            [
-                'code'                => 'CK082',
-                'name'                => 'Stadium End Time',
-                'category'            => 'Logistics',
-                'type'                => 'departure',
-                'description'         => 'All post-match activities at stadium concluded',
-                'capture_method'      => 'manual',
-                'requires_photo'      => false,
-                'requires_signature'  => false,
             ],
             [
                 'code'                => 'CK083',
@@ -165,7 +136,7 @@ class MatchDayCheckpointSeeder extends Seeder
             ],
             [
                 'code'                => 'CK085',
-                'name'                => 'Hotel Unloading End',
+                'name'                => 'Hotel Unloading',
                 'category'            => 'Logistics',
                 'type'                => 'boarding',
                 'description'         => 'Post-match kit unloading at hotel completed',

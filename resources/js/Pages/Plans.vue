@@ -728,7 +728,13 @@
                   {{ mv.code || `M${i + 1}` }}
                 </div>
                 <span
-                  v-if="mv.kind"
+                  v-if="mv.match_id"
+                  class="kind-badge kind-badge--match"
+                  style="background: #fef3c7; color: #92400e; border-color: #fbbf24;"
+                  >Match {{ mv.match?.match_number || '' }}</span
+                >
+                <span
+                  v-else-if="mv.kind"
                   :class="['kind-badge', `kind-badge--${mv.kind}`]"
                   >{{ mv.kind }}</span
                 >
@@ -742,9 +748,20 @@
                   >-</span
                 >
                 <div
-                  style="font-size: 12px; color: var(--ink); font-weight: 600"
+                  style="font-size: 12px; color: var(--ink); font-weight: 600; display: flex; align-items: center; gap: 4px;"
                 >
                   {{ mv.team?.team_name || "-" }}
+                  <svg
+                    v-if="mv.match_id"
+                    width="12"
+                    height="12"
+                    viewBox="0 0 24 24"
+                    fill="currentColor"
+                    style="color: #f59e0b"
+                    :title="`Match: ${mv.match?.match_number || 'Unknown'}`"
+                  >
+                    <path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z" />
+                  </svg>
                 </div>
                 <div style="font-size: 11px; color: var(--ink3)">
                   {{ mv.from_location || "-" }} → {{ mv.to_location || "-" }}
@@ -845,7 +862,14 @@
                   {{ selectedMovement.code || "MVT" }}
                 </span>
                 <span
-                  v-if="selectedMovement.kind"
+                  v-if="selectedMovement.match_id"
+                  class="kind-badge kind-badge--match"
+                  style="font-size: 10px; background: #fef3c7; color: #92400e; border-color: #fbbf24;"
+                >
+                  Match
+                </span>
+                <span
+                  v-else-if="selectedMovement.kind"
                   :class="[
                     'kind-badge',
                     `kind-badge--${selectedMovement.kind}`,
@@ -915,6 +939,67 @@
                 title="Checkpoints"
                 empty-message="No checkpoints defined"
               />
+
+              <!-- Match Info -->
+              <div
+                v-if="selectedMovement.match_id && selectedMovement.match"
+                style="
+                  margin-top: 16px;
+                  padding-top: 16px;
+                  border-top: 1px solid var(--border);
+                "
+              >
+                <div
+                  style="
+                    font-size: 10px;
+                    font-weight: 700;
+                    letter-spacing: 0.6px;
+                    text-transform: uppercase;
+                    color: var(--ink3);
+                    margin-bottom: 8px;
+                    display: flex;
+                    align-items: center;
+                    gap: 4px;
+                  "
+                >
+                  <svg
+                    width="12"
+                    height="12"
+                    viewBox="0 0 24 24"
+                    fill="currentColor"
+                    style="color: #f59e0b"
+                  >
+                    <path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z" />
+                  </svg>
+                  Match Information
+                </div>
+                <div class="detail-row">
+                  <span class="detail-label">Match</span>
+                  <span class="detail-value" style="font-weight: 600">{{
+                    selectedMovement.match.match_number || "—"
+                  }}</span>
+                </div>
+                <div class="detail-row">
+                  <span class="detail-label">Teams</span>
+                  <span class="detail-value">{{
+                    selectedMovement.match.team1?.team_name || selectedMovement.match.team1?.team || "—"
+                  }} vs {{
+                    selectedMovement.match.team2?.team_name || selectedMovement.match.team2?.team || "—"
+                  }}</span>
+                </div>
+                <div class="detail-row">
+                  <span class="detail-label">Venue</span>
+                  <span class="detail-value">{{
+                    selectedMovement.match.venue?.name || "—"
+                  }}</span>
+                </div>
+                <div class="detail-row">
+                  <span class="detail-label">Kick-off</span>
+                  <span class="detail-value">{{
+                    selectedMovement.match.kick_off ? formatDateTime(selectedMovement.match.kick_off) : "—"
+                  }}</span>
+                </div>
+              </div>
 
               <!-- Job Info -->
               <div
@@ -1908,7 +1993,14 @@
                       text-transform: capitalize;
                     "
                   >
-                    {{ mv.kind }}
+                    <span
+                      v-if="mv.match_id"
+                      class="kind-badge kind-badge--match"
+                      style="background: #fef3c7; color: #92400e; border-color: #fbbf24; font-size: 11px;"
+                    >
+                      Match {{ mv.match?.match_number || '' }}
+                    </span>
+                    <span v-else>{{ mv.kind }}</span>
                   </div>
                   <div style="font-size: 12px; color: var(--ink)">
                     <div>{{ movementFromLocation(mv) }}</div>
@@ -2019,11 +2111,15 @@
                     {{ selectedMovement.code || "MVT" }}
                   </span>
                   <span
-                    v-if="selectedMovement.kind"
-                    :class="[
-                      'kind-badge',
-                      `kind-badge--${selectedMovement.kind}`,
-                    ]"
+                    v-if="selectedMovement.match_id"
+                    class="kind-badge"
+                    style="font-size: 10px; background: #fef3c7; color: #92400e; border: 1px solid #fbbf24;"
+                  >
+                    Match {{ selectedMovement.match?.match_number || '' }} {{ selectedMovement.match?.match_number || '' }}
+                  </span>
+                  <span
+                    v-else-if="selectedMovement.kind"
+                    :class="['kind-badge', `kind-badge--${selectedMovement.kind}`]"
                     style="font-size: 10px"
                   >
                     {{ selectedMovement.kind }}
@@ -2031,8 +2127,9 @@
                   <span
                     v-if="selectedMovement.status"
                     class="dc-pill dc-pill--ghost"
-                    >{{ selectedMovement.status }}</span
                   >
+                    {{ selectedMovement.status }}
+                  </span>
                 </div>
                 <div
                   style="
@@ -2327,7 +2424,10 @@
                   :class="{ 'am-mode-btn--active': newPlanMode === 'bulk' }"
                   @click="newPlanMode = 'bulk'"
                 >
-                  <div style="font-size: 13px; font-weight: 700">
+                  <div style="display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 700">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M17.8 19.2L16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"/>
+                    </svg>
                     Bulk Create by Arrival
                   </div>
                   <div
@@ -3291,7 +3391,13 @@
                     {{ mv.code || `M${genMovements.indexOf(mv) + 1}` }}
                   </div>
                   <span
-                    v-if="mv.kind"
+                    v-if="mv.match_id"
+                    class="kind-badge kind-badge--match"
+                    style="font-size: 10px; white-space: nowrap; background: #fef3c7; color: #92400e; border-color: #fbbf24;"
+                    >Match {{ mv.match?.match_number || '' }}</span
+                  >
+                  <span
+                    v-else-if="mv.kind"
                     :class="['kind-badge', `kind-badge--${mv.kind}`]"
                     style="font-size: 10px; white-space: nowrap"
                     >{{ mv.kind }}</span
@@ -4626,7 +4732,7 @@
           <div class="modal-body" style="gap: 12px">
             <!-- Read-only Flight/Team Info Card -->
             <div
-              v-if="editingMovement?.flight || editingMovement?.team"
+              v-if="(editingMovement?.flight || editingMovement?.team) && emKind === 'arrival'"
               style="
                 padding: 14px;
                 background: var(--panel);
@@ -4782,7 +4888,13 @@
                       Phase
                     </div>
                     <span
-                      v-if="emKind"
+                      v-if="emMatchId"
+                      class="kind-badge kind-badge--match"
+                      style="background: #fef3c7; color: #92400e; border-color: #fbbf24;"
+                      >Match {{ relevantMatches.find(m => m.id === emMatchId)?.match_number || '' }}</span
+                    >
+                    <span
+                      v-else-if="emKind"
                       :class="['kind-badge', `kind-badge--${emKind}`]"
                       >{{ emKind }}</span
                     >
@@ -4839,7 +4951,7 @@
 
             <!-- Divider -->
             <div
-              v-if="editingMovement?.flight || editingMovement?.team"
+              v-if="(editingMovement?.flight || editingMovement?.team) && emKind === 'arrival'"
               style="height: 1px; background: var(--border); margin: 4px 0"
             ></div>
 
@@ -4912,6 +5024,47 @@
                   {{ supervisor.name }}
                 </option>
               </select>
+            </div>
+            <div class="form-field">
+              <label>MATCH (OPTIONAL)</label>
+              <select v-model="emMatchId">
+                <option :value="null">None - Regular logistics</option>
+                <option 
+                  v-for="match in relevantMatches" 
+                  :key="match.id" 
+                  :value="match.id"
+                >
+                  {{ match.match_number }} - 
+                  {{ match.team1?.team_name || match.team1?.team }} vs {{ match.team2?.team_name || match.team2?.team }} - 
+                  {{ formatDateTime(match.kick_off) }} @ {{ match.venue?.name }}
+                </option>
+              </select>
+              <div
+                v-if="emMatchId && relevantMatches.length > 0"
+                style="
+                  margin-top: 6px;
+                  padding: 8px;
+                  background: var(--accent-soft);
+                  border-radius: 6px;
+                  font-size: 11px;
+                  color: var(--ink2);
+                  display: flex;
+                  align-items: center;
+                  gap: 6px;
+                "
+              >
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
+                  <path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z" />
+                </svg>
+                This movement is linked to a match. Ideal window should be 2-3h before kick-off.
+              </div>
             </div>
             <div class="form-field">
               <label>NOTES</label>
@@ -5541,6 +5694,7 @@ const props = defineProps({
   vehicles: { type: Array, default: () => [] },
   drivers: { type: Array, default: () => [] },
   supervisors: { type: Array, default: () => [] },
+  matches: { type: Array, default: () => [] },
 });
 
 const view = ref("day");
@@ -5771,6 +5925,7 @@ const emFieldSupervisorId = ref("");
 const emPassengers = ref("");
 const emFlightNumber = ref("");
 const emNotes = ref("");
+const emMatchId = ref(null);
 
 const movementTemplateLibrary = [
   {
@@ -6281,6 +6436,17 @@ const filteredTeamMovements = computed(() => {
   }
   return selectedTeamObj.value.items.filter(
     (mv) => mv.kind === teamMovementKindFilter.value
+  );
+});
+
+// Computed property for matches relevant to the movement being edited
+const relevantMatches = computed(() => {
+  if (!props.matches || !editingMovement.value?.team_id) return [];
+  
+  // Show matches where the movement's team is playing
+  const teamCode = editingMovement.value.team?.code;
+  return props.matches.filter(match => 
+    match.team1_id === teamCode || match.team2_id === teamCode
   );
 });
 
@@ -7237,6 +7403,7 @@ function editMovement(movement) {
 
   emFlightNumber.value = movement.flight_number || "";
   emNotes.value = movement.notes || "";
+  emMatchId.value = movement.match_id || null;
 
   showEditMovement.value = true;
 }
@@ -7269,6 +7436,7 @@ function submitEditMovement() {
       driver_id: emDriverId.value || null,
       field_supervisor_id: emFieldSupervisorId.value || null,
       notes: emNotes.value || null,
+      match_id: emMatchId.value || null,
     },
     {
       onSuccess: () => {
@@ -8557,7 +8725,8 @@ function statusLabel(s) {
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  max-height: 100%;
+  height: 100%;
+  max-height: calc(100vh - 280px);
   box-shadow: 0 2px 12px rgba(15, 23, 36, 0.08);
 }
 

@@ -50,6 +50,9 @@ class PlanManagementController extends Controller
                 'movements.vehicle', 
                 'movements.driver',
                 'movements.fieldSupervisor',
+                'movements.match.team1',
+                'movements.match.team2',
+                'movements.match.venue',
                 'movements.checkpointTemplate.checkpoints',
                 'movements.job.checkpoints.completedBy', // Load job checkpoints for status
                 'movementTemplate'
@@ -197,10 +200,18 @@ class PlanManagementController extends Controller
                 'team.originAirport',
                 'team.destinationAirport',
                 'team.country',
+                'team.flights' => function ($query) use ($activeEventId) {
+                    if ($activeEventId) {
+                        $query->where('event_id', $activeEventId);
+                    }
+                },
                 'vehicle',
                 'driver',
                 'fieldSupervisor',
                 'plan',
+                'match.team1',
+                'match.team2',
+                'match.venue',
                 'checkpointTemplate.checkpoints',
                 'job.checkpoints' // Load job checkpoints for status
             ])
@@ -208,8 +219,22 @@ class PlanManagementController extends Controller
             ->orderBy('window_start')
             ->get()
             ->groupBy('team_id')
-            ->map(function ($movements, $teamId) {
+            ->map(function ($movements, $teamId) use ($activeEventId) {
                 $team = $movements->first()->team;
+                
+                // Get arrival and departure dates from TeamFlight records for this event
+                $arrivalFlight = $team->flights
+                    ->where('direction', 'arrival')
+                    ->where('event_id', $activeEventId)
+                    ->sortBy('scheduled_at')
+                    ->first();
+                    
+                $departureFlight = $team->flights
+                    ->where('direction', 'departure')
+                    ->where('event_id', $activeEventId)
+                    ->sortByDesc('scheduled_at')
+                    ->first();
+                
                 return [
                     'team_id' => $teamId,
                     'team' => $team->team_name,
@@ -222,8 +247,8 @@ class PlanManagementController extends Controller
                     'hotel_name' => $team->hotel_name,
                     'training_ground' => $team->training_ground,
                     'liaison' => $team->sc_liaison_name,
-                    'arrival_date_time' => $team->arrival_date_time?->format('Y-m-d H:i:s'),
-                    'departure_date_time' => $team->departure_date_time?->format('Y-m-d H:i:s'),
+                    'arrival_date_time' => $arrivalFlight?->scheduled_at?->format('Y-m-d H:i:s'),
+                    'departure_date_time' => $departureFlight?->scheduled_at?->format('Y-m-d H:i:s'),
                     'items' => $movements->map(function ($movement) {
                         // Get actual job checkpoints if job exists
                         $jobCheckpoints = $movement->job?->checkpoints ?? collect();
@@ -297,6 +322,15 @@ class PlanManagementController extends Controller
                             'field_supervisor_id' => $movement->field_supervisor_id,
                             'flight_number' => $movement->flight_number,
                             'notes' => $movement->notes,
+                            'match_id' => $movement->match_id,
+                            'match' => $movement->match ? [
+                                'id' => $movement->match->id,
+                                'match_number' => $movement->match->match_number,
+                                'team1' => $movement->match->team1,
+                                'team2' => $movement->match->team2,
+                                'venue' => $movement->match->venue,
+                                'kick_off' => $movement->match->kick_off?->format('Y-m-d H:i:s'),
+                            ] : null,
                             'checkpoints' => $checkpoints->toArray(),
                         ];
                     })->values()->all()
@@ -304,6 +338,14 @@ class PlanManagementController extends Controller
             })
             ->values()
             ->all();
+
+        // Load matches for the active event
+        $matches = \App\Models\GameMatch::with(['team1', 'team2', 'venue', 'event'])
+            ->when($activeEventId, function ($query) use ($activeEventId) {
+                $query->where('event_id', $activeEventId);
+            })
+            ->orderBy('kick_off')
+            ->get();
 
         // Get active plan from session (shared with Jobs page)
         $activePlanId = $request->session()->get('active_plan_id');
@@ -318,6 +360,7 @@ class PlanManagementController extends Controller
             'vehicles' => $vehicles,
             'drivers' => $drivers,
             'supervisors' => $supervisors,
+            'matches' => $matches,
             'schedule' => LmsData::schedule(), // For backward compatibility - will be removed
         ]);
     }
@@ -890,6 +933,7 @@ class PlanManagementController extends Controller
             'vehicle_id' => 'nullable|exists:vehicles,id',
             'driver_id' => 'nullable|exists:drivers,id',
             'field_supervisor_id' => 'nullable|exists:users,id',
+            'match_id' => 'nullable|exists:matches,id',
             'notes' => 'nullable|string',
         ]);
 

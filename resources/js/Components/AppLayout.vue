@@ -219,7 +219,6 @@ const navItems = [
   { label: 'Dashboard',     route: 'dashboard',        icon: 'dashboard' },
   { label: 'Schedule',      route: 'schedule',          icon: 'schedule' },
   { label: 'Planning',      route: 'plans',             icon: 'plans' },
-  { label: 'Library',       route: 'library',           icon: 'database' },
   { label: 'Jobs Queue',    route: 'jobs',              icon: 'jobs' },
   { label: 'Jobs (Mobile)', route: 'jobs/mobile',       icon: 'phone' },
   { label: 'Live Tracker',  route: 'tracker',           icon: 'tracker' },
@@ -234,6 +233,7 @@ const navItems = [
     label: 'Master', 
     expandable: true,
     items: [
+      { label: 'Library',       route: 'library',           icon: 'database' },
       { label: 'Events',        route: 'events',            icon: 'trophy' },
       { label: 'Venues',        route: 'venues',            icon: 'building' },
       { label: 'Teams',         route: 'teams',             icon: 'team' },

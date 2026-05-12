@@ -3,7 +3,7 @@
     <div class="page-header">
       <div>
         <h1 class="page-title">Matches</h1>
-        <p class="page-sub">{{ filteredMatches.length }} of {{ matches.length }} matches</p>
+        <p class="page-sub">{{ filteredMatches.length }} match{{ filteredMatches.length !== 1 ? 'es' : '' }}</p>
       </div>
       <div class="header-actions">
         <RefreshButton :only="['matches']" />
@@ -24,7 +24,7 @@
 
     <!-- Summary stats -->
     <div class="stats-grid">
-      <mini-stat label="Total Matches" :value="matches.length" />
+      <mini-stat label="Total Matches" :value="totalMatches" />
       <mini-stat label="Upcoming" :value="upcomingMatches" tone="primary" />
       <mini-stat label="Venues" :value="uniqueVenues" />
       <mini-stat label="Stages" :value="uniqueStages" tone="ok" />
@@ -631,6 +631,8 @@ const filteredMatches = computed(() => {
 
   return result;
 });
+
+const totalMatches = computed(() => props.matches.length);
 
 const upcomingMatches = computed(() => {
   const now = new Date();

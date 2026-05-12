@@ -150,53 +150,20 @@ class LmsController extends Controller
 
     public function jobs(Request $request): Response
     {
-        // Get all plans
-        $plans = \App\Models\Plan::orderBy('date', 'desc')
-            ->orderBy('name')
-            ->get()
-            ->map(function ($plan) {
-                return [
-                    'id' => $plan->id,
-                    'name' => $plan->name,
-                    'code' => $plan->code,
-                    'date' => $plan->date,
-                    'status' => $plan->status,
-                    'movements_count' => $plan->movements()->count(),
-                    'teams_count' => $plan->movements()->distinct('team_id')->count('team_id'),
-                ];
-            });
-
-        // Get selected plan (from query param, session, or default to first plan)
-        $selectedPlanId = $request->query('plan');
-        if ($selectedPlanId) {
-            $selectedPlanId = (int) $selectedPlanId; // Cast to integer
-            // Store in session for persistence
-            $request->session()->put('active_plan_id', $selectedPlanId);
-        } else {
-            // Try to get from session
-            $selectedPlanId = $request->session()->get('active_plan_id');
-            // If not in session, default to first plan
-            if (!$selectedPlanId && $plans->isNotEmpty()) {
-                $selectedPlanId = $plans->first()['id'];
-                $request->session()->put('active_plan_id', $selectedPlanId);
-            }
-        }
-
-        // Build job query with plan filter
+        // Build job query - show all jobs across all plans
         $jobsQuery = JobOperation::with([
             'event',
             'movement.team',
+            'movement.flight.originAirport',
+            'movement.flight.destinationAirport',
+            'movement.accommodation',
+            'movement.match.venue',
             'vehicle',
             'driver',
             'supervisor',
             'checkpoints.completedBy',
             'checkpoints.checkpoint'
         ]);
-
-        // Filter by plan if selected
-        if ($selectedPlanId) {
-            $jobsQuery->where('plan_id', $selectedPlanId);
-        }
 
         $jobs = $jobsQuery->orderBy('created_at', 'desc')
             ->get()
@@ -216,7 +183,7 @@ class LmsController extends Controller
                     'date' => $movement?->date?->format('Y-m-d') ?? $movement?->window_start?->format('Y-m-d') ?? now()->format('Y-m-d'),
                     'event_name' => $job->event?->name ?? null,
                     'event_code' => $job->event?->code ?? null,
-                    'pax' => $movement?->passengers ?? 0,
+                    'pax' => $movement?->passengers ?? $movement?->flight?->party_size_total ?? $team?->party_size_total ?? 0,
                     'vehicle' => $job->vehicle ? ($job->vehicle->code ?? $job->vehicle->plate_number ?? $job->vehicle->vehicle_type ?? 'Unassigned') : 'Unassigned',
                     'status' => $job->status,
                     'delay' => $movement?->delay_minutes,
@@ -229,6 +196,27 @@ class LmsController extends Controller
                     'driver' => $job->driver?->name ?? 'Unassigned',
                     'driver_phone' => $job->driver?->phone ?? null,
                     'updated_at' => $job->updated_at?->format('Y-m-d H:i') ?? null,
+                    'flight' => $movement?->flight ? [
+                        'id' => $movement->flight->id,
+                        'flight_number' => $movement->flight->flight_number,
+                        'origin_airport' => $movement->flight->originAirport?->code ?? $movement->flight->origin_airport_id,
+                        'destination_airport' => $movement->flight->destinationAirport?->code ?? $movement->flight->destination_airport_id,
+                    ] : null,
+                    'accommodation' => $movement?->accommodation ? [
+                        'id' => $movement->accommodation->id,
+                        'hotel_name' => $movement->accommodation->hotel_name,
+                    ] : null,
+                    'match' => $movement?->match ? [
+                        'id' => $movement->match->id,
+                        'match_number' => $movement->match->match_number,
+                        'venue' => $movement->match->venue,
+                    ] : null,
+                    'team_data' => $team ? [
+                        'hotel_name' => $team->hotel_name,
+                        'origin_airport' => $team->originAirport?->code,
+                        'destination_airport' => $team->destinationAirport?->code,
+                        'training_ground' => $team->training_ground,
+                    ] : null,
                     'checkpoints' => $job->checkpoints->map(function ($checkpoint) {
                         // Determine the time to display
                         $displayTime = null;
@@ -273,8 +261,6 @@ class LmsController extends Controller
 
         return Inertia::render('Jobs', [
             'schedule' => $jobs,
-            'plans' => $plans,
-            'activePlan' => $selectedPlanId,
         ]);
     }
 
@@ -283,6 +269,10 @@ class LmsController extends Controller
         // Get database jobs
         $dbJobs = JobOperation::with([
             'movement.team',
+            'movement.flight.originAirport',
+            'movement.flight.destinationAirport',
+            'movement.accommodation',
+            'movement.match.venue',
             'vehicle',
             'driver',
             'supervisor',
@@ -308,10 +298,31 @@ class LmsController extends Controller
                     'dep' => $movement?->window_start?->format('H:i') ?? '--:--',
                     'arr' => $movement?->window_end?->format('H:i') ?? '--:--',
                     'window_start' => $movement?->window_start?->format('Y-m-d H:i') ?? null,
-                    'pax' => $movement?->passengers ?? 0,
+                    'pax' => $movement?->passengers ?? $movement?->flight?->party_size_total ?? $team?->party_size_total ?? 0,
                     'vehicle' => $job->vehicle ? ($job->vehicle->code ?? $job->vehicle->plate_number ?? $job->vehicle->vehicle_type ?? 'Unassigned') : 'Unassigned',
                     'status' => $job->status,
                     'delay' => $movement?->delay_minutes,
+                    'flight' => $movement?->flight ? [
+                        'id' => $movement->flight->id,
+                        'flight_number' => $movement->flight->flight_number,
+                        'origin_airport' => $movement->flight->originAirport?->code ?? $movement->flight->origin_airport_id,
+                        'destination_airport' => $movement->flight->destinationAirport?->code ?? $movement->flight->destination_airport_id,
+                    ] : null,
+                    'accommodation' => $movement?->accommodation ? [
+                        'id' => $movement->accommodation->id,
+                        'hotel_name' => $movement->accommodation->hotel_name,
+                    ] : null,
+                    'match' => $movement?->match ? [
+                        'id' => $movement->match->id,
+                        'match_number' => $movement->match->match_number,
+                        'venue' => $movement->match->venue,
+                    ] : null,
+                    'team_data' => $team ? [
+                        'hotel_name' => $team->hotel_name,
+                        'origin_airport' => $team->originAirport?->code,
+                        'destination_airport' => $team->destinationAirport?->code,
+                        'training_ground' => $team->training_ground,
+                    ] : null,
                     'source' => 'database',
                 ];
             });
@@ -338,6 +349,10 @@ class LmsController extends Controller
         $jobOperation = JobOperation::with([
             'event',
             'movement.team',
+            'movement.flight.originAirport',
+            'movement.flight.destinationAirport',
+            'movement.accommodation',
+            'movement.match.venue',
             'vehicle',
             'driver',
             'supervisor',
@@ -359,9 +374,30 @@ class LmsController extends Controller
                 'to' => $movement?->to_location ?? 'Unknown',
                 'dep' => $movement?->window_start?->format('H:i') ?? '--:--',
                 'arr' => $movement?->window_end?->format('H:i') ?? '--:--',
-                'pax' => $movement?->passengers ?? 0,
+                'pax' => $movement?->passengers ?? $movement?->flight?->party_size_total ?? $team?->party_size_total ?? 0,
                 'vehicle' => $jobOperation->vehicle ? ($jobOperation->vehicle->code ?? $jobOperation->vehicle->plate_number ?? $jobOperation->vehicle->vehicle_type ?? 'Unassigned') : 'Unassigned',
                 'status' => $jobOperation->status,
+                'flight' => $movement?->flight ? [
+                    'id' => $movement->flight->id,
+                    'flight_number' => $movement->flight->flight_number,
+                    'origin_airport' => $movement->flight->originAirport?->code ?? $movement->flight->origin_airport_id,
+                    'destination_airport' => $movement->flight->destinationAirport?->code ?? $movement->flight->destination_airport_id,
+                ] : null,
+                'accommodation' => $movement?->accommodation ? [
+                    'id' => $movement->accommodation->id,
+                    'hotel_name' => $movement->accommodation->hotel_name,
+                ] : null,
+                'match' => $movement?->match ? [
+                    'id' => $movement->match->id,
+                    'match_number' => $movement->match->match_number,
+                    'venue' => $movement->match->venue,
+                ] : null,
+                'team_data' => $team ? [
+                    'hotel_name' => $team->hotel_name,
+                    'origin_airport' => $team->originAirport?->code,
+                    'destination_airport' => $team->destinationAirport?->code,
+                    'training_ground' => $team->training_ground,
+                ] : null,
                 'delay' => $movement?->delay_minutes,
                 'source' => 'database',
             ];
@@ -673,21 +709,11 @@ class LmsController extends Controller
             'flag' => 'nullable|string|max:10',
             'group_pool' => 'nullable|string|max:50',
             'classification_type_id' => 'nullable|integer|exists:team_classifications,id',
-            'party_size_total' => 'nullable|integer|min:0',
-            'party_size_players' => 'nullable|integer|min:0',
-            'party_size_staff' => 'nullable|integer|min:0',
-            'hotel_name' => 'nullable|string|max:255',
-            'training_ground' => 'nullable|string|max:255',
             'origin_airport_id' => 'nullable|integer|exists:airports,id',
             'destination_airport_id' => 'nullable|integer|exists:airports,id',
             'gate' => 'nullable|string|max:50',
-            'flight_number' => 'nullable|string|max:20',
-            'arrival_date_time' => 'nullable|date_format:Y-m-d H:i',
-            'departure_date_time' => 'nullable|date_format:Y-m-d H:i',
             'arrival_manifest' => 'nullable|array',
             'head_of_delegation' => 'nullable|string|max:255',
-            'sc_liaison_name' => 'nullable|string|max:255',
-            'sc_liaison_phone' => 'nullable|string|max:50',
             'bib_accent_color' => 'nullable|string|max:20',
             'notes' => 'nullable|string',
         ]);
@@ -712,21 +738,11 @@ class LmsController extends Controller
             'flag' => 'nullable|string|max:10',
             'group_pool' => 'nullable|string|max:50',
             'classification_type_id' => 'nullable|integer|exists:team_classifications,id',
-            'party_size_total' => 'nullable|integer|min:0',
-            'party_size_players' => 'nullable|integer|min:0',
-            'party_size_staff' => 'nullable|integer|min:0',
-            'hotel_name' => 'nullable|string|max:255',
-            'training_ground' => 'nullable|string|max:255',
             'origin_airport_id' => 'nullable|integer|exists:airports,id',
             'destination_airport_id' => 'nullable|integer|exists:airports,id',
             'gate' => 'nullable|string|max:50',
-            'flight_number' => 'nullable|string|max:20',
-            'arrival_date_time' => 'nullable|date_format:Y-m-d H:i',
-            'departure_date_time' => 'nullable|date_format:Y-m-d H:i',
             'arrival_manifest' => 'nullable|array',
             'head_of_delegation' => 'nullable|string|max:255',
-            'sc_liaison_name' => 'nullable|string|max:255',
-            'sc_liaison_phone' => 'nullable|string|max:50',
             'bib_accent_color' => 'nullable|string|max:20',
             'notes' => 'nullable|string',
         ]);
@@ -794,6 +810,7 @@ class LmsController extends Controller
                 'oversized_pieces' => 'nullable|integer|min:0',
                 'photo' => 'nullable|image|max:10240', // Max 10MB
                 'signature_data' => 'nullable|string', // Base64 encoded image
+                'update_flight_actual' => 'nullable|string', // Flag to update team flight actual_at
             ]);
 
             $checkpoint = JobCheckpoint::with(['job', 'checkpoint'])->findOrFail($checkpointId);
@@ -907,6 +924,35 @@ class LmsController extends Controller
             }
 
             $checkpoint->update($updateData);
+
+            // Update team flight actual_at if this is PMA Arrival checkpoint
+            if ($request->filled('update_flight_actual') && 
+                $validated['state'] === 'done' && 
+                isset($updateData['completed_at'])) {
+                
+                $job = $checkpoint->job;
+                $movement = $job->movement;
+                
+                if ($movement && $movement->team_id && $movement->event_id) {
+                    // Find the arrival flight for this team
+                    $teamFlight = \App\Models\TeamFlight::where('event_id', $movement->event_id)
+                        ->where('team_id', $movement->team_id)
+                        ->where('direction', 'arrival')
+                        ->first();
+                    
+                    if ($teamFlight) {
+                        $teamFlight->update([
+                            'actual_at' => $updateData['completed_at'],
+                        ]);
+                        
+                        Log::info('Updated team flight actual_at for PMA Arrival', [
+                            'team_flight_id' => $teamFlight->id,
+                            'actual_at' => $updateData['completed_at'],
+                            'checkpoint_id' => $checkpointId,
+                        ]);
+                    }
+                }
+            }
 
             // Update job progress
             $job = $checkpoint->job;

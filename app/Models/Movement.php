@@ -21,6 +21,7 @@ class Movement extends Model
         'accommodation_id',
         'checkpoint_template_id',
         'kind',
+        'functional_area',
         'from_location',
         'to_location',
         'window_start',

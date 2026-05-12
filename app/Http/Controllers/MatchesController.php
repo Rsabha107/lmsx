@@ -14,11 +14,19 @@ class MatchesController extends Controller
     /**
      * Display a listing of the matches.
      */
-    public function index()
+    public function index(Request $request)
     {
-        $matches = GameMatch::with(['team1', 'team2', 'event', 'venue.country'])
-            ->orderBy('match_date', 'asc')
-            ->get();
+        $activeEventId = $request->session()->get('active_event_id');
+        
+        $query = GameMatch::with(['team1', 'team2', 'event', 'venue.country'])
+            ->orderBy('match_date', 'asc');
+        
+        // Filter by active event if one is selected
+        if ($activeEventId) {
+            $query->where('event_id', $activeEventId);
+        }
+        
+        $matches = $query->get();
 
         $teams = Team::orderBy('team_name', 'asc')->get();
         $events = Event::with(['venues', 'eventTeams.team'])->orderBy('name', 'asc')->get();

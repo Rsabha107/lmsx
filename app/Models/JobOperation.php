@@ -16,6 +16,7 @@ class JobOperation extends Model
         'movement_id',
         'plan_id',
         'team_id',
+        'functional_area',
         'supervisor_id',
         'driver_id',
         'vehicle_id',

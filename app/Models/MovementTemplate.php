@@ -13,6 +13,7 @@ class MovementTemplate extends Model
         'name',
         'description',
         'scenario_type',
+        'functional_area',
         'total_legs',
         'estimated_duration_minutes',
         'is_active',

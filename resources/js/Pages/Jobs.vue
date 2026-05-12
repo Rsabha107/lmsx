@@ -3,85 +3,7 @@
     <div class="page-header">
       <div>
         <p class="page-sub">Live execution · {{ schedule.length }} jobs</p>
-        <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
-          <h1 class="page-title">Jobs for</h1>
-          
-          <!-- Plan Selector -->
-          <div v-if="plans && plans.length > 0" style="position: relative;">
-            <!-- Trigger: shows selected plan header -->
-            <div @click="showPlanDropdown = !showPlanDropdown" style="cursor: pointer; user-select: none;">
-              <div style="display: flex; align-items: center; gap: 8px;">
-                <span style="font-size: 20px; font-weight: 700; color: #111827; letter-spacing: -0.3px;">
-                  {{ selectedPlanObj ? selectedPlanObj.name : 'Select a Plan' }}
-                </span>
-                <svg width="18" height="18" viewBox="0 0 20 20" fill="none" style="color: #6B7280; flex-shrink: 0; margin-top: 2px;">
-                  <path d="M5 7.5L10 12.5L15 7.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-                </svg>
-              </div>
-            </div>
-
-            <!-- Dropdown -->
-            <div v-if="showPlanDropdown" class="plans-dropdown" style="position: absolute; top: calc(100% + 10px); left: 0; background: #fff; border: 1px solid #E5E7EB; border-radius: 12px; z-index: 1000; box-shadow: 0 8px 28px rgba(0,0,0,0.12); overflow: hidden; width: min(380px, calc(100vw - 36px));">
-              <!-- Search -->
-              <div style="padding: 12px 12px 8px;">
-                <input
-                  type="text"
-                  placeholder="Search plans..."
-                  v-model="planSearchTerm"
-                  @click.stop
-                  style="width: 100%; padding: 8px 12px; border: 1px solid #E5E7EB; border-radius: 8px; font-size: 13px; color: #374151; background: #F9FAFB; outline: none; box-sizing: border-box;"
-                />
-              </div>
-
-              <!-- Grouped plan list -->
-              <div style="max-height: 340px; overflow-y: auto; padding-bottom: 4px;">
-                <template v-for="group in groupedFilteredPlans" :key="group.status">
-                  <div v-if="group.plans.length">
-                    <div style="padding: 8px 14px 4px; font-size: 10px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: #9CA3AF;">
-                      {{ group.label }}
-                    </div>
-                    <div
-                      v-for="plan in group.plans"
-                      :key="plan.id"
-                      @click="selectPlan(plan.id)"
-                      :style="{
-                        padding: '10px 14px',
-                        cursor: 'pointer',
-                        borderLeft: activePlan == plan.id ? '3px solid #3B82F6' : '3px solid transparent',
-                        background: activePlan == plan.id ? '#EFF6FF' : 'transparent',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        transition: 'background 0.1s',
-                      }"
-                      @mouseenter="e => { if (activePlan != plan.id) e.currentTarget.style.background = '#F9FAFB' }"
-                      @mouseleave="e => { e.currentTarget.style.background = activePlan == plan.id ? '#EFF6FF' : 'transparent' }"
-                    >
-                      <div>
-                        <div style="font-size: 13px; font-weight: 600; color: #111827; margin-bottom: 2px;">{{ plan.name }}</div>
-                        <div style="font-size: 11px; color: #9CA3AF;">
-                          <span style="font-family: monospace;">{{ plan.code }}</span>
-                          <span style="margin: 0 4px;">·</span><span style="font-family: monospace;">{{ formatDateTime(plan.date) }}</span>
-                          <span style="margin: 0 4px;">·</span>{{ plan.movements_count }} movements
-                          <span style="margin: 0 4px;">·</span>{{ plan.teams_count }} teams
-                        </div>
-                      </div>
-                      <svg v-if="activePlan == plan.id" width="16" height="16" viewBox="0 0 20 20" fill="none" style="color: #3B82F6; flex-shrink: 0; margin-left: 10px;">
-                        <path d="M4 10L8 14L16 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                      </svg>
-                    </div>
-                  </div>
-                </template>
-                <div v-if="allFilteredPlansEmpty" style="padding: 20px 14px; text-align: center; color: #9CA3AF; font-size: 12px;">
-                  No plans found
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- Close dropdown overlay -->
-          <div v-if="showPlanDropdown" @click="showPlanDropdown = false" style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 999;"></div>
-        </div>
+        <h1 class="page-title">Jobs</h1>
       </div>
       <div class="page-header-actions">
         <RefreshButton :only="['schedule']" @refresh="handleRefresh" />
@@ -96,7 +18,7 @@
       </div>
     </div>
 
-    <!-- Filter pills -->
+    <!-- Status filters -->
     <div class="filter-bar">
       <button v-for="f in filters" :key="f.value"
         :class="['filter-pill', activeFilter === f.value ? 'filter-pill--active' : '']"
@@ -104,6 +26,46 @@
         {{ f.label }}
         <span class="filter-count">{{ f.count }}</span>
       </button>
+    </div>
+
+    <!-- Quick filters -->
+    <div class="quick-filters">
+      <div class="quick-filter-section">
+        <span class="quick-filter-label">Date:</span>
+        <button 
+          v-for="option in dateOptions" 
+          :key="option.value"
+          :class="['quick-filter-btn', dateFilter === option.value ? 'quick-filter-btn--active' : '']"
+          @click="dateFilter = option.value">
+          {{ option.label }}
+        </button>
+      </div>
+
+      <div class="quick-filter-section">
+        <span class="quick-filter-label">Resource:</span>
+        <button 
+          :class="['quick-filter-btn', resourceFilter === 'all' ? 'quick-filter-btn--active' : '']"
+          @click="resourceFilter = 'all'; selectedResource = ''">
+          All
+        </button>
+        <button 
+          v-for="type in resourceTypes" 
+          :key="type.value"
+          :class="['quick-filter-btn', resourceFilter === type.value ? 'quick-filter-btn--active' : '']"
+          @click="resourceFilter = type.value; selectedResource = ''">
+          {{ type.label }}
+        </button>
+        <select 
+          v-if="resourceFilter !== 'all'"
+          v-model="selectedResource" 
+          class="resource-select-mini"
+          @change="applyResourceFilter">
+          <option value="">All {{ resourceFilter }}s</option>
+          <option v-for="resource in resourceOptions" :key="resource" :value="resource">
+            {{ resource }}
+          </option>
+        </select>
+      </div>
     </div>
 
     <div class="jobs-layout">
@@ -140,7 +102,7 @@
                 <span class="jl-team">{{ job.team }}</span>
                 <span v-if="job.event_name" class="jl-event-badge">{{ job.event_code || job.event_name }}</span>
               </div>
-              <span class="jl-route">{{ job.from }} → {{ job.to }}</span>
+              <span class="jl-route">{{ formatJobFromLocation(job) }} → {{ formatJobToLocation(job) }}</span>
             </div>
             <div class="jl-col-progress">
               <div class="jl-progress-bar">
@@ -197,7 +159,7 @@
             </div>
           </div>
           <div class="detail-subtitle">
-            {{ selectedJob.from }} → {{ selectedJob.to }} · {{ selectedJob.vehicle }} · {{ selectedJob.pax }} pax
+            {{ formatJobFromLocation(selectedJob) }} → {{ formatJobToLocation(selectedJob) }} · {{ selectedJob.vehicle }} · {{ selectedJob.pax }} pax
           </div>
 
           <div :class="['detail-stats', (selectedJob.status === 'completed' && timeVariance) || selectedJob.updated_at ? 'detail-stats--five' : '']">
@@ -433,28 +395,31 @@ import CheckpointTimeline from '../Components/CheckpointTimeline.vue';
 
 const props = defineProps({
   schedule: { type: Array, default: () => [] },
-  plans: { type: Array, default: () => [] },
-  activePlan: { type: [Number, String], default: null },
 });
 
 const selectedJob = ref(null);
 const activeFilter = ref('all');
-const showPlanDropdown = ref(false);
-const planSearchTerm = ref('');
 
-const PLAN_STATUS_GROUPS = [
-  { status: 'active',    label: 'ACTIVE' },
-  { status: 'draft',     label: 'DRAFTS' },
-  { status: 'upcoming',  label: 'UPCOMING' },
-  { status: 'completed', label: 'COMPLETED' },
+// Filter refs
+const dateFilter = ref('all');
+const resourceFilter = ref('all');
+const selectedResource = ref('');
+
+const dateOptions = [
+  { value: 'all', label: 'All' },
+  { value: 'today', label: 'Today' },
+  { value: 'week', label: 'Week' },
 ];
 
-const PLAN_STATUS_STYLE = {
-  active:    { bg: '#D1FAE5', color: '#065F46', dot: '#059669' },
-  draft:     { bg: '#FEF3C7', color: '#92400E', dot: '#D97706' },
-  upcoming:  { bg: '#DBEAFE', color: '#1E40AF', dot: '#3B82F6' },
-  completed: { bg: '#F3F4F6', color: '#374151', dot: '#9CA3AF' },
-};
+const resourceTypes = [
+  { value: 'driver', label: 'Driver' },
+  { value: 'vehicle', label: 'Vehicle' },
+  { value: 'supervisor', label: 'Supervisor' },
+];
+
+function applyResourceFilter() {
+  // Trigger reactivity
+}
 
 const statusMap = {
   'in-progress': { tone: 'live',    label: 'In Progress' },
@@ -625,6 +590,222 @@ function formatTimeAgo(dateString) {
   return `${diffDays}d ago`;
 }
 
+// Location formatting functions
+function formatLocationWithAirport(location, airportCode) {
+  if (!location || !airportCode) return location || "—";
+
+  // Check if location already contains the airport code
+  if (location.toUpperCase().includes(airportCode.toUpperCase())) {
+    return location;
+  }
+  
+  // Add airport code in parentheses
+  return `${location} (${airportCode})`;
+}
+
+function formatLocationWithHotel(location, hotelName) {
+  if (!location || !hotelName) return location || "—";
+
+  // Check if location already contains the hotel name
+  if (location.toLowerCase().includes(hotelName.toLowerCase())) {
+    return location;
+  }
+
+  const hotelTerms = ["hotel", "team hotel"];
+  const locationLower = location.toLowerCase();
+
+  // Only augment if it's a hotel reference
+  if (hotelTerms.some((term) => locationLower.includes(term))) {
+    return `${location} (${hotelName})`;
+  }
+
+  return location;
+}
+
+function formatLocationWithVenue(location, venueName) {
+  if (!location || !venueName) return location || "—";
+
+  // Check if location already contains the venue name
+  if (location.toLowerCase().includes(venueName.toLowerCase())) {
+    return location;
+  }
+
+  const venueTerms = ["stadium", "venue", "ground", "arena"];
+  const locationLower = location.toLowerCase();
+
+  // Only augment if it's a venue reference
+  if (venueTerms.some((term) => locationLower.includes(term))) {
+    return `${location} (${venueName})`;
+  }
+
+  return location;
+}
+
+function formatLocationWithTrainingGround(location, trainingGroundName) {
+  if (!location || !trainingGroundName) return location || "—";
+
+  // Check if location already contains the training ground name
+  if (location.toLowerCase().includes(trainingGroundName.toLowerCase())) {
+    return location;
+  }
+
+  const trainingTerms = ["training", "training ground", "practice"];
+  const locationLower = location.toLowerCase();
+
+  // Only augment if it's a training reference
+  if (trainingTerms.some((term) => locationLower.includes(term))) {
+    return `${location} (${trainingGroundName})`;
+  }
+
+  return location;
+}
+
+function formatJobFromLocation(job) {
+  if (!job) return "—";
+  
+  let location = job.from || "—";
+  const locationLower = location.toLowerCase();
+  
+  // Check location type and append appropriate data
+  // 1. Airport locations
+  if (locationLower.includes('airport')) {
+    let airportCode = null;
+    
+    // For arrival movements, use destination airport
+    if (job.kind === "arrival") {
+      airportCode = job.flight?.destination_airport || 
+                   job.team_data?.destination_airport;
+    }
+    // For departure movements, use origin airport
+    else if (job.kind === "departure") {
+      airportCode = job.flight?.origin_airport || 
+                   job.team_data?.origin_airport;
+    }
+    
+    if (airportCode) {
+      location = formatLocationWithAirport(location, airportCode);
+    }
+  }
+  // 2. Hotel locations
+  else if (locationLower.includes('hotel')) {
+    const hotelName = job.accommodation?.hotel_name || 
+                     job.team_data?.hotel_name;
+    if (hotelName) {
+      location = formatLocationWithHotel(location, hotelName);
+    }
+  }
+  // 3. Stadium/Venue locations
+  else if (locationLower.includes('stadium') || locationLower.includes('venue') || 
+           locationLower.includes('ground') || locationLower.includes('arena')) {
+    const venueName = job.match?.venue?.name;
+    if (venueName) {
+      location = formatLocationWithVenue(location, venueName);
+    }
+  }
+  // 4. Training ground locations
+  else if (locationLower.includes('training')) {
+    const trainingGround = job.team_data?.training_ground;
+    if (trainingGround) {
+      location = formatLocationWithTrainingGround(location, trainingGround);
+    }
+  }
+  
+  return location;
+}
+
+function formatJobToLocation(job) {
+  if (!job) return "—";
+  
+  let location = job.to || "—";
+  const locationLower = location.toLowerCase();
+  
+  // Check location type and append appropriate data
+  // 1. Airport locations
+  if (locationLower.includes('airport')) {
+    // For both arrival and departure, to_location typically uses destination airport
+    const airportCode = job.flight?.destination_airport || 
+                       job.team_data?.destination_airport;
+    
+    if (airportCode) {
+      location = formatLocationWithAirport(location, airportCode);
+    }
+  }
+  // 2. Hotel locations
+  else if (locationLower.includes('hotel')) {
+    const hotelName = job.accommodation?.hotel_name || 
+                     job.team_data?.hotel_name;
+    if (hotelName) {
+      location = formatLocationWithHotel(location, hotelName);
+    }
+  }
+  // 3. Stadium/Venue locations
+  else if (locationLower.includes('stadium') || locationLower.includes('venue') || 
+           locationLower.includes('ground') || locationLower.includes('arena')) {
+    const venueName = job.match?.venue?.name;
+    if (venueName) {
+      location = formatLocationWithVenue(location, venueName);
+    }
+  }
+  // 4. Training ground locations
+  else if (locationLower.includes('training')) {
+    const trainingGround = job.team_data?.training_ground;
+    if (trainingGround) {
+      location = formatLocationWithTrainingGround(location, trainingGround);
+    }
+  }
+  
+  return location;
+}
+
+const filtered = computed(() => {
+  let jobs = props.schedule;
+  
+  // Status filter
+  if (activeFilter.value !== 'all') {
+    jobs = jobs.filter(j => j.status === activeFilter.value);
+  }
+  
+  // Date filter
+  if (dateFilter.value !== 'all') {
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    
+    if (dateFilter.value === 'today') {
+      jobs = jobs.filter(j => {
+        if (!j.date) return false;
+        const jobDate = new Date(j.date);
+        const jobDay = new Date(jobDate.getFullYear(), jobDate.getMonth(), jobDate.getDate());
+        return jobDay.getTime() === today.getTime();
+      });
+    } else if (dateFilter.value === 'week') {
+      const weekStart = new Date(today);
+      weekStart.setDate(today.getDate() - today.getDay()); // Start of week (Sunday)
+      const weekEnd = new Date(weekStart);
+      weekEnd.setDate(weekStart.getDate() + 6); // End of week (Saturday)
+      
+      jobs = jobs.filter(j => {
+        if (!j.date) return false;
+        const jobDate = new Date(j.date);
+        const jobDay = new Date(jobDate.getFullYear(), jobDate.getMonth(), jobDate.getDate());
+        return jobDay >= weekStart && jobDay <= weekEnd;
+      });
+    }
+  }
+  
+  // Resource filter
+  if (resourceFilter.value !== 'all' && selectedResource.value) {
+    if (resourceFilter.value === 'driver') {
+      jobs = jobs.filter(j => j.driver === selectedResource.value);
+    } else if (resourceFilter.value === 'vehicle') {
+      jobs = jobs.filter(j => j.vehicle === selectedResource.value);
+    } else if (resourceFilter.value === 'supervisor') {
+      jobs = jobs.filter(j => j.supervisor === selectedResource.value);
+    }
+  }
+  
+  return jobs;
+});
+
 const filters = computed(() => [
   { value: 'all',         label: 'All',         count: props.schedule.length },
   { value: 'in-progress', label: 'In Progress', count: props.schedule.filter(j => j.status === 'in-progress').length },
@@ -633,55 +814,18 @@ const filters = computed(() => [
   { value: 'completed',   label: 'Completed',   count: props.schedule.filter(j => j.status === 'completed').length },
 ]);
 
-const filtered = computed(() =>
-  activeFilter.value === 'all'
-    ? props.schedule
-    : props.schedule.filter(j => j.status === activeFilter.value)
-);
-
-const selectedPlanObj = computed(() => {
-  if (!props.activePlan || !props.plans) return null;
-  // Use == for type coercion since activePlan might be a string from query param
-  return props.plans.find(p => p.id == props.activePlan);
+const resourceOptions = computed(() => {
+  if (resourceFilter.value === 'driver') {
+    return [...new Set(props.schedule.map(j => j.driver).filter(Boolean))].sort();
+  }
+  if (resourceFilter.value === 'vehicle') {
+    return [...new Set(props.schedule.map(j => j.vehicle).filter(Boolean))].sort();
+  }
+  if (resourceFilter.value === 'supervisor') {
+    return [...new Set(props.schedule.map(j => j.supervisor).filter(Boolean))].sort();
+  }
+  return [];
 });
-
-const groupedFilteredPlans = computed(() => {
-  const term = planSearchTerm.value.toLowerCase();
-  return PLAN_STATUS_GROUPS.map(g => ({
-    ...g,
-    plans: props.plans.filter(p => p.status === g.status && (!term || p.name.toLowerCase().includes(term) || p.code.toLowerCase().includes(term))),
-  }));
-});
-
-const allFilteredPlansEmpty = computed(() => groupedFilteredPlans.value.every(g => g.plans.length === 0));
-
-const planStatusPillStyle = (status) => {
-  const s = PLAN_STATUS_STYLE[status] ?? PLAN_STATUS_STYLE.upcoming;
-  return { display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '1px 7px', borderRadius: '999px', fontSize: '10px', fontWeight: '600', background: s.bg, color: s.color };
-};
-
-const planStatusDotStyle = (status) => {
-  const s = PLAN_STATUS_STYLE[status] ?? PLAN_STATUS_STYLE.upcoming;
-  return { width: '5px', height: '5px', borderRadius: '50%', background: s.dot, display: 'inline-block', flexShrink: 0 };
-};
-
-function formatDateTime(dateString) {
-  if (!dateString) return '';
-  const date = new Date(dateString);
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-}
-
-function selectPlan(planId) {
-  showPlanDropdown.value = false;
-  planSearchTerm.value = '';
-  router.visit(`/jobs?plan=${planId}`, {
-    preserveScroll: true,
-    preserveState: false,
-  });
-}
 
 // Override modal
 const showOverrideModal = ref(false);
@@ -969,6 +1113,12 @@ function submitOverride() {
   if (overrideState.value === 'done') {
     formData.append('actual_time', overrideTime.value);
     
+    // If this is PMA Arrival checkpoint, flag to update team flight actual_at
+    const checkpointName = overrideCheckpoint.value?.name || overrideCheckpoint.value?.label || '';
+    if (checkpointName.toLowerCase().includes('pma arrival')) {
+      formData.append('update_flight_actual', 'true');
+    }
+    
     // Add baggage count if required
     if (overrideCheckpoint.value?.checkpoint?.requires_baggage_count || overrideCheckpoint.value?.requires_baggage_count) {
       formData.append('bags_loaded', overrideBagsLoaded.value);
@@ -1129,6 +1279,7 @@ function submitOverride() {
   min-height: 0; flex: 1;
   height: calc(100vh - 240px);
   max-height: 800px;
+  margin-top: 24px;
 }
 @media (max-width: 1024px) {
   .jobs-layout {
@@ -1790,6 +1941,83 @@ function submitOverride() {
   .photo-lightbox-close {
     top: 10px;
     right: 10px;
+  }
+}
+
+/* Quick Filters */
+.quick-filters {
+  margin-top: 16px;
+  display: flex;
+  gap: 24px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.quick-filter-section {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.quick-filter-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink3);
+  white-space: nowrap;
+}
+
+.quick-filter-btn {
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--ink2);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.1s;
+  font-family: inherit;
+  white-space: nowrap;
+}
+
+.quick-filter-btn:hover {
+  background: var(--panel);
+  border-color: var(--ink3);
+}
+
+.quick-filter-btn--active {
+  background: var(--primary);
+  color: white;
+  border-color: var(--primary);
+}
+
+.resource-select-mini {
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--ink1);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  font-family: inherit;
+  min-width: 140px;
+}
+
+.resource-select-mini:focus {
+  outline: none;
+  border-color: var(--primary);
+}
+
+@media (max-width: 768px) {
+  .quick-filters {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+  
+  .quick-filter-section {
+    flex-wrap: wrap;
   }
 }
 </style>

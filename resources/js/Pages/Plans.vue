@@ -3,8 +3,8 @@
     <div class="page-header">
       <!-- Plan picker dropdown -->
       <div style="position: relative">
-        <!-- Back to Plans link (when a plan is selected) -->
-        <div v-if="selectedPlanObj" style="margin-bottom: 6px">
+        <!-- Back to Plans link (when viewing movements) -->
+        <div v-if="selectedPlanObj || (activePlan === null && activeTab !== 'plans')" style="margin-bottom: 6px">
           <button
             @click="viewAllPlans"
             style="
@@ -43,6 +43,26 @@
           @click="showPlanDropdown = !showPlanDropdown"
           style="cursor: pointer; user-select: none"
         >
+          <!-- All Plans header info -->
+          <div
+            v-if="!selectedPlanObj && activePlan === null && activeTab !== 'plans'"
+            style="
+              display: flex;
+              align-items: center;
+              gap: 8px;
+              margin-bottom: 3px;
+              flex-wrap: wrap;
+            "
+          >
+            <span style="font-size: 11px; color: #6b7280; font-weight: 500">
+              {{ allPlans.length }} plans
+            </span>
+            <span style="font-size: 11px; color: #d1d5db; font-weight: 500">·</span>
+            <span style="font-size: 11px; color: #6b7280; font-weight: 500">
+              Viewing all movements
+            </span>
+          </div>
+          <!-- Selected Plan header info -->
           <div
             v-if="selectedPlanObj"
             style="
@@ -76,7 +96,7 @@
                 letter-spacing: -0.3px;
               "
             >
-              {{ selectedPlanObj ? selectedPlanObj.name : "Select a Plan" }}
+              {{ selectedPlanObj ? selectedPlanObj.name : (activePlan === null && activeTab !== 'plans' ? 'All Movements (Event-wide)' : 'Select a Plan') }}
             </span>
             <svg
               width="18"
@@ -136,6 +156,69 @@
 
           <!-- Grouped plan list -->
           <div style="max-height: 340px; overflow-y: auto; padding-bottom: 4px">
+            <!-- All Plans option -->
+            <div
+              @click="selectAllPlans"
+              :style="{
+                padding: '10px 14px',
+                cursor: 'pointer',
+                borderLeft:
+                  activePlan === null
+                    ? '3px solid #3B82F6'
+                    : '3px solid transparent',
+                background:
+                  activePlan === null ? '#EFF6FF' : 'transparent',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                transition: 'background 0.1s',
+                marginBottom: '8px',
+              }"
+              @mouseenter="
+                (e) => {
+                  if (activePlan !== null)
+                    e.currentTarget.style.background = '#F9FAFB';
+                }
+              "
+              @mouseleave="
+                (e) => {
+                  e.currentTarget.style.background =
+                    activePlan === null ? '#EFF6FF' : 'transparent';
+                }
+              "
+            >
+              <div>
+                <div
+                  style="
+                    font-size: 13px;
+                    font-weight: 600;
+                    color: #111827;
+                    margin-bottom: 2px;
+                  "
+                >
+                  All Movements (Event-wide)
+                </div>
+                <div style="font-size: 11px; color: #9ca3af">
+                  View all movements across all plans
+                </div>
+              </div>
+              <svg
+                v-if="activePlan === null"
+                width="16"
+                height="16"
+                viewBox="0 0 20 20"
+                fill="none"
+                style="color: #3b82f6; flex-shrink: 0; margin-left: 10px"
+              >
+                <path
+                  d="M4 10L8 14L16 6"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+              </svg>
+            </div>
             <template v-for="group in groupedFilteredPlans" :key="group.status">
               <div v-if="group.plans.length">
                 <div
@@ -301,8 +384,8 @@
               'supervisors',
             ]"
           />
-          <!-- Only show view toggle when a plan is selected -->
-          <div v-if="selectedPlanObj" class="view-toggle">
+          <!-- Show view toggle when viewing movements (selected plan or all plans) -->
+          <div v-if="selectedPlanObj || (activePlan === null && activeTab !== 'plans')" class="view-toggle">
             <button
               :class="[
                 'toggle-btn',
@@ -310,7 +393,7 @@
               ]"
               @click="switchView('day')"
             >
-              By Day
+              By Plan
             </button>
             <button
               :class="[
@@ -324,40 +407,6 @@
           </div>
         </div>
 
-        <!-- Action buttons only show when a plan is selected -->
-        <div v-if="selectedPlanObj" class="page-header-actions">
-          <Button
-            variant="secondary"
-            size="sm"
-            @click="duplicatePlan(selectedPlanObj)"
-          >
-            Duplicate plan
-          </Button>
-          <Button
-            v-if="view === 'day'"
-            variant="secondary"
-            size="sm"
-            @click="addMovement"
-          >
-            <template #icon><svg-icon name="plus" :size="14" /></template>
-            Add movement
-          </Button>
-          <Button v-else variant="secondary" size="sm" @click="syncFlightFeeds">
-            <template #icon><svg-icon name="refresh" :size="14" /></template>
-            Sync flight feeds
-          </Button>
-          <Button
-            v-if="view === 'day'"
-            variant="primary"
-            size="sm"
-            @click="generateJobs"
-          >
-            <template #icon
-              ><svg-icon name="plus" :size="14" style="color: #fff"
-            /></template>
-            Generate jobs
-          </Button>
-        </div>
         <!-- Hidden: New team plan button - needs architectural review -->
         <!-- <Button v-else variant="primary" size="sm" @click="openNewTeamPlan">
           <template #icon><svg-icon name="plus" :size="14" style="color: #fff;" /></template>
@@ -380,7 +429,7 @@
 
     </div>
 
-    <!-- By Day view -->
+    <!-- By Plan view -->
     <template v-if="view === 'day'">
       <!-- Tabs (only show when a plan is selected) -->
       <div
@@ -419,34 +468,79 @@
             style="
               padding: 14px 16px;
               border-bottom: 1px solid var(--border);
-              display: flex;
-              justify-content: space-between;
-              align-items: center;
             "
           >
-            <div>
-              <div
-                style="
-                  font-size: 11px;
-                  letter-spacing: 1px;
-                  text-transform: uppercase;
-                  color: var(--ink3);
-                  font-weight: 700;
-                "
-              >
-                Plans {{ allPlans.length }}
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+              <div>
+                <div
+                  style="
+                    font-size: 11px;
+                    letter-spacing: 1px;
+                    text-transform: uppercase;
+                    color: var(--ink3);
+                    font-weight: 700;
+                  "
+                >
+                  Plans {{ allPlans.length }}
+                </div>
               </div>
-              <!-- <div style="font-size: 14px; font-weight: 700; color: var(--ink); margin-top: 2px;"> Execution Plans</div> -->
+              <Button variant="primary" size="sm" @click="showNewPlan = true">
+                <template #icon><svg-icon name="plus" :size="14" /></template>
+                New Plan
+              </Button>
             </div>
-            <Button variant="primary" size="sm" @click="showNewPlan = true">
-              <template #icon><svg-icon name="plus" :size="14" /></template>
-              New Plan
-            </Button>
+            
+            <!-- Plan Type Filters -->
+            <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+              <button
+                @click="planTypeFilter = null"
+                :class="['filter-chip', { 'filter-chip--active': planTypeFilter === null }]"
+              >
+                All
+                <span class="filter-chip-count">{{ planTypesCounts.all }}</span>
+              </button>
+              <button
+                @click="planTypeFilter = 'arrival'"
+                :class="['filter-chip', { 'filter-chip--active': planTypeFilter === 'arrival' }]"
+              >
+                ✈️ Arrival
+                <span class="filter-chip-count">{{ planTypesCounts.arrival }}</span>
+              </button>
+              <button
+                @click="planTypeFilter = 'match'"
+                :class="['filter-chip', { 'filter-chip--active': planTypeFilter === 'match' }]"
+              >
+                ⚽ Match
+                <span class="filter-chip-count">{{ planTypesCounts.match }}</span>
+              </button>
+              <button
+                @click="planTypeFilter = 'departure'"
+                :class="['filter-chip', { 'filter-chip--active': planTypeFilter === 'departure' }]"
+              >
+                🛫 Departure
+                <span class="filter-chip-count">{{ planTypesCounts.departure }}</span>
+              </button>
+              <button
+                @click="planTypeFilter = 'transfer'"
+                :class="['filter-chip', { 'filter-chip--active': planTypeFilter === 'transfer' }]"
+              >
+                🚌 Transfer
+                <span class="filter-chip-count">{{ planTypesCounts.transfer }}</span>
+              </button>
+              <button
+                v-if="planTypesCounts.other > 0"
+                @click="planTypeFilter = 'other'"
+                :class="['filter-chip', { 'filter-chip--active': planTypeFilter === 'other' }]"
+              >
+                Other
+                <span class="filter-chip-count">{{ planTypesCounts.other }}</span>
+              </button>
+            </div>
           </div>
           <div
             style="
               display: grid;
-              grid-template-columns: 120px 1.5fr 1fr 140px 140px 100px 120px;
+              grid-template-columns: 80px 120px 1.5fr 1fr 120px 100px 120px;
               gap: 10px;
               padding: 10px 14px;
               border-bottom: 1px solid var(--border);
@@ -460,10 +554,10 @@
               background: var(--surface);
             "
           >
+            <div>Type</div>
             <div>Code</div>
             <div>Name</div>
             <div>Template</div>
-            <div>Date</div>
             <div>Status</div>
             <div>Movements</div>
             <div>Actions</div>
@@ -479,24 +573,81 @@
               Create your first plan to get started
             </div>
           </div>
+          
+          <!-- Empty state for filtered results -->
           <div
-            v-for="(plan, i) in allPlans"
-            :key="plan.id"
-            @click="selectPlan(plan.id)"
-            :style="{
-              display: 'grid',
-              gridTemplateColumns: '120px 1.5fr 1fr 140px 140px 100px 120px',
-              gap: '10px',
-              padding: '12px 14px',
-              borderBottom:
-                i === allPlans.length - 1 ? 'none' : '1px solid var(--border)',
-              alignItems: 'center',
-              cursor: 'pointer',
-              transition: 'background 0.13s',
-            }"
-            @mouseenter="$event.currentTarget.style.background = 'var(--panel)'"
-            @mouseleave="$event.currentTarget.style.background = 'transparent'"
+            v-else-if="allPlans.length > 0 && plansByDate.length === 0"
+            style="padding: 40px; text-align: center; color: var(--ink3)"
           >
+            <div style="font-size: 14px; font-weight: 600; margin-bottom: 8px">
+              No plans match this filter
+            </div>
+            <div style="font-size: 12px">
+              Try selecting a different plan type
+            </div>
+          </div>
+          
+          <!-- Grouped by Date -->
+          <template v-for="dateGroup in plansByDate" :key="dateGroup.date">
+            <!-- Date Header -->
+            <div
+              style="
+                padding: 10px 14px;
+                background: var(--panel);
+                border-bottom: 1px solid var(--border);
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                position: sticky;
+                top: 46px;
+                z-index: 1;
+              "
+            >
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                  <line x1="16" y1="2" x2="16" y2="6"></line>
+                  <line x1="8" y1="2" x2="8" y2="6"></line>
+                  <line x1="3" y1="10" x2="21" y2="10"></line>
+                </svg>
+                <span style="font-size: 12px; font-weight: 700; color: var(--ink);">
+                  {{ formatDate(dateGroup.date) }}
+                </span>
+              </div>
+              <span style="font-size: 11px; color: var(--ink3); font-weight: 600;">
+                {{ dateGroup.plans.length }} {{ dateGroup.plans.length === 1 ? 'plan' : 'plans' }}
+              </span>
+            </div>
+            
+            <!-- Plans for this date -->
+            <div
+              v-for="(plan, i) in dateGroup.plans"
+              :key="plan.id"
+              @click="selectPlan(plan.id)"
+              :style="{
+                display: 'grid',
+                gridTemplateColumns: '80px 120px 1.5fr 1fr 120px 100px 120px',
+                gap: '10px',
+                padding: '12px 14px',
+                borderBottom:
+                  i === dateGroup.plans.length - 1 ? 'none' : '1px solid var(--border)',
+                alignItems: 'center',
+                cursor: 'pointer',
+                transition: 'background 0.13s',
+              }"
+              @mouseenter="$event.currentTarget.style.background = 'var(--panel)'"
+              @mouseleave="$event.currentTarget.style.background = 'transparent'"
+            >
+              <!-- Type Badge -->
+              <div>
+                <Badge type="plan-type" :variant="plan.planType">
+                  <template v-if="plan.planType === 'arrival'">✈️</template>
+                  <template v-else-if="plan.planType === 'match'">⚽</template>
+                  <template v-else-if="plan.planType === 'departure'">🛫</template>
+                  <template v-else-if="plan.planType === 'transfer'">🚌</template>
+                  <template v-else>📋</template>
+                </Badge>
+              </div>
             <div
               style="
                 font-family: var(--mono);
@@ -516,30 +667,10 @@
               }}</span>
               <span v-else style="font-style: italic">Blank</span>
             </div>
-            <div
-              style="
-                font-family: var(--mono);
-                font-size: 11px;
-                color: var(--ink2);
-              "
-            >
-              {{ formatDateTime(plan.date) }}
-            </div>
             <div>
-              <span
-                :class="['status-badge', `status-badge--${plan.status}`]"
-                style="
-                  display: inline-flex;
-                  align-items: center;
-                  gap: 4px;
-                  padding: 2px 8px;
-                  border-radius: 999px;
-                  font-size: 10px;
-                  font-weight: 600;
-                "
-              >
+              <Badge type="status" :variant="plan.status">
                 {{ plan.status }}
-              </span>
+              </Badge>
             </div>
             <div
               style="
@@ -558,10 +689,11 @@
                 :show-duplicate="true"
                 @duplicate="duplicatePlan(plan)"
                 @edit="editPlan(plan)"
-                @delete="deletePlan(plan)"
+                @delete="confirmDeletePlan(plan)"
               />
             </div>
           </div>
+        </template>
         </div>
       </div>
 
@@ -641,19 +773,95 @@
                   }})
                 </option>
               </select>
+              <select
+                v-model="movementsDateFilter"
+                style="
+                  padding: 6px 10px;
+                  border: 1px solid var(--border);
+                  border-radius: 6px;
+                  font-size: 12px;
+                  color: var(--ink);
+                  background: var(--surface);
+                  cursor: pointer;
+                  min-width: 140px;
+                "
+              >
+                <option :value="null">
+                  All Dates
+                </option>
+                <option
+                  v-for="date in datesInCurrentPlan"
+                  :key="date"
+                  :value="date"
+                >
+                  {{ date }}
+                </option>
+              </select>
               <div
-                v-if="movementsTeamFilter"
+                v-if="movementsTeamFilter || movementsDateFilter"
                 style="font-size: 11px; color: var(--ink3)"
               >
                 Showing {{ filteredPlanMovements.length }} of
                 {{ selectedPlanMovements.length }} movements
               </div>
+              <div style="margin-left: auto; display: flex; gap: 8px;">
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  @click="addMovement"
+                >
+                  <template #icon><svg-icon name="plus" :size="14" /></template>
+                  Add movement
+                </Button>
+                <div :title="!genCanGenerate && genMovements.length > 0 ? 'Movements must be from the same plan to generate jobs' : ''">
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    @click="generateJobs"
+                    :disabled="!genCanGenerate"
+                  >
+                    <template #icon
+                      ><svg-icon name="plus" :size="14" style="color: #fff"
+                    /></template>
+                    Generate jobs
+                  </Button>
+                </div>
+              </div>
+            </div>
+            <div
+              v-if="false && !activePlan && activeTab === 'movements' && !genCanGenerate && genMovements.length > 0"
+              style="
+                padding: 10px 14px;
+                background: #fef3c7;
+                border-bottom: 1px solid #fbbf24;
+                font-size: 12px;
+                color: #92400e;
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                font-weight: 500;
+              "
+            >
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                style="color: #f59e0b;"
+              >
+                <circle cx="12" cy="12" r="10" />
+                <line x1="12" y1="8" x2="12" y2="12" />
+                <line x1="12" y1="16" x2="12.01" y2="16" />
+              </svg>
+              Job generation requires all movements to be from the same plan. Filter movements from different plans or select a specific plan.
             </div>
 
             <div
               style="
                 display: grid;
-                grid-template-columns: 60px 100px 1fr 1.4fr 120px 110px 90px 80px 100px 90px;
+                grid-template-columns: 60px 100px 90px 80px 1fr 1.4fr 120px 110px 90px 80px 100px 90px;
                 gap: 10px;
                 padding: 10px 14px;
                 border-bottom: 1px solid var(--border);
@@ -670,6 +878,8 @@
             >
               <div>ID</div>
               <div>Phase</div>
+              <div>Date</div>
+              <div>Ref Time</div>
               <div>Team</div>
               <div>Route</div>
               <div>Window</div>
@@ -688,7 +898,7 @@
                 :style="{
                   display: 'grid',
                   gridTemplateColumns:
-                    '60px 100px 1fr 1.4fr 120px 110px 90px 80px 100px 90px',
+                    '60px 100px 90px 80px 1fr 1.4fr 120px 110px 90px 80px 100px 90px',
                   gap: '10px',
                   padding: '12px 14px',
                   borderBottom:
@@ -717,26 +927,44 @@
                     ($event.currentTarget.style.background = 'transparent')
                 "
               >
-                <div
-                  style="
-                    font-family: var(--mono);
-                    font-size: 11px;
-                    color: var(--ink);
-                    font-weight: 700;
-                  "
-                >
-                  {{ mv.code || `M${i + 1}` }}
+                <div>
+                  <div
+                    style="
+                      font-family: var(--mono);
+                      font-size: 11px;
+                      color: var(--ink);
+                      font-weight: 700;
+                    "
+                  >
+                    {{ mv.code || `M${i + 1}` }}
+                  </div>
+                  <div
+                    v-if="!activePlan && mv.plan_code"
+                    style="
+                      font-size: 9px;
+                      color: var(--accent);
+                      margin-top: 2px;
+                      font-family: var(--mono);
+                      cursor: pointer;
+                      text-decoration: underline;
+                    "
+                    :title="'Go to ' + mv.plan_name"
+                    @click.stop="selectPlan(mv.plan_id)"
+                  >
+                    {{ mv.plan_code }}
+                  </div>
                 </div>
-                <span
+                <Badge
                   v-if="mv.match_id"
-                  class="kind-badge kind-badge--match"
-                  style="background: #fef3c7; color: #92400e; border-color: #fbbf24;"
-                  >Match {{ mv.match?.match_number || '' }}</span
+                  type="kind"
+                  variant="match"
+                  >Match {{ mv.match?.match_number || '' }}</Badge
                 >
-                <span
+                <Badge
                   v-else-if="mv.kind"
-                  :class="['kind-badge', `kind-badge--${mv.kind}`]"
-                  >{{ mv.kind }}</span
+                  type="kind"
+                  :variant="mv.kind"
+                  >{{ mv.kind }}</Badge
                 >
                 <span
                   v-else
@@ -747,6 +975,18 @@
                   "
                   >-</span
                 >
+                <div style="font-size: 11px; color: var(--ink3);">
+                  {{ mv.window_start ? formatDate(mv.window_start) : '—' }}
+                </div>
+                <div style="font-size: 11px; color: var(--ink3);">
+                  <span v-if="mv.kind === 'arrival' && mv.flight?.scheduled_at">
+                    {{ formatTime(mv.flight.scheduled_at) }}
+                  </span>
+                  <span v-else-if="mv.match_id && mv.match?.kick_off">
+                    {{ formatTime(mv.match.kick_off) }}
+                  </span>
+                  <span v-else>—</span>
+                </div>
                 <div
                   style="font-size: 12px; color: var(--ink); font-weight: 600; display: flex; align-items: center; gap: 4px;"
                 >
@@ -764,7 +1004,7 @@
                   </svg>
                 </div>
                 <div style="font-size: 11px; color: var(--ink3)">
-                  {{ mv.from_location || "-" }} → {{ mv.to_location || "-" }}
+                  {{ formatMovementFromLocation(mv) }} → {{ formatMovementToLocation(mv) }}
                 </div>
                 <div
                   style="
@@ -861,23 +1101,22 @@
                 >
                   {{ selectedMovement.code || "MVT" }}
                 </span>
-                <span
+                <Badge
                   v-if="selectedMovement.match_id"
-                  class="kind-badge kind-badge--match"
-                  style="font-size: 10px; background: #fef3c7; color: #92400e; border-color: #fbbf24;"
+                  type="kind"
+                  variant="match"
+                  :custom-style="{ fontSize: '10px' }"
                 >
                   Match
-                </span>
-                <span
+                </Badge>
+                <Badge
                   v-else-if="selectedMovement.kind"
-                  :class="[
-                    'kind-badge',
-                    `kind-badge--${selectedMovement.kind}`,
-                  ]"
-                  style="font-size: 10px"
+                  type="kind"
+                  :variant="selectedMovement.kind"
+                  :custom-style="{ fontSize: '10px' }"
                 >
                   {{ selectedMovement.kind }}
-                </span>
+                </Badge>
                 <span
                   v-if="selectedMovement.status"
                   class="dc-pill dc-pill--ghost"
@@ -895,8 +1134,8 @@
                 {{ selectedMovement.team?.team_name || "—" }}
               </div>
               <div style="font-size: 12px; color: var(--ink3)">
-                {{ selectedMovement.from_location || "Origin" }} →
-                {{ selectedMovement.to_location || "Destination" }}
+                {{ formatMovementFromLocation(selectedMovement) || "Origin" }} →
+                {{ formatMovementToLocation(selectedMovement) || "Destination" }}
               </div>
 
               <!-- Stats grid -->
@@ -996,7 +1235,7 @@
                 <div class="detail-row">
                   <span class="detail-label">Kick-off</span>
                   <span class="detail-value">{{
-                    selectedMovement.match.kick_off ? formatDateTime(selectedMovement.match.kick_off) : "—"
+                    selectedMovement.match.kick_off ? formatTime(selectedMovement.match.kick_off) : "—"
                   }}</span>
                 </div>
               </div>
@@ -1618,16 +1857,6 @@
               </div>
               <div
                 style="
-                  font-size: 10px;
-                  color: var(--ink3);
-                  margin-bottom: 4px;
-                  font-family: var(--font-mono, monospace);
-                "
-              >
-                {{ teamArrivalDate(group) }} → {{ teamDepartureDate(group) }}
-              </div>
-              <div
-                style="
                   display: flex;
                   justify-content: flex-end;
                   align-items: center;
@@ -1731,6 +1960,7 @@
                   display: grid;
                   grid-template-columns: repeat(4, 1fr);
                   gap: 10px;
+                  margin-top: 32px;
                 "
               >
                 <MiniStat
@@ -1911,7 +2141,7 @@
               <div
                 style="
                   display: grid;
-                  grid-template-columns: 28px 100px 1fr 1.4fr 1.4fr 110px 110px 90px;
+                  grid-template-columns: 28px 100px 90px 80px 120px 1fr 1.4fr 110px 110px 90px;
                   gap: 10px;
                   padding: 10px 14px;
                   border-bottom: 1px solid var(--border);
@@ -1928,6 +2158,8 @@
               >
                 <div />
                 <div>Leg</div>
+                <div>Date</div>
+                <div>Ref Time</div>
                 <div>Type</div>
                 <div>From → To</div>
                 <div>Planned / Actual</div>
@@ -1942,7 +2174,7 @@
                   :style="{
                     display: 'grid',
                     gridTemplateColumns:
-                      '28px 100px 1fr 1.4fr 1.4fr 110px 110px 90px',
+                      '28px 100px 90px 80px 120px 1fr 1.4fr 110px 110px 90px',
                     gap: '10px',
                     padding: '12px 14px',
                     borderBottom:
@@ -1976,32 +2208,72 @@
                     :size="16"
                     :style="{ color: mvIconColor(mv) }"
                   />
-                  <div
-                    style="
-                      font-family: var(--font-mono, monospace);
-                      font-size: 11px;
-                      color: var(--ink);
-                      font-weight: 600;
-                    "
-                  >
-                    L{{ i + 1 }}
-                  </div>
-                  <div
-                    style="
-                      font-size: 12px;
-                      color: var(--ink2);
-                      text-transform: capitalize;
-                    "
-                  >
-                    <span
-                      v-if="mv.match_id"
-                      class="kind-badge kind-badge--match"
-                      style="background: #fef3c7; color: #92400e; border-color: #fbbf24; font-size: 11px;"
+                  <div>
+                    <div
+                      style="
+                        font-family: var(--font-mono, monospace);
+                        font-size: 11px;
+                        color: var(--ink);
+                        font-weight: 600;
+                      "
                     >
-                      Match {{ mv.match?.match_number || '' }}
-                    </span>
-                    <span v-else>{{ mv.kind }}</span>
+                      L{{ i + 1 }}
+                    </div>
+                    <div
+                      v-if="!activePlan && mv.plan_code"
+                      style="
+                        font-size: 9px;
+                        color: var(--accent);
+                        margin-top: 2px;
+                        font-family: var(--font-mono, monospace);
+                        cursor: pointer;
+                        text-decoration: underline;
+                      "
+                      :title="'Go to ' + mv.plan_name"
+                      @click.stop="selectPlan(mv.plan_id)"
+                    >
+                      {{ mv.plan_code }}
+                    </div>
                   </div>
+                  <div
+                    style="
+                      font-size: 11px;
+                      color: var(--ink2);
+                      font-family: var(--font-mono, monospace);
+                    "
+                  >
+                    {{ mv.window_start ? formatDate(mv.window_start) : '—' }}
+                  </div>
+                  <div
+                    style="
+                      font-size: 11px;
+                      color: var(--ink2);
+                      font-family: var(--font-mono, monospace);
+                    "
+                  >
+                    <span v-if="mv.kind === 'arrival' && mv.flight?.scheduled_at">
+                      {{ formatTime(mv.flight.scheduled_at) }}
+                    </span>
+                    <span v-else-if="mv.match_id && mv.match?.kick_off">
+                      {{ formatTime(mv.match.kick_off) }}
+                    </span>
+                    <span v-else>—</span>
+                  </div>
+                  <Badge
+                    v-if="mv.match_id"
+                    type="kind"
+                    variant="match"
+                  >
+                    Match {{ mv.match?.match_number || '' }}
+                  </Badge>
+                  <Badge
+                    v-else-if="mv.kind"
+                    type="kind"
+                    :variant="mv.kind"
+                  >
+                    {{ mv.kind }}
+                  </Badge>
+                  <span v-else>{{ mv.kind }}</span>
                   <div style="font-size: 12px; color: var(--ink)">
                     <div>{{ movementFromLocation(mv) }}</div>
                     <div style="color: var(--ink3); font-size: 11px">
@@ -2016,7 +2288,7 @@
                     "
                   >
                     <div style="color: var(--ink3)">
-                      plan {{ mv.dep }} – {{ mv.arr }}
+                       {{ mv.dep }} – {{ mv.arr }}
                     </div>
                     <div
                       :style="{
@@ -2110,20 +2382,22 @@
                   >
                     {{ selectedMovement.code || "MVT" }}
                   </span>
-                  <span
+                  <Badge
                     v-if="selectedMovement.match_id"
-                    class="kind-badge"
-                    style="font-size: 10px; background: #fef3c7; color: #92400e; border: 1px solid #fbbf24;"
+                    type="kind"
+                    variant="match"
+                    :custom-style="{ fontSize: '10px' }"
                   >
                     Match {{ selectedMovement.match?.match_number || '' }} {{ selectedMovement.match?.match_number || '' }}
-                  </span>
-                  <span
+                  </Badge>
+                  <Badge
                     v-else-if="selectedMovement.kind"
-                    :class="['kind-badge', `kind-badge--${selectedMovement.kind}`]"
-                    style="font-size: 10px"
+                    type="kind"
+                    :variant="selectedMovement.kind"
+                    :custom-style="{ fontSize: '10px' }"
                   >
                     {{ selectedMovement.kind }}
-                  </span>
+                  </Badge>
                   <span
                     v-if="selectedMovement.status"
                     class="dc-pill dc-pill--ghost"
@@ -2395,7 +2669,7 @@
               <div
                 style="
                   display: grid;
-                  grid-template-columns: 1fr 1fr;
+                  grid-template-columns: 1fr 1fr 1fr;
                   gap: 8px;
                   margin-bottom: 16px;
                 "
@@ -2428,7 +2702,7 @@
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                       <path d="M17.8 19.2L16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"/>
                     </svg>
-                    Bulk Create by Arrival
+                    Bulk by Arrival
                   </div>
                   <div
                     style="
@@ -2438,7 +2712,29 @@
                       margin-top: 1px;
                     "
                   >
-                    Group teams by arrival date
+                    Group by arrival date
+                  </div>
+                </button>
+                <button
+                  class="am-mode-btn"
+                  :class="{ 'am-mode-btn--active': newPlanMode === 'matches' }"
+                  @click="newPlanMode = 'matches'"
+                >
+                  <div style="display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 700">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z" />
+                    </svg>
+                    Bulk by Matches
+                  </div>
+                  <div
+                    style="
+                      font-size: 11px;
+                      color: inherit;
+                      opacity: 0.7;
+                      margin-top: 1px;
+                    "
+                  >
+                    5h before each match
                   </div>
                 </button>
               </div>
@@ -2726,10 +3022,11 @@
                       >
                         M{{ i + 1 }}
                       </div>
-                      <span
+                      <Badge
                         v-if="leg.leg_type"
-                        :class="['kind-badge', `kind-badge--${leg.leg_type}`]"
-                        >{{ leg.leg_type }}</span
+                        type="kind"
+                        :variant="leg.leg_type"
+                        >{{ leg.leg_type }}</Badge
                       >
                       <span v-else style="font-size: 11px; color: var(--ink3)"
                         >—</span
@@ -3135,6 +3432,329 @@
                   </div>
                 </div>
               </div>
+
+              <!-- Bulk by Matches Mode -->
+              <div v-else-if="newPlanMode === 'matches'">
+                <div class="form-field">
+                  <label
+                    >Movement Template
+                    <span style="color: #dc2626">*</span></label
+                  >
+                  <select
+                    v-model="newPlanTemplate"
+                    :style="
+                      newPlanErrors.template ? { borderColor: '#DC2626' } : {}
+                    "
+                  >
+                    <option value="">Select a template...</option>
+                    <option
+                      v-for="template in props.movementTemplates"
+                      :key="template.id"
+                      :value="template.id"
+                    >
+                      {{ template.name }} ({{ template.code }})
+                    </option>
+                  </select>
+                  <span
+                    v-if="newPlanErrors.template"
+                    style="
+                      color: #dc2626;
+                      font-size: 12px;
+                      margin-top: 4px;
+                      display: block;
+                    "
+                    >{{ newPlanErrors.template }}</span
+                  >
+                </div>
+
+                <!-- Matches Preview -->
+                <div
+                  style="
+                    margin-top: 16px;
+                    border: 1px solid var(--border);
+                    border-radius: 10px;
+                    overflow: hidden;
+                  "
+                >
+                  <div
+                    style="
+                      padding: 14px 16px;
+                      border-bottom: 1px solid var(--border);
+                      background: var(--panel);
+                    "
+                  >
+                    <div
+                      style="
+                        font-size: 13px;
+                        font-weight: 700;
+                        color: var(--ink);
+                        margin-bottom: 6px;
+                      "
+                    >
+                      Match-Day Plans Preview
+                    </div>
+                    <div style="display: flex; gap: 16px; flex-wrap: wrap">
+                      <div>
+                        <span
+                          style="
+                            font-size: 20px;
+                            font-weight: 700;
+                            color: var(--accent);
+                          "
+                          >{{ matchesPreview.plansCount }}</span
+                        >
+                        <span
+                          style="
+                            font-size: 12px;
+                            color: var(--ink3);
+                            margin-left: 4px;
+                          "
+                          >plans</span
+                        >
+                      </div>
+                      <div>
+                        <span
+                          style="
+                            font-size: 20px;
+                            font-weight: 700;
+                            color: var(--accent);
+                          "
+                          >{{ matchesPreview.teamsCount }}</span
+                        >
+                        <span
+                          style="
+                            font-size: 12px;
+                            color: var(--ink3);
+                            margin-left: 4px;
+                          "
+                          >teams</span
+                        >
+                      </div>
+                      <div>
+                        <span
+                          style="
+                            font-size: 20px;
+                            font-weight: 700;
+                            color: #f59e0b;
+                          "
+                          >{{ matchesPreview.matchesCount }}</span
+                        >
+                        <span
+                          style="
+                            font-size: 12px;
+                            color: var(--ink3);
+                            margin-left: 4px;
+                          "
+                          >matches</span
+                        >
+                      </div>
+                    </div>
+                    <div
+                      v-if="matchesPreview.plans.length > 0"
+                      style="
+                        margin-top: 10px;
+                        padding: 8px 10px;
+                        background: #fef3c7;
+                        border: 1px solid #fbbf24;
+                        border-radius: 6px;
+                        font-size: 11px;
+                        color: #92400e;
+                        display: flex;
+                        align-items: center;
+                        gap: 6px;
+                      "
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z" />
+                      </svg>
+                      Plans start 5 hours before kick-off
+                    </div>
+                  </div>
+
+                  <!-- Matches List (Grouped by Date) -->
+                  <div
+                    v-if="matchesPreview.plans.length > 0"
+                    style="max-height: 320px; overflow-y: auto"
+                  >
+                    <div
+                      style="
+                        padding: 7px 16px;
+                        background: var(--panel);
+                        border-bottom: 1px solid var(--border);
+                      "
+                    >
+                      <span
+                        style="
+                          font-size: 10px;
+                          font-weight: 700;
+                          letter-spacing: 1px;
+                          text-transform: uppercase;
+                          color: var(--ink3);
+                        "
+                        >Plans to be created</span
+                      >
+                    </div>
+                    <div
+                      v-for="(plan, planIdx) in matchesPreview.plans"
+                      :key="plan.date"
+                      :style="{
+                        borderBottom:
+                          planIdx < matchesPreview.plans.length - 1
+                            ? '1px solid var(--border)'
+                            : 'none',
+                      }"
+                    >
+                      <!-- Date Header -->
+                      <div
+                        style="
+                          padding: 10px 16px;
+                          background: var(--panel);
+                          border-bottom: 1px solid var(--border);
+                        "
+                      >
+                        <div
+                          style="
+                            font-size: 12px;
+                            font-weight: 700;
+                            color: var(--accent);
+                            display: flex;
+                            align-items: center;
+                            gap: 8px;
+                          "
+                        >
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                            <line x1="16" y1="2" x2="16" y2="6"></line>
+                            <line x1="8" y1="2" x2="8" y2="6"></line>
+                            <line x1="3" y1="10" x2="21" y2="10"></line>
+                          </svg>
+                          {{ formatDate(plan.date) }}
+                          <span
+                            style="
+                              font-size: 11px;
+                              font-weight: 500;
+                              color: var(--ink3);
+                              margin-left: auto;
+                            "
+                          >
+                            {{ plan.teams.length }} {{ plan.teams.length === 1 ? 'team' : 'teams' }}
+                          </span>
+                        </div>
+                      </div>
+
+                      <!-- Teams in this date group -->
+                      <div
+                        v-for="(team, teamIdx) in plan.teams"
+                        :key="`${team.match_id}-${team.team_id}`"
+                        :style="{
+                          padding: '12px 16px',
+                          borderBottom:
+                            teamIdx < plan.teams.length - 1
+                              ? '1px solid var(--border)'
+                              : 'none',
+                          background: 'var(--surface)',
+                        }"
+                      >
+                        <div
+                          style="
+                            display: flex;
+                            justify-content: space-between;
+                            align-items: flex-start;
+                          "
+                        >
+                          <div style="flex: 1">
+                            <div
+                              style="
+                                font-size: 11px;
+                                font-weight: 600;
+                                color: var(--ink);
+                                margin-bottom: 4px;
+                                display: flex;
+                                align-items: center;
+                                gap: 6px;
+                              "
+                            >
+                              <span
+                                class="team-badge-sm"
+                                style="background: #fef3c7; color: #92400e; border-color: #fbbf24;"
+                              >
+                                {{ team.team_code }}
+                              </span>
+                              {{ team.team_name }}
+                            </div>
+                            <div style="font-size: 11px; color: var(--ink3); margin-bottom: 3px;">
+                              <strong>{{ team.match_number }}</strong> - vs {{ team.opponent }}
+                            </div>
+                            <div style="font-size: 11px; color: var(--ink3);">
+                              📍 {{ team.venue }} • ⚽ {{ team.kick_off_time }}
+                            </div>
+                          </div>
+                          <div
+                            style="
+                              text-align: right;
+                              flex-shrink: 0;
+                              margin-left: 12px;
+                            "
+                          >
+                            <div
+                              style="
+                                font-size: 11px;
+                                color: var(--ink3);
+                                font-weight: 600;
+                                margin-bottom: 2px;
+                              "
+                            >
+                              Kick-off
+                            </div>
+                            <div
+                              style="
+                                font-size: 12px;
+                                font-weight: 700;
+                                color: var(--accent);
+                                font-family: var(--mono);
+                                margin-bottom: 6px;
+                              "
+                            >
+                              {{ team.kick_off_time_only }}
+                            </div>
+                            <div
+                              style="
+                                font-size: 10px;
+                                color: var(--ink3);
+                              "
+                            >
+                              Plan starts: {{ team.plan_time }}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Empty State -->
+                  <div
+                    v-if="matchesPreview.plans.length === 0"
+                    style="
+                      padding: 40px 20px;
+                      text-align: center;
+                      color: var(--ink3);
+                    "
+                  >
+                    <div
+                      style="
+                        font-size: 13px;
+                        font-weight: 600;
+                        margin-bottom: 4px;
+                      "
+                    >
+                      No matches found
+                    </div>
+                    <div style="font-size: 12px">
+                      Please create matches for teams first
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
           <div class="modal-footer">
@@ -3166,6 +3786,18 @@
                 >Creating {{ bulkPreview.plansCount }} Plans...</span
               >
               <span v-else>Create {{ bulkPreview.plansCount }} Plans</span>
+            </Button>
+            <Button
+              v-else-if="newPlanMode === 'matches'"
+              variant="primary"
+              size="sm"
+              @click="createMatchPlans"
+              :disabled="newPlanProcessing || matchesPreview.plans.length === 0"
+            >
+              <span v-if="newPlanProcessing"
+                >Creating {{ matchesPreview.plansCount }} Plans...</span
+              >
+              <span v-else>Create {{ matchesPreview.plansCount }} Match Plans</span>
             </Button>
           </div>
         </div>
@@ -3390,17 +4022,19 @@
                   <div class="gen-mv-id">
                     {{ mv.code || `M${genMovements.indexOf(mv) + 1}` }}
                   </div>
-                  <span
+                  <Badge
                     v-if="mv.match_id"
-                    class="kind-badge kind-badge--match"
-                    style="font-size: 10px; white-space: nowrap; background: #fef3c7; color: #92400e; border-color: #fbbf24;"
-                    >Match {{ mv.match?.match_number || '' }}</span
+                    type="kind"
+                    variant="match"
+                    :custom-style="{ fontSize: '10px', whiteSpace: 'nowrap' }"
+                    >Match {{ mv.match?.match_number || '' }}</Badge
                   >
-                  <span
+                  <Badge
                     v-else-if="mv.kind"
-                    :class="['kind-badge', `kind-badge--${mv.kind}`]"
-                    style="font-size: 10px; white-space: nowrap"
-                    >{{ mv.kind }}</span
+                    type="kind"
+                    :variant="mv.kind"
+                    :custom-style="{ fontSize: '10px', whiteSpace: 'nowrap' }"
+                    >{{ mv.kind }}</Badge
                   >
                   <span v-else style="font-size: 10px; color: var(--ink3)"
                     >—</span
@@ -3410,8 +4044,8 @@
                       {{ mv.team?.team_name || "—" }}
                     </div>
                     <div class="gen-mv-route">
-                      {{ mv.from_location || "—" }} →
-                      {{ mv.to_location || "—" }}
+                      {{ formatMovementFromLocation(mv) }} →
+                      {{ formatMovementToLocation(mv) }}
                     </div>
                   </div>
                   <div class="gen-mv-times">
@@ -3912,7 +4546,7 @@
             <div class="gen-success-footer-hint">
               All jobs visible in the
               <a
-                :href="`/jobs?plan=${selectedPlanObj?.id}`"
+                href="/jobs"
                 style="
                   color: var(--accent);
                   font-weight: 600;
@@ -3932,7 +4566,7 @@
               <Button
                 variant="primary"
                 size="sm"
-                @click="$inertia.visit(`/jobs?plan=${selectedPlanObj?.id}`)"
+                @click="$inertia.visit('/jobs')"
                 >Open Jobs queue →</Button
               >
             </div>
@@ -4887,16 +5521,17 @@
                     >
                       Phase
                     </div>
-                    <span
+                    <Badge
                       v-if="emMatchId"
-                      class="kind-badge kind-badge--match"
-                      style="background: #fef3c7; color: #92400e; border-color: #fbbf24;"
-                      >Match {{ relevantMatches.find(m => m.id === emMatchId)?.match_number || '' }}</span
+                      type="kind"
+                      variant="match"
+                      >Match {{ relevantMatches.find(m => m.id === emMatchId)?.match_number || '' }}</Badge
                     >
-                    <span
+                    <Badge
                       v-else-if="emKind"
-                      :class="['kind-badge', `kind-badge--${emKind}`]"
-                      >{{ emKind }}</span
+                      type="kind"
+                      :variant="emKind"
+                      >{{ emKind }}</Badge
                     >
                     <span v-else style="font-size: 13px; color: var(--ink3)"
                       >—</span
@@ -5240,8 +5875,8 @@
                 Team: {{ deletingMovement.team?.team_name || "Not assigned" }}
               </li>
               <li>
-                Route: {{ deletingMovement.from_location || "-" }} →
-                {{ deletingMovement.to_location || "-" }}
+                Route: {{ formatMovementFromLocation(deletingMovement) || "-" }} →
+                {{ formatMovementToLocation(deletingMovement) || "-" }}
               </li>
               <li v-if="deletingMovement.job_id">
                 Associated Job: {{ deletingMovement.job_id }}
@@ -5409,9 +6044,9 @@
                         margin-bottom: 4px;
                       "
                     >
-                      <span :class="['kind-badge', `kind-badge--${mv.type}`]">{{
+                      <Badge type="kind" :variant="mv.type">{{
                         mv.type
-                      }}</span>
+                      }}</Badge>
                       <span
                         style="
                           font-size: 13px;
@@ -5673,7 +6308,8 @@
 
 <script setup>
 import { ref, computed, watch } from "vue";
-import { router } from "@inertiajs/vue3";
+import { router, usePage } from "@inertiajs/vue3";
+import { useToast } from "../Composables/useToast";
 import AppLayout from "../Components/AppLayout.vue";
 import StatusPill from "../Components/StatusPill.vue";
 import SvgIcon from "../Components/SvgIcon.vue";
@@ -5682,6 +6318,9 @@ import Button from "../Components/Button.vue";
 import RefreshButton from "../Components/RefreshButton.vue";
 import TableActions from "../Components/TableActions.vue";
 import CheckpointTimeline from "../Components/CheckpointTimeline.vue";
+import Badge from "../Components/Badge.vue";
+
+const { success: showSuccessToast, error: showErrorToast } = useToast();
 
 const props = defineProps({
   schedule: { type: Array, default: () => [] },
@@ -5699,7 +6338,7 @@ const props = defineProps({
 
 const view = ref("day");
 const showNewPlan = ref(false);
-const newPlanMode = ref("single"); // 'single' or 'bulk'
+const newPlanMode = ref("single"); // 'single' or 'bulk' or 'matches'
 const newPlanDate = ref("");
 const newPlanStartTime = ref("09:00");
 const newPlanName = ref("");
@@ -5823,20 +6462,19 @@ function handleTeamChange() {
 
 // Watch for changes to activePlan and persist to backend session
 watch(activePlan, (newValue) => {
-  if (newValue) {
-    // Send to backend session (shared with Jobs page)
-    fetch("/session/active-plan", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-CSRF-TOKEN":
-          document.querySelector('meta[name="csrf-token"]')?.content || "",
-      },
-      body: JSON.stringify({ plan_id: newValue }),
-    }).catch((error) => {
-      console.error("Failed to update active plan in session:", error);
-    });
-  }
+  // Send to backend session (shared with Jobs page)
+  // Always persist, including null for "All Movements (Event-wide)"
+  fetch("/session/active-plan", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-CSRF-TOKEN":
+        document.querySelector('meta[name="csrf-token"]')?.content || "",
+    },
+    body: JSON.stringify({ plan_id: newValue }),
+  }).catch((error) => {
+    console.error("Failed to update active plan in session:", error);
+  });
 });
 
 watch(newPlanTeamId, (teamId) => {
@@ -5860,13 +6498,104 @@ watch(showNewPlan, (isOpen) => {
   }
 });
 
+// Watch for flash messages from backend
+const page = usePage();
+watch(
+  () => page.props.flash,
+  (flash) => {
+    if (flash?.success) {
+      showSuccessToast(flash.success);
+    }
+    if (flash?.error) {
+      showErrorToast(flash.error);
+    }
+  },
+  { deep: true }
+);
+
 const showPlanDropdown = ref(false);
 const planSearchTerm = ref("");
 const selectedTeam = ref("");
 
-// Team filter for movements table in By Day view
+// Team filter for movements table in By Plan view
 const movementsTeamFilter = ref(null);
+const movementsDateFilter = ref(null);
 const teamMovementKindFilter = ref(null); // null = all, or 'arrival', 'departure', 'transfer', 'match', etc.
+
+// Plan type filter for By Plan view
+const planTypeFilter = ref(null); // null = all, 'arrival', 'match', 'transfer', 'other'
+
+// Function to detect plan type from plan name
+function detectPlanType(plan) {
+  const nameLower = (plan.name || '').toLowerCase();
+  if (nameLower.includes('arrival') || nameLower.includes('airport to hotel')) {
+    return 'arrival';
+  }
+  if (nameLower.includes('match') || nameLower.includes('stadium')) {
+    return 'match';
+  }
+  if (nameLower.includes('departure') || nameLower.includes('hotel to airport')) {
+    return 'departure';
+  }
+  if (nameLower.includes('transfer') || nameLower.includes('training')) {
+    return 'transfer';
+  }
+  return 'other';
+}
+
+// Grouped and filtered plans by date
+const plansByDate = computed(() => {
+  let filteredPlans = allPlans.value;
+  
+  // Apply type filter
+  if (planTypeFilter.value) {
+    filteredPlans = filteredPlans.filter(plan => detectPlanType(plan) === planTypeFilter.value);
+  }
+  
+  // Group by date
+  const grouped = {};
+  filteredPlans.forEach(plan => {
+    const date = plan.date;
+    // Skip plans without a valid date
+    if (!date) return;
+    
+    if (!grouped[date]) {
+      grouped[date] = {
+        date,
+        plans: []
+      };
+    }
+    grouped[date].plans.push({
+      ...plan,
+      planType: detectPlanType(plan)
+    });
+  });
+  
+  // Convert to array and sort by date (descending)
+  return Object.values(grouped).sort((a, b) => {
+    if (!a.date || !b.date) return 0;
+    return b.date.localeCompare(a.date);
+  });
+});
+
+// Count plans by type
+const planTypesCounts = computed(() => {
+  const counts = {
+    all: allPlans.value.length,
+    arrival: 0,
+    match: 0,
+    departure: 0,
+    transfer: 0,
+    other: 0
+  };
+  
+  allPlans.value.forEach(plan => {
+    const type = detectPlanType(plan);
+    counts[type]++;
+  });
+  
+  return counts;
+});
 
 // Add Team to Plan modal state
 const showAddTeamModal = ref(false);
@@ -5876,7 +6605,12 @@ const addTeamProcessing = ref(false);
 const addTeamErrors = ref({});
 
 // Initialize activeTab based on whether there's a valid stored plan
-const activeTab = ref(props.activePlan ? "movements" : "plans");
+// If activePlan is explicitly null and we have plans, this means "All Movements" was selected
+const activeTab = ref(
+  props.activePlan || (props.activePlan === null && props.plans?.length > 0)
+    ? "movements" 
+    : "plans"
+);
 
 const showPreviewModal = ref(false);
 const selectedTemplate = ref(null);
@@ -6134,6 +6868,21 @@ const genMovements = computed(() =>
 const genAlreadyCount = computed(
   () => selectedPlanMovements.value.filter((mv) => mv.job_id).length
 );
+
+// Determine target plan for job generation
+const genTargetPlanId = computed(() => {
+  // If a plan is selected, use that
+  if (activePlan.value) return activePlan.value;
+  
+  // In "All Movements" view, check if all movements belong to one plan
+  const planIds = new Set(genMovements.value.map(mv => mv.plan_id).filter(Boolean));
+  return planIds.size === 1 ? Array.from(planIds)[0] : null;
+});
+
+const genCanGenerate = computed(() => {
+  return genTargetPlanId.value && genMovements.value.length > 0;
+});
+
 const selectedCheckpointTemplate = computed(
   () => checkpointTemplates.find((t) => t.id === genTemplate.value) ?? null
 );
@@ -6473,12 +7222,25 @@ function mvIconColor(mv) {
 }
 
 function teamTotalPax(group) {
-  // Use team's party_size_total if available from database
-  if (group.party_size_total !== undefined && group.party_size_total !== null) {
-    return group.party_size_total;
+  // Get pax from the movement (same logic as the right panel detail card)
+  // Prefer arrival movement, otherwise use first movement with pax data
+  if (!group.items || group.items.length === 0) {
+    return 0;
   }
-  // Fallback to summing movement passengers for backward compatibility
-  return group.items.reduce((sum, mv) => sum + (mv.pax || 0), 0);
+  
+  // Try to find arrival movement first
+  const arrivalMovement = group.items.find(mv => mv.kind === 'arrival');
+  if (arrivalMovement && (arrivalMovement.pax || arrivalMovement.passengers)) {
+    return arrivalMovement.pax ?? arrivalMovement.passengers ?? 0;
+  }
+  
+  // Fallback to first movement with pax data
+  const movementWithPax = group.items.find(mv => mv.pax || mv.passengers);
+  if (movementWithPax) {
+    return movementWithPax.pax ?? movementWithPax.passengers ?? 0;
+  }
+  
+  return 0;
 }
 
 function teamTimeRange(group) {
@@ -6561,22 +7323,15 @@ function teamDepartureDate(group) {
 }
 
 function formatLocationWithAirport(location, airportCode, movementKind) {
-  if (!location) return "—";
+  if (!location || !airportCode) return location || "—";
 
-  // Only add airport code for arrival/departure movements and if airport code exists
-  if (
-    airportCode &&
-    (movementKind === "arrival" || movementKind === "departure")
-  ) {
-    // Check if location already contains the airport code
-    if (location.toUpperCase().includes(airportCode.toUpperCase())) {
-      return location;
-    }
-    // Add airport code in parentheses
-    return `${location} (${airportCode})`;
+  // Check if location already contains the airport code
+  if (location.toUpperCase().includes(airportCode.toUpperCase())) {
+    return location;
   }
-
-  return location;
+  
+  // Add airport code in parentheses
+  return `${location} (${airportCode})`;
 }
 
 function formatLocationWithHotel(location, hotelName) {
@@ -6593,6 +7348,25 @@ function formatLocationWithHotel(location, hotelName) {
   // Only augment if it's a hotel reference
   if (hotelTerms.some((term) => locationLower.includes(term))) {
     return `${location} (${hotelName})`;
+  }
+
+  return location;
+}
+
+function formatLocationWithVenue(location, venueName) {
+  if (!location || !venueName) return location || "—";
+
+  // Check if location already contains the venue name
+  if (location.toLowerCase().includes(venueName.toLowerCase())) {
+    return location;
+  }
+
+  const venueTerms = ["stadium", "venue", "ground", "arena"];
+  const locationLower = location.toLowerCase();
+
+  // Only augment if it's a venue reference
+  if (venueTerms.some((term) => locationLower.includes(term))) {
+    return `${location} (${venueName})`;
   }
 
   return location;
@@ -6621,30 +7395,53 @@ function movementFromLocation(mv) {
   if (!selectedTeamObj.value) return mv.from || "—";
 
   let location = mv.from || "—";
+  const locationLower = location.toLowerCase();
 
-  // For arrival movements, augment with origin airport code
-  if (mv.kind === "arrival" && selectedTeamObj.value.origin_airport) {
-    location = formatLocationWithAirport(
-      location,
-      selectedTeamObj.value.origin_airport,
-      mv.kind
-    );
+  // Check location type and append appropriate data
+  // 1. Airport locations
+  if (locationLower.includes('airport')) {
+    let airportCode = null;
+    
+    // For arrival movements, use destination airport (where arriving)
+    if (mv.kind === "arrival") {
+      airportCode = mv.flight?.destination_airport || 
+                   selectedTeamObj.value.destination_airport;
+    }
+    // For departure movements, use origin airport (where leaving from)
+    else if (mv.kind === "departure") {
+      airportCode = mv.flight?.origin_airport || 
+                   selectedTeamObj.value.origin_airport;
+    }
+    
+    if (airportCode) {
+      location = formatLocationWithAirport(location, airportCode, mv.kind);
+    }
   }
-
-  // Augment hotel references with actual hotel name
-  if (selectedTeamObj.value.hotel_name) {
-    location = formatLocationWithHotel(
-      location,
-      selectedTeamObj.value.hotel_name
-    );
+  // 2. Hotel locations
+  else if (locationLower.includes('hotel')) {
+    const hotelName = mv.accommodation?.hotel_name || 
+                     selectedTeamObj.value.hotel_name;
+    if (hotelName) {
+      location = formatLocationWithHotel(location, hotelName);
+    }
   }
-
-  // Augment training ground references with actual training ground name
-  if (selectedTeamObj.value.training_ground) {
-    location = formatLocationWithTrainingGround(
-      location,
-      selectedTeamObj.value.training_ground
-    );
+  // 3. Stadium/Venue locations
+  else if (locationLower.includes('stadium') || locationLower.includes('venue') || 
+           locationLower.includes('ground') || locationLower.includes('arena')) {
+    // Get venue from movement's match relationship
+    const venueName = mv.match?.venue?.name;
+    if (venueName) {
+      location = formatLocationWithVenue(location, venueName);
+    }
+  }
+  // 4. Training ground locations
+  else if (locationLower.includes('training')) {
+    if (selectedTeamObj.value.training_ground) {
+      location = formatLocationWithTrainingGround(
+        location,
+        selectedTeamObj.value.training_ground
+      );
+    }
   }
 
   return location;
@@ -6654,32 +7451,141 @@ function movementToLocation(mv) {
   if (!selectedTeamObj.value) return mv.to || "—";
 
   let location = mv.to || "—";
+  const locationLower = location.toLowerCase();
 
-  // For departure movements, augment with destination airport code
-  if (mv.kind === "departure" && selectedTeamObj.value.destination_airport) {
-    location = formatLocationWithAirport(
-      location,
-      selectedTeamObj.value.destination_airport,
-      mv.kind
-    );
+  // Check location type and append appropriate data
+  // 1. Airport locations
+  if (locationLower.includes('airport')) {
+    // For both arrival and departure, to_location typically uses destination airport
+    const airportCode = mv.flight?.destination_airport || 
+                       selectedTeamObj.value.destination_airport;
+    
+    if (airportCode) {
+      location = formatLocationWithAirport(location, airportCode, mv.kind);
+    }
+  }
+  // 2. Hotel locations
+  else if (locationLower.includes('hotel')) {
+    const hotelName = mv.accommodation?.hotel_name || 
+                     selectedTeamObj.value.hotel_name;
+    if (hotelName) {
+      location = formatLocationWithHotel(location, hotelName);
+    }
+  }
+  // 3. Stadium/Venue locations
+  else if (locationLower.includes('stadium') || locationLower.includes('venue') || 
+           locationLower.includes('ground') || locationLower.includes('arena')) {
+    // Get venue from movement's match relationship
+    const venueName = mv.match?.venue?.name;
+    if (venueName) {
+      location = formatLocationWithVenue(location, venueName);
+    }
+  }
+  // 4. Training ground locations
+  else if (locationLower.includes('training')) {
+    if (selectedTeamObj.value.training_ground) {
+      location = formatLocationWithTrainingGround(
+        location,
+        selectedTeamObj.value.training_ground
+      );
+    }
   }
 
-  // Augment hotel references with actual hotel name
-  if (selectedTeamObj.value.hotel_name) {
-    location = formatLocationWithHotel(
-      location,
-      selectedTeamObj.value.hotel_name
-    );
-  }
+  return location;
+}
 
-  // Augment training ground references with actual training ground name
-  if (selectedTeamObj.value.training_ground) {
-    location = formatLocationWithTrainingGround(
-      location,
-      selectedTeamObj.value.training_ground
-    );
+// Format from location for movements table (By Plan view)
+function formatMovementFromLocation(mv) {
+  if (!mv) return "—";
+  
+  let location = mv.from_location || "—";
+  const locationLower = location.toLowerCase();
+  
+  // Check location type and append appropriate data
+  // 1. Airport locations
+  if (locationLower.includes('airport')) {
+    let airportCode = null;
+    
+    // For arrival movements, use destination airport
+    if (mv.kind === "arrival") {
+      airportCode = mv.flight?.destination_airport?.code || 
+                   mv.flight?.destination_airport ||
+                   mv.team?.destination_airport?.code || 
+                   mv.team?.destination_airport;
+    }
+    // For departure movements, use origin airport
+    else if (mv.kind === "departure") {
+      airportCode = mv.flight?.origin_airport?.code || 
+                   mv.flight?.origin_airport ||
+                   mv.team?.origin_airport?.code || 
+                   mv.team?.origin_airport;
+    }
+    
+    if (airportCode) {
+      location = formatLocationWithAirport(location, airportCode, mv.kind);
+    }
   }
+  // 2. Hotel locations
+  else if (locationLower.includes('hotel')) {
+    const hotelName = mv.accommodation?.hotel_name || 
+                     mv.team?.hotel_name || 
+                     props.teams?.find(t => t.id === mv.team_id)?.hotel_name;
+    if (hotelName) {
+      location = formatLocationWithHotel(location, hotelName);
+    }
+  }
+  // 3. Stadium/Venue locations
+  else if (locationLower.includes('stadium') || locationLower.includes('venue') || 
+           locationLower.includes('ground') || locationLower.includes('arena')) {
+    const venueName = mv.match?.venue?.name;
+    if (venueName) {
+      location = formatLocationWithVenue(location, venueName);
+    }
+  }
+  
+  return location;
+}
 
+// Format to location for movements table (By Plan view)
+function formatMovementToLocation(mv) {
+  if (!mv) return "—";
+  
+  let location = mv.to_location || "—";
+  const locationLower = location.toLowerCase();
+  
+  // Check location type and append appropriate data
+  // 1. Airport locations
+  if (locationLower.includes('airport')) {
+    let airportCode = null;
+    
+    // For both arrival and departure movements, to_location typically uses destination airport
+    airportCode = mv.flight?.destination_airport?.code || 
+                 mv.flight?.destination_airport ||
+                 mv.team?.destination_airport?.code || 
+                 mv.team?.destination_airport;
+    
+    if (airportCode) {
+      location = formatLocationWithAirport(location, airportCode, mv.kind);
+    }
+  }
+  // 2. Hotel locations
+  else if (locationLower.includes('hotel')) {
+    const hotelName = mv.accommodation?.hotel_name || 
+                     mv.team?.hotel_name || 
+                     props.teams?.find(t => t.id === mv.team_id)?.hotel_name;
+    if (hotelName) {
+      location = formatLocationWithHotel(location, hotelName);
+    }
+  }
+  // 3. Stadium/Venue locations
+  else if (locationLower.includes('stadium') || locationLower.includes('venue') || 
+           locationLower.includes('ground') || locationLower.includes('arena')) {
+    const venueName = mv.match?.venue?.name;
+    if (venueName) {
+      location = formatLocationWithVenue(location, venueName);
+    }
+  }
+  
   return location;
 }
 
@@ -6701,23 +7607,45 @@ const PLAN_STATUS_STYLE = {
 const selectedPlanObj = computed(
   () => allPlans.value.find((p) => p.id === activePlan.value) ?? null
 );
-const selectedPlanMovements = computed(
-  () => selectedPlanObj.value?.movements ?? []
-);
+const selectedPlanMovements = computed(() => {
+  // If no plan is selected, show all movements from all plans
+  if (!activePlan.value) {
+    return allPlans.value.flatMap(plan => 
+      (plan.movements || []).map(mv => ({
+        ...mv,
+        plan_code: plan.code,
+        plan_name: plan.name
+      }))
+    );
+  }
+  // Otherwise show movements from selected plan
+  return selectedPlanObj.value?.movements ?? [];
+});
 
 // Total passengers in the selected plan
 const totalPassengers = computed(() => {
   return selectedPlanMovements.value.reduce((sum, mv) => sum + (mv.passengers || 0), 0);
 });
 
-// Filtered movements based on team filter
+// Filtered movements based on team and date filters
 const filteredPlanMovements = computed(() => {
-  if (!movementsTeamFilter.value) {
-    return selectedPlanMovements.value;
+  let movements = selectedPlanMovements.value;
+  
+  // Apply team filter
+  if (movementsTeamFilter.value) {
+    movements = movements.filter((mv) => mv.team_id === movementsTeamFilter.value);
   }
-  return selectedPlanMovements.value.filter(
-    (mv) => mv.team_id === movementsTeamFilter.value
-  );
+  
+  // Apply date filter
+  if (movementsDateFilter.value) {
+    movements = movements.filter((mv) => {
+      if (!mv.window_start) return false;
+      const mvDate = formatDate(mv.window_start);
+      return mvDate === movementsDateFilter.value;
+    });
+  }
+  
+  return movements;
 });
 
 // Get unique teams that have movements in the current plan
@@ -6729,6 +7657,23 @@ const teamsInCurrentPlan = computed(() => {
     }
   });
   return Array.from(teamMap.values());
+});
+
+// Get unique dates from movements in the current plan
+const datesInCurrentPlan = computed(() => {
+  const dateMap = new Map();
+  selectedPlanMovements.value.forEach((mv) => {
+    if (mv.window_start) {
+      const formattedDate = formatDate(mv.window_start);
+      if (formattedDate && !dateMap.has(formattedDate)) {
+        dateMap.set(formattedDate, new Date(mv.window_start));
+      }
+    }
+  });
+  // Sort by actual date value (ascending)
+  return Array.from(dateMap.entries())
+    .sort((a, b) => a[1] - b[1])
+    .map(entry => entry[0]);
 });
 
 // Get teams that are not yet in the current plan
@@ -6815,6 +7760,94 @@ const bulkPreview = computed(() => {
     teamsWithoutDatesList: teamsWithoutDates.sort((a, b) =>
       (a.code || "").localeCompare(b.code || "")
     ),
+  };
+});
+
+// Computed property for matches preview
+const matchesPreview = computed(() => {
+  const teamsByDate = {}; // Group teams by date
+  
+  if (!props.matches || props.matches.length === 0) {
+    return {
+      plans: [],
+      plansCount: 0,
+      teamsCount: 0,
+      matchesCount: 0,
+    };
+  }
+
+  // For each match, add both teams to their respective date groups
+  props.matches.forEach((match) => {
+    if (!match.kick_off) return;
+
+    const kickOffDate = new Date(match.kick_off);
+    const planStartDate = new Date(kickOffDate.getTime() - (5 * 60 * 60 * 1000)); // Subtract 5 hours
+    const planDate = planStartDate.toISOString().split('T')[0];
+    const planTime = planStartDate.toTimeString().slice(0, 5);
+
+    // Initialize date group if needed
+    if (!teamsByDate[planDate]) {
+      teamsByDate[planDate] = {
+        date: planDate,
+        teams: [],
+      };
+    }
+
+    // Add team1
+    if (match.team1_id && match.team1) {
+      teamsByDate[planDate].teams.push({
+        match_id: match.id,
+        team_id: match.team1.id,
+        team_code: match.team1.code,
+        team_name: match.team1.team_name || match.team1.team,
+        match_number: match.match_number,
+        opponent: match.team2?.team_name || match.team2?.team || 'TBD',
+        venue: match.venue?.name || 'TBD',
+        kick_off_time: formatDateTime(match.kick_off),
+        kick_off_time_only: kickOffDate.toTimeString().slice(0, 5),
+        plan_start_time: formatDateTime(planStartDate.toISOString()),
+        plan_time: planTime,
+      });
+    }
+
+    // Add team2
+    if (match.team2_id && match.team2) {
+      teamsByDate[planDate].teams.push({
+        match_id: match.id,
+        team_id: match.team2.id,
+        team_code: match.team2.code,
+        team_name: match.team2.team_name || match.team2.team,
+        match_number: match.match_number,
+        opponent: match.team1?.team_name || match.team1?.team || 'TBD',
+        venue: match.venue?.name || 'TBD',
+        kick_off_time: formatDateTime(match.kick_off),
+        kick_off_time_only: kickOffDate.toTimeString().slice(0, 5),
+        plan_start_time: formatDateTime(planStartDate.toISOString()),
+        plan_time: planTime,
+      });
+    }
+  });
+
+  // Convert to array and sort by date
+  const plans = Object.values(teamsByDate).sort((a, b) => a.date.localeCompare(b.date));
+
+  // Sort teams within each date group by time and team name
+  plans.forEach((plan) => {
+    plan.teams.sort((a, b) => {
+      const timeCompare = a.plan_time.localeCompare(b.plan_time);
+      if (timeCompare !== 0) return timeCompare;
+      return a.team_name.localeCompare(b.team_name);
+    });
+  });
+
+  const allTeams = plans.flatMap(p => p.teams);
+  const uniqueTeams = new Set(allTeams.map(t => t.team_id));
+
+  return {
+    plans,
+    plansCount: plans.length,
+    teamsCount: uniqueTeams.size,
+    matchesCount: props.matches.length,
   };
 });
 
@@ -6926,7 +7959,26 @@ function formatDateTime(dateString) {
 
 function formatDate(dateString) {
   if (!dateString) return "";
-  const date = new Date(dateString + "T00:00:00"); // Avoid timezone issues
+  
+  // Handle different date formats
+  let date;
+  if (typeof dateString === 'string') {
+    // If already contains time, use as-is
+    if (dateString.includes('T') || dateString.includes(' ')) {
+      date = new Date(dateString);
+    } else {
+      // YYYY-MM-DD format - add time to avoid timezone issues
+      date = new Date(dateString + "T00:00:00");
+    }
+  } else {
+    date = new Date(dateString);
+  }
+  
+  // Check if date is valid
+  if (isNaN(date.getTime())) {
+    return dateString; // Return original if invalid
+  }
+  
   const monthNames = [
     "Jan",
     "Feb",
@@ -7005,6 +8057,13 @@ function selectPlan(planId) {
   showPlanDropdown.value = false;
   // Switch to Movements tab when selecting a plan
   activeTab.value = "movements";
+}
+
+function selectAllPlans() {
+  activePlan.value = null;
+  planSearchTerm.value = "";
+  showPlanDropdown.value = false;
+  // Keep current view and tab - just show all movements
 }
 
 function viewAllPlans() {
@@ -7114,6 +8173,58 @@ function createBulkPlans() {
     "/plans/bulk",
     {
       plans: bulkData,
+    },
+    {
+      onSuccess: () => {
+        showNewPlan.value = false;
+        newPlanMode.value = "single";
+        newPlanTemplate.value = "";
+        newPlanErrors.value = {};
+      },
+      onError: (errors) => {
+        newPlanErrors.value = errors;
+      },
+      onFinish: () => {
+        newPlanProcessing.value = false;
+      },
+    }
+  );
+}
+
+function createMatchPlans() {
+  // Reset errors
+  newPlanErrors.value = {};
+
+  // Validate movement template selection
+  if (!newPlanTemplate.value) {
+    newPlanErrors.value.template =
+      "Movement template is required for match plan creation";
+    return;
+  }
+
+  // Check if there are plans to create
+  if (matchesPreview.value.plans.length === 0) {
+    newPlanErrors.value.template = "No matches found";
+    return;
+  }
+
+  newPlanProcessing.value = true;
+
+  // Prepare match plans data grouped by date
+  const matchPlansData = matchesPreview.value.plans.map((plan) => ({
+    date: plan.date,
+    teams: plan.teams.map((team) => ({
+      team_id: team.team_id,
+      start_time: team.plan_time,
+      match_id: team.match_id,
+    })),
+    movement_template_id: newPlanTemplate.value,
+  }));
+
+  router.post(
+    "/plans/bulk-matches",
+    {
+      plans: matchPlansData,
     },
     {
       onSuccess: () => {
@@ -7365,16 +8476,16 @@ function selectMovement(movement) {
 function editMovement(movement) {
   editingMovement.value = movement;
 
-  // Populate form fields - handle both "By Day" and "By Team" data structures
+  // Populate form fields - handle both "By Plan" and "By Team" data structures
   emTeamId.value = movement.team_id || "";
   emKind.value = movement.kind || "";
 
-  // Handle location properties (By Day uses from_location/to_location, By Team uses from/to)
+  // Handle location properties (By Plan uses from_location/to_location, By Team uses from/to)
   emFrom.value = movement.from_location || movement.from || "";
   emTo.value = movement.to_location || movement.to || "";
 
   // Handle datetime properties
-  // By Day has window_start/window_end (datetime strings)
+  // By Plan has window_start/window_end (datetime strings)
   // By Team has dep/arr (time strings like "14:30") - we need to combine with plan date
   if (movement.window_start) {
     emWindowStart.value = formatDateTimeForInput(movement.window_start);
@@ -7398,7 +8509,7 @@ function editMovement(movement) {
   emDriverId.value = movement.driver_id || "";
   emFieldSupervisorId.value = movement.field_supervisor_id || "";
 
-  // Handle passengers (By Day uses passengers, By Team uses pax)
+  // Handle passengers (By Plan uses passengers, By Team uses pax)
   emPassengers.value = movement.passengers ?? movement.pax ?? "";
 
   emFlightNumber.value = movement.flight_number || "";
@@ -7533,29 +8644,35 @@ function toggleGenMovement(id) {
 }
 
 function confirmGenerateJobs() {
-  if (!selectedPlanObj.value?.id) {
-    console.error("No plan selected");
+  const targetPlanId = genTargetPlanId.value;
+  
+  if (!targetPlanId) {
+    console.error("No plan selected or movements from multiple plans");
+    alert("Cannot generate jobs: movements belong to different plans or no plan selected.");
     return;
   }
 
   genProcessing.value = true;
+  const count = genSelectedIds.value.length;
 
   router.post(
-    `/plans/${selectedPlanObj.value.id}/generate-jobs`,
+    `/plans/${targetPlanId}/generate-jobs`,
     {
       movement_ids: genSelectedIds.value,
       auto_assign: genAutoAssign.value,
       notify_liaisons: genNotifyLiaisons.value,
     },
     {
-      onSuccess: () => {
+      preserveScroll: true,
+      onSuccess: (page) => {
+        console.log('Jobs generated successfully, response:', page);
+        showSuccessToast(`Jobs generated successfully for ${count} movement${count !== 1 ? 's' : ''}`);
         showGenerateJobs.value = false;
         genSelectedIds.value = [];
-        // Flash message will be shown by backend
       },
       onError: (errors) => {
         console.error("Failed to generate jobs:", errors);
-        alert("Failed to generate jobs. Please try again.");
+        showErrorToast("Failed to generate jobs. Please try again.");
       },
       onFinish: () => {
         genProcessing.value = false;
@@ -7565,8 +8682,11 @@ function confirmGenerateJobs() {
 }
 
 function generateSingleJob(movement) {
-  if (!selectedPlanObj.value?.id) {
-    console.error("No plan selected");
+  // Use movement's plan_id if in "All Movements" view, otherwise use selected plan
+  const targetPlanId = movement?.plan_id || selectedPlanObj.value?.id;
+  
+  if (!targetPlanId) {
+    console.error("No plan ID available");
     return;
   }
 
@@ -7578,7 +8698,7 @@ function generateSingleJob(movement) {
   generatingJobForMovement.value = movement.id;
 
   router.post(
-    `/plans/${selectedPlanObj.value.id}/generate-jobs`,
+    `/plans/${targetPlanId}/generate-jobs`,
     {
       movement_ids: [movement.id],
       auto_assign: true,
@@ -7768,6 +8888,10 @@ function statusLabel(s) {
   background: var(--accent);
   color: #fff;
 }
+.toggle-btn--active:hover {
+  background: var(--accent);
+  color: #fff;
+}
 
 .day-group {
   margin-bottom: 20px;
@@ -7883,47 +9007,7 @@ function statusLabel(s) {
   text-decoration: underline;
 }
 
-.kind-badge {
-  padding: 2px 8px;
-  border-radius: 4px;
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: capitalize;
-}
-.kind-badge--arrival {
-  background: var(--ok-soft);
-  color: var(--ok);
-}
-.kind-badge--departure {
-  background: var(--danger-soft);
-  color: var(--danger);
-}
-.kind-badge--transfer {
-  background: var(--accent-soft);
-  color: var(--accent-fg);
-}
-
-/* Status badges */
-.status-badge--draft {
-  background: #f3f4f6;
-  color: #6b7280;
-}
-.status-badge--upcoming {
-  background: #dbeafe;
-  color: #1e40af;
-}
-.status-badge--active {
-  background: #d1fae5;
-  color: #065f46;
-}
-.status-badge--completed {
-  background: #e0e7ff;
-  color: #4338ca;
-}
-.status-badge--cancelled {
-  background: #fee2e2;
-  color: #991b1b;
-}
+/* Badge styles moved to Badge.vue component */
 
 /* Modal */
 .modal-backdrop {
@@ -8899,4 +9983,56 @@ function statusLabel(s) {
   opacity: 0;
   transform: translateX(20px);
 }
+
+/* Filter Chips */
+.filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--ink2);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+
+.filter-chip:hover {
+  background: var(--panel);
+  border-color: var(--ink4);
+}
+
+.filter-chip--active {
+  background: var(--accent);
+  color: white;
+  border-color: var(--accent);
+}
+
+.filter-chip--active:hover {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.filter-chip-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.2);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.filter-chip--active .filter-chip-count {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+/* Plan type badges moved to Badge.vue component */
 </style>

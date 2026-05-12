@@ -42,6 +42,7 @@ class JobGenerationService
                 'movement_id' => $movement->id,
                 'plan_id' => $movement->plan_id,
                 'team_id' => $movement->team_id,
+                'functional_area' => $movement->functional_area,
                 'supervisor_id' => $movement->field_supervisor_id ?? $options['supervisor_id'] ?? null,
                 'driver_id' => $movement->driver_id,
                 'vehicle_id' => $movement->vehicle_id,
@@ -165,6 +166,7 @@ class JobGenerationService
                 'status' => $planData['status'] ?? 'draft',
                 'event_id' => $planData['event_id'] ?? null,
                 'movement_template_id' => $template->id,
+                'functional_area' => $template->functional_area,
                 'notes' => $planData['notes'] ?? null,
                 'created_by' => $planData['created_by'] ?? (Auth::check() ? Auth::id() : null),
             ]);
@@ -210,8 +212,28 @@ class JobGenerationService
                     
                     // Create all legs for this team
                     foreach ($legs as $leg) {
-                        $scheduledDeparture = $teamCurrentTime->copy();
-                        $scheduledArrival = $scheduledDeparture->copy()->addMinutes($leg->estimated_duration_minutes ?? 30);
+                        $scheduledDeparture = null;
+                        $scheduledArrival = null;
+                        
+                        // Smart timing for arrival legs
+                        if ($leg->leg_type === 'arrival' && $plan->event_id) {
+                            // For arrival legs, start 3 hours before flight arrival time
+                            $arrivalFlight = \App\Models\TeamFlight::where('event_id', $plan->event_id)
+                                ->where('team_id', $teamId)
+                                ->where('direction', 'arrival')
+                                ->first();
+                            
+                            if ($arrivalFlight && $arrivalFlight->scheduled_at) {
+                                $scheduledDeparture = $arrivalFlight->scheduled_at->copy()->subMinutes(180); // 3 hours before arrival
+                                $scheduledArrival = $scheduledDeparture->copy()->addMinutes($leg->estimated_duration_minutes ?? 30);
+                            }
+                        }
+                        
+                        // Fallback to team start time if smart timing not available
+                        if (!$scheduledDeparture || !$scheduledArrival) {
+                            $scheduledDeparture = $teamCurrentTime->copy();
+                            $scheduledArrival = $scheduledDeparture->copy()->addMinutes($leg->estimated_duration_minutes ?? 30);
+                        }
                         
                         // Update current time for next leg
                         $teamCurrentTime = $scheduledArrival->copy();
@@ -237,10 +259,29 @@ class JobGenerationService
                             ? $this->findAvailableDriver($scheduledDeparture, $scheduledArrival)
                             : null;
                         
-                        // Determine if this movement should link to accommodation
+                        // Auto-fetch flight_id from event team flights based on movement kind
+                        $legMovementFlightId = $movementFlightId; // Use bulk assignment if available
+                        if (!$legMovementFlightId && $plan->event_id && in_array($leg->leg_type, ['arrival', 'departure'])) {
+                            $flight = \App\Models\TeamFlight::where('event_id', $plan->event_id)
+                                ->where('team_id', $teamId)
+                                ->where('direction', $leg->leg_type)
+                                ->first();
+                            if ($flight) {
+                                $legMovementFlightId = $flight->id;
+                            }
+                        }
+                        
+                        // Auto-fetch accommodation_id from event team stay
                         $movementAccommodationId = null;
                         if (!empty($planData['accommodation_id'])) {
                             $movementAccommodationId = $planData['accommodation_id'];
+                        } elseif ($plan->event_id && $teamId) {
+                            $stay = \App\Models\TeamStay::where('event_id', $plan->event_id)
+                                ->where('team_id', $teamId)
+                                ->first();
+                            if ($stay) {
+                                $movementAccommodationId = $stay->id;
+                            }
                         }
                         
                         Movement::create([
@@ -248,10 +289,11 @@ class JobGenerationService
                             'plan_id' => $plan->id,
                             'event_id' => $plan->event_id,
                             'team_id' => $teamId,
-                            'flight_id' => $movementFlightId,
+                            'flight_id' => $legMovementFlightId,
                             'accommodation_id' => $movementAccommodationId,
                             'checkpoint_template_id' => $leg->checkpoint_template_id,
                             'kind' => $leg->leg_type,
+                            'functional_area' => $template->functional_area,
                             'from_location' => $leg->from_location,
                             'to_location' => $leg->to_location,
                             'window_start' => $scheduledDeparture,
@@ -264,44 +306,105 @@ class JobGenerationService
                         ]);
                     }
                 }
-            } else {
-                // Original logic: loop through legs first, then teams
-                foreach ($legs as $leg) {
-                    // Determine which teams to create movements for
-                    $teamsForThisLeg = [];
+            } elseif ($bulkTeamIds) {
+                // Bulk mode without team start times: loop through teams first, calculate smart timing
+                // This matches "Bulk by Matches" pattern but uses smart timing
+                foreach ($bulkTeamIds as $teamId) {
+                    $team = Team::find($teamId);
+                    $teamCurrentTime = $currentTime->copy();
                     
-                    if ($bulkTeamIds) {
-                        // Bulk mode: create movement for each team
-                        $teamsForThisLeg = $bulkTeamIds;
-                    } else {
-                        // Single mode: use team assignment for this leg or default
-                        $teamId = $teamAssignments[$leg->order] ?? $teamAssignments['default'] ?? null;
-                        if ($teamId) {
-                            $teamsForThisLeg = [$teamId];
-                        }
+                    // For match legs, check if this team has a match
+                    $hasMatch = false;
+                    if ($plan->event_id) {
+                        $match = \App\Models\GameMatch::where('event_id', $plan->event_id)
+                            ->where(function($q) use ($teamId, $team) {
+                                $q->where('team1_id', $teamId)
+                                  ->orWhere('team2_id', $teamId)
+                                  ->orWhere('team1_id', $team?->code)
+                                  ->orWhere('team2_id', $team?->code);
+                            })
+                            ->exists();
+                        $hasMatch = $match;
                     }
                     
-                    // Chain movements: each leg starts when the previous ends
-                    $scheduledDeparture = $currentTime->copy();
-                    $scheduledArrival = $scheduledDeparture->copy()->addMinutes($leg->estimated_duration_minutes ?? 30);
-                    
-                    // Update current time for next leg
-                    $currentTime = $scheduledArrival->copy();
-                    
-                    // Create a movement for each team
-                    foreach ($teamsForThisLeg as $teamId) {
-                        // Determine passenger count: prioritize flight > team > template estimate
-                        $passengerCount = 0;
-                        if ($flightPassengerCount !== null) {
-                            // Use flight's passenger count if available
-                            $passengerCount = $flightPassengerCount;
-                        } elseif ($teamId) {
-                            // Fall back to team's party size
-                            $team = Team::find($teamId);
-                            $passengerCount = $team?->party_size_total ?? 0;
+                    // Create all legs for this team
+                    foreach ($legs as $leg) {
+                        $scheduledDeparture = null;
+                        $scheduledArrival = null;
+                        
+                        // Smart timing based on leg type and team data
+                        if ($leg->leg_type === 'arrival' && $plan->event_id) {
+                            // For arrival legs, start 3 hours before flight arrival time
+                            $arrivalFlight = \App\Models\TeamFlight::where('event_id', $plan->event_id)
+                                ->where('team_id', $teamId)
+                                ->where('direction', 'arrival')
+                                ->first();
+                            
+                            if ($arrivalFlight && $arrivalFlight->scheduled_at) {
+                                $scheduledDeparture = $arrivalFlight->scheduled_at->copy()->subMinutes(180); // 3 hours before arrival
+                                $scheduledArrival = $scheduledDeparture->copy()->addMinutes($leg->estimated_duration_minutes ?? 30);
+                            }
+                        } elseif ($leg->leg_type === 'departure' && $plan->event_id) {
+                            // For departure legs, use team's departure flight time
+                            $departureFlight = \App\Models\TeamFlight::where('event_id', $plan->event_id)
+                                ->where('team_id', $teamId)
+                                ->where('direction', 'departure')
+                                ->first();
+                            
+                            if ($departureFlight && $departureFlight->scheduled_at) {
+                                // Departure movement should end at flight time, so work backwards
+                                $scheduledArrival = $departureFlight->scheduled_at->copy();
+                                $scheduledDeparture = $scheduledArrival->copy()->subMinutes($leg->estimated_duration_minutes ?? 30);
+                            }
+                        } elseif ($leg->leg_type === 'match' && $plan->event_id) {
+                            // For match legs (hotel to stadium), depart 2 hours before kick-off
+                            $match = \App\Models\GameMatch::where('event_id', $plan->event_id)
+                                ->where(function($q) use ($teamId, $team) {
+                                    $q->where('team1_id', $teamId)
+                                      ->orWhere('team2_id', $teamId)
+                                      ->orWhere('team1_id', $team?->code)
+                                      ->orWhere('team2_id', $team?->code);
+                                })
+                                ->orderBy('kick_off')
+                                ->first();
+                            
+                            if ($match && $match->kick_off) {
+                                // Depart hotel 2 hours before kick-off
+                                $scheduledDeparture = $match->kick_off->copy()->subMinutes(120);
+                                // Arrival at stadium = departure + travel time
+                                $scheduledArrival = $scheduledDeparture->copy()->addMinutes($leg->estimated_duration_minutes ?? 30);
+                            }
+                        } elseif ($leg->leg_type === 'transfer' && $plan->event_id) {
+                            // For transfer legs (airport to hotel), start 3 hours before arrival flight time
+                            $arrivalFlight = \App\Models\TeamFlight::where('event_id', $plan->event_id)
+                                ->where('team_id', $teamId)
+                                ->where('direction', 'arrival')
+                                ->first();
+                            
+                            if ($arrivalFlight && $arrivalFlight->scheduled_at) {
+                                $scheduledDeparture = $arrivalFlight->scheduled_at->copy()->subMinutes(180); // 3 hours before arrival
+                                $scheduledArrival = $scheduledDeparture->copy()->addMinutes($leg->estimated_duration_minutes ?? 30);
+                            }
                         }
+                        
+                        // For match legs, skip this team if they don't have a match
+                        if ($leg->leg_type === 'match' && (!$scheduledDeparture || !$scheduledArrival)) {
+                            // Skip this leg for this team - continue to next leg
+                            continue;
+                        }
+                        
+                        // Fallback to sequential timing if smart timing not available
+                        if (!$scheduledDeparture || !$scheduledArrival) {
+                            $scheduledDeparture = $teamCurrentTime->copy();
+                            $scheduledArrival = $scheduledDeparture->copy()->addMinutes($leg->estimated_duration_minutes ?? 30);
+                        }
+                        
+                        // Update team's current time for next leg
+                        $teamCurrentTime = $scheduledArrival->copy();
+                        
+                        // Determine passenger count: prioritize team > template estimate
+                        $passengerCount = $team?->party_size_total ?? 0;
                         if ($passengerCount === 0) {
-                            // Finally, use template estimate
                             $passengerCount = $leg->estimated_passengers ?? 0;
                         }
                         
@@ -315,17 +418,29 @@ class JobGenerationService
                             ? $this->findAvailableDriver($scheduledDeparture, $scheduledArrival)
                             : null;
                         
-                        // Determine if this movement should link to the flight
+                        // Auto-fetch flight_id from event team flights based on movement kind
                         $movementFlightId = null;
-                        if (!empty($planData['flight_id']) && in_array($leg->leg_type, ['arrival', 'departure'])) {
-                            $movementFlightId = $planData['flight_id'];
+                        if ($plan->event_id && in_array($leg->leg_type, ['arrival', 'departure'])) {
+                            $flight = \App\Models\TeamFlight::where('event_id', $plan->event_id)
+                                ->where('team_id', $teamId)
+                                ->where('direction', $leg->leg_type)
+                                ->first();
+                            if ($flight) {
+                                $movementFlightId = $flight->id;
+                            }
                         }
                         
-                        // Determine if this movement should link to accommodation
+                        // Auto-fetch accommodation_id from event team stay
                         $movementAccommodationId = null;
                         if (!empty($planData['accommodation_id'])) {
-                            // Link accommodation to relevant movement types (arrival, hotel transfer, etc.)
                             $movementAccommodationId = $planData['accommodation_id'];
+                        } elseif ($plan->event_id && $teamId) {
+                            $stay = \App\Models\TeamStay::where('event_id', $plan->event_id)
+                                ->where('team_id', $teamId)
+                                ->first();
+                            if ($stay) {
+                                $movementAccommodationId = $stay->id;
+                            }
                         }
                         
                         Movement::create([
@@ -337,6 +452,7 @@ class JobGenerationService
                             'accommodation_id' => $movementAccommodationId,
                             'checkpoint_template_id' => $leg->checkpoint_template_id,
                             'kind' => $leg->leg_type,
+                            'functional_area' => $template->functional_area,
                             'from_location' => $leg->from_location,
                             'to_location' => $leg->to_location,
                             'window_start' => $scheduledDeparture,
@@ -348,6 +464,75 @@ class JobGenerationService
                             'source' => 'template',
                         ]);
                     }
+                }
+            } else {
+                // Single team mode: loop through legs
+                foreach ($legs as $leg) {
+                    $teamId = $teamAssignments[$leg->order] ?? $teamAssignments['default'] ?? null;
+                    if (!$teamId) {
+                        continue;
+                    }
+                    
+                    $team = Team::find($teamId);
+                    $scheduledDeparture = $currentTime->copy();
+                    $scheduledArrival = $scheduledDeparture->copy()->addMinutes($leg->estimated_duration_minutes ?? 30);
+                    $currentTime = $scheduledArrival->copy();
+                    
+                    // Determine passenger count
+                    $passengerCount = $team?->party_size_total ?? $leg->estimated_passengers ?? 0;
+                    
+                    // Auto-assign vehicle and driver
+                    $vehicleId = $passengerCount > 0 
+                        ? $this->findAvailableVehicle($passengerCount, $scheduledDeparture, $scheduledArrival)
+                        : null;
+                    
+                    $driverId = $vehicleId 
+                        ? $this->findAvailableDriver($scheduledDeparture, $scheduledArrival)
+                        : null;
+                    
+                    // Auto-fetch flight_id
+                    $movementFlightId = null;
+                    if ($plan->event_id && in_array($leg->leg_type, ['arrival', 'departure'])) {
+                        $flight = \App\Models\TeamFlight::where('event_id', $plan->event_id)
+                            ->where('team_id', $teamId)
+                            ->where('direction', $leg->leg_type)
+                            ->first();
+                        if ($flight) {
+                            $movementFlightId = $flight->id;
+                        }
+                    }
+                    
+                    // Auto-fetch accommodation_id
+                    $movementAccommodationId = null;
+                    if ($plan->event_id && $teamId) {
+                        $stay = \App\Models\TeamStay::where('event_id', $plan->event_id)
+                            ->where('team_id', $teamId)
+                            ->first();
+                        if ($stay) {
+                            $movementAccommodationId = $stay->id;
+                        }
+                    }
+                    
+                    Movement::create([
+                        'code' => $this->generateMovementCode($plan),
+                        'plan_id' => $plan->id,
+                        'event_id' => $plan->event_id,
+                        'team_id' => $teamId,
+                        'flight_id' => $movementFlightId,
+                        'accommodation_id' => $movementAccommodationId,
+                        'checkpoint_template_id' => $leg->checkpoint_template_id,
+                        'kind' => $leg->leg_type,
+                        'functional_area' => $template->functional_area,
+                        'from_location' => $leg->from_location,
+                        'to_location' => $leg->to_location,
+                        'window_start' => $scheduledDeparture,
+                        'window_end' => $scheduledArrival,
+                        'vehicle_id' => $vehicleId,
+                        'driver_id' => $driverId,
+                        'passengers' => $passengerCount,
+                        'status' => 'scheduled',
+                        'source' => 'template',
+                    ]);
                 }
             }
 

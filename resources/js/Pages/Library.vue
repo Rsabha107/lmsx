@@ -761,6 +761,15 @@
           </select>
         </div>
         <div>
+          <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px; color: var(--ink);">Functional Area</label>
+          <select v-model="newMovementTemplate.functional_area" style="width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px;">
+            <option value="">Select functional area...</option>
+            <option value="LOG">LOG - Logistics</option>
+            <option value="AND">AND - Arrival and Departure</option>
+            <option value="MOB">MOB - Mobility</option>
+          </select>
+        </div>
+        <div>
           <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px; color: var(--ink);">Description</label>
           <textarea v-model="newMovementTemplate.description" placeholder="Optional description" rows="3" style="width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; resize: vertical;"></textarea>
         </div>
@@ -905,6 +914,15 @@
             <option value="operation_day">Operation Day</option>
             <option value="full_day">Full Day</option>
             <option value="custom">Custom</option>
+          </select>
+        </div>
+        <div>
+          <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px; color: var(--ink);">Functional Area</label>
+          <select v-model="editingMovementTemplate.functional_area" style="width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px;">
+            <option value="">Select functional area...</option>
+            <option value="LOG">LOG - Logistics</option>
+            <option value="AND">AND - Arrival and Departure</option>
+            <option value="MOB">MOB - Mobility</option>
           </select>
         </div>
         <div>
@@ -1198,6 +1216,7 @@ const newMovementTemplate = ref({
   code: '',
   name: '',
   scenario_type: 'match_day',
+  functional_area: '',
   description: '',
   estimated_duration_minutes: null,
   is_active: true,

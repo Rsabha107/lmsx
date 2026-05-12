@@ -19,9 +19,10 @@ class KitTruckDashboardController extends Controller
 {
     public function index(Request $request)
     {
-        $kind        = $request->query('kind', 'match');
-        $filterDate  = $request->query('date');
-        $filterEvent = $request->query('event');
+        $kind              = $request->query('kind', 'match');
+        $filterDate        = $request->query('date');
+        $filterEvent       = $request->query('event');
+        $filterFunctionalArea = $request->query('functional_area');
 
         // Load jobs of the selected movement kind with all needed relations
         $jobs = JobOperation::with([
@@ -34,6 +35,7 @@ class KitTruckDashboardController extends Controller
                 $q->where('kind', $kind);
             })
             ->when(!empty($filterEvent), fn ($q) => $q->where('event_id', $filterEvent))
+            ->when(!empty($filterFunctionalArea), fn ($q) => $q->where('functional_area', $filterFunctionalArea))
             ->when($filterDate, fn ($q) => $q->whereHas('movement', function($query) use ($filterDate) {
                 $query->whereDate('window_start', $filterDate);
             }))
@@ -187,6 +189,8 @@ class KitTruckDashboardController extends Controller
                 'flight_number'    => $primaryFlight?->flight_number ?? '',
                 'flight_date'      => $flightDateTime?->format('Y-m-d'),
                 'flight_time'      => $flightDateTime?->format('H:i'),
+                'flight_scheduled_at' => $primaryFlight?->scheduled_at?->format('H:i'),
+                'flight_actual_at'    => $primaryFlight?->actual_at?->format('H:i'),
                 
                 // Debug info
                 'has_event_team'   => $eventTeam !== null,
@@ -234,13 +238,26 @@ class KitTruckDashboardController extends Controller
         // ── Event filter options ──
         $events = Event::orderBy('name')->get(['id', 'name']);
 
+        // ── Functional area options ──
+        $functionalAreas = [
+            ['value' => 'LOG', 'label' => 'LOG - Logistics'],
+            ['value' => 'AND', 'label' => 'AND - Arrival and Departure'],
+            ['value' => 'MOB', 'label' => 'MOB - Mobility'],
+        ];
+
         return Inertia::render('KitTruckDashboard', [
-            'rows'       => $rows,
-            'columns'    => $columns,
-            'kindCounts' => $kindCounts,
-            'dates'      => $dates,
-            'events'     => $events,
-            'filters'    => ['kind' => $kind, 'date' => $filterDate, 'event' => $filterEvent],
+            'rows'            => $rows,
+            'columns'         => $columns,
+            'kindCounts'      => $kindCounts,
+            'dates'           => $dates,
+            'events'          => $events,
+            'functionalAreas' => $functionalAreas,
+            'filters'         => [
+                'kind' => $kind, 
+                'date' => $filterDate, 
+                'event' => $filterEvent,
+                'functional_area' => $filterFunctionalArea,
+            ],
         ]);
     }
 }

@@ -48,6 +48,11 @@
           <option value="">All events</option>
           <option v-for="evt in events" :key="evt.id" :value="evt.id">{{ evt.name }}</option>
         </select>
+        <!-- Functional Area -->
+        <select v-if="functionalAreas.length" v-model="selectedFunctionalArea" class="filter-select" @change="setFunctionalArea(selectedFunctionalArea)">
+          <option value="">All functional areas</option>
+          <option v-for="fa in functionalAreas" :key="fa.value" :value="fa.value">{{ fa.label }}</option>
+        </select>
         <!-- Date -->
         <select v-if="dates.length" v-model="selectedDate" class="filter-select" @change="setDate(selectedDate)">
           <option value="">All dates</option>
@@ -101,6 +106,7 @@
               <template v-else-if="filters.kind === 'arrival'">
                 <th class="mv-th" rowspan="2">Flight</th>
                 <th class="mv-th" rowspan="2">Date</th>
+                <th class="mv-th mv-th--cp-group" colspan="2">PMA Arrival</th>
                 <th class="mv-th mv-th--left mv-th--wide" rowspan="2">From</th>
                 <th class="mv-th mv-th--left mv-th--wide" rowspan="2">To</th>
                 <th class="mv-th mv-th--left mv-th--wide" rowspan="2">Hotel</th>
@@ -130,6 +136,12 @@
 
             <!-- Row 2: Planned / Actual OR Baggage Count -->
             <tr>
+              <!-- PMA Arrival sub-headers for arrival kind only -->
+              <template v-if="filters.kind === 'arrival'">
+                <th class="mv-th mv-th--sub mv-th--planned">Planned</th>
+                <th class="mv-th mv-th--sub mv-th--actual">Actual</th>
+              </template>
+              
               <template v-for="col in columns" :key="col.order">
                 <template v-if="col.requires_baggage_count">
                   <th class="mv-th mv-th--sub mv-th--baggage">Bags Loaded</th>
@@ -175,20 +187,26 @@
                   <td class="mv-td mv-td--center">
                     <span class="ko-badge">{{ row.kick_off || '—' }}</span>
                   </td>
-                  <td class="mv-td mv-td--muted">{{ row.hotel || '—' }}</td>
-                  <td class="mv-td mv-td--muted">{{ row.stadium || '—' }}</td>
+                  <td class="mv-td mv-td--muted">{{ row.hotel?.name || row.hotel || '—' }}</td>
+                  <td class="mv-td mv-td--muted">{{ row.stadium?.name || row.stadium || '—' }}</td>
                 </template>
                 <template v-else-if="filters.kind === 'arrival'">
                   <td class="mv-td mv-td--center mono">{{ row.flight_number || '—' }}</td>
                   <td class="mv-td mv-td--center mono">{{ row.match_date_label || '—' }}</td>
+                  <td class="mv-td mv-td--time mv-td--planned">
+                    {{ row.flight_scheduled_at || '—' }}
+                  </td>
+                  <td class="mv-td mv-td--time">
+                    <span class="actual-val">{{ row.flight_actual_at || '—' }}</span>
+                  </td>
                   <td class="mv-td mv-td--muted">{{ row.from_location || '—' }}</td>
                   <td class="mv-td mv-td--muted">{{ row.to_location || '—' }}</td>
-                  <td class="mv-td mv-td--muted">{{ row.hotel || '—' }}</td>
+                  <td class="mv-td mv-td--muted">{{ row.hotel?.name || row.hotel || '—' }}</td>
                 </template>
                 <template v-else-if="filters.kind === 'departure'">
                   <td class="mv-td mv-td--center mono">{{ row.match_date_label || '—' }}</td>
                   <td class="mv-td mv-td--muted">{{ row.from_location || '—' }}</td>
-                  <td class="mv-td mv-td--muted">{{ row.hotel || '—' }}</td>
+                  <td class="mv-td mv-td--muted">{{ row.hotel?.name || row.hotel || '—' }}</td>
                   <td class="mv-td mv-td--muted">{{ row.to_location || '—' }}</td>
                 </template>
                 <template v-else>
@@ -265,7 +283,8 @@ const props = defineProps({
   kindCounts: { type: Object, default: () => ({}) },
   dates:      { type: Array,  default: () => [] },
   events:     { type: Array,  default: () => [] },
-  filters:    { type: Object, default: () => ({ kind: 'match', date: null, event: null }) },
+  functionalAreas: { type: Array,  default: () => [] },
+  filters:    { type: Object, default: () => ({ kind: 'match', date: null, event: null, functional_area: null }) },
 });
 
 // ── Local state ───────────────────────────────────────────────────────────
@@ -273,6 +292,7 @@ const searchQuery  = ref('');
 const selectedKind = ref(props.filters.kind ?? 'match');
 const selectedDate = ref(props.filters.date ?? '');
 const selectedEvent = ref(props.filters.event ?? '');
+const selectedFunctionalArea = ref(props.filters.functional_area ?? '');
 
 // ── Kind config ───────────────────────────────────────────────────────────
 const kindOptions = [
@@ -371,18 +391,28 @@ function setKind(kind) {
   searchQuery.value  = '';
   selectedDate.value = '';
   selectedEvent.value = '';
+  selectedFunctionalArea.value = '';
   router.get('/kit-truck', { kind }, { preserveScroll: true });
 }
 function setDate(date) {
   const params = { kind: props.filters.kind };
   if (date) params.date = date;
   if (props.filters.event) params.event = props.filters.event;
+  if (props.filters.functional_area) params.functional_area = props.filters.functional_area;
   router.get('/kit-truck', params, { preserveScroll: true });
 }
 function setEvent(event) {
   const params = { kind: props.filters.kind };
   if (event) params.event = event;
   if (props.filters.date) params.date = props.filters.date;
+  if (props.filters.functional_area) params.functional_area = props.filters.functional_area;
+  router.get('/kit-truck', params, { preserveScroll: true });
+}
+function setFunctionalArea(functionalArea) {
+  const params = { kind: props.filters.kind };
+  if (functionalArea) params.functional_area = functionalArea;
+  if (props.filters.date) params.date = props.filters.date;
+  if (props.filters.event) params.event = props.filters.event;
   router.get('/kit-truck', params, { preserveScroll: true });
 }
 </script>

@@ -223,7 +223,6 @@ const navItems = [
   { label: 'Jobs (Mobile)', route: 'jobs/mobile',       icon: 'phone' },
   { label: 'Live Tracker',  route: 'tracker',           icon: 'tracker' },
   { label: 'Matches',       route: 'matches',           icon: 'trophy' },
-  { label: 'Kit Truck',     route: 'kit-truck',         icon: 'fleet' },
   { label: 'Notifications', route: 'notifications',     icon: 'bell' },
   { label: 'Daily Email',   route: 'email',             icon: 'email' },
   { label: 'Analytics',     route: 'analytics',         icon: 'chart' },
@@ -238,6 +237,7 @@ const navItems = [
       { label: 'Venues',        route: 'venues',            icon: 'building' },
       { label: 'Teams',         route: 'teams',             icon: 'team' },
       { label: 'Fleet',         route: 'fleet',             icon: 'fleet' },
+      { label: 'Movement Tracking', route: 'kit-truck',     icon: 'fleet' },
       { label: 'Contacts',      route: 'contacts',          icon: 'contacts' },
       { label: 'Audit Trail',   route: 'audit',             icon: 'audit' },
     ]

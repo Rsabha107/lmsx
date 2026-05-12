@@ -22,14 +22,6 @@
       </div>
     </div>
 
-    <!-- Summary stats -->
-    <div class="stats-grid">
-      <mini-stat label="Total Teams" :value="teams.length" />
-      <mini-stat label="Total Delegation" :value="totalDelegation" />
-      <mini-stat label="Players" :value="totalPlayers" tone="primary" />
-      <mini-stat label="Staff" :value="totalStaff" tone="ok" />
-    </div>
-
     <!-- Teams Table Controls -->
     <div class="table-header">
       <div class="table-controls">
@@ -424,31 +416,6 @@
           </div>
         </div>
 
-        <div class="form-section-title">Party Size</div>
-        <div class="form-row">
-          <div class="form-group">
-            <label class="form-label">Total <span style="color: var(--ink3); font-weight: 400;">({{ hasMultipleFlights ? 'base + flights' : 'players + staff' }})</span></label>
-            <input 
-              :value="displayPartyTotal" 
-              type="number" 
-              class="form-input" 
-              min="0" 
-              readonly
-              style="background: var(--sky-dust); cursor: not-allowed;"
-            />
-          </div>
-
-          <div class="form-group">
-            <label class="form-label">Players</label>
-            <input v-model.number="formData.party_size_players" type="number" class="form-input" min="0" />
-          </div>
-
-          <div class="form-group">
-            <label class="form-label">Staff</label>
-            <input v-model.number="formData.party_size_staff" type="number" class="form-input" min="0" />
-          </div>
-        </div>
-
         <div class="form-section-title">Contacts</div>
         <div class="form-row">
           <div class="form-group">
@@ -551,31 +518,6 @@
           <div class="form-group">
             <label class="form-label">Group/Pool</label>
             <input v-model="formData.group_pool" type="text" class="form-input" placeholder="e.g., Group A" />
-          </div>
-        </div>
-
-        <div class="form-section-title">Party Size</div>
-        <div class="form-row">
-          <div class="form-group">
-            <label class="form-label">Total <span style="color: var(--ink3); font-weight: 400;">({{ hasMultipleFlights ? 'base + flights' : 'players + staff' }})</span></label>
-            <input 
-              :value="displayPartyTotal" 
-              type="number" 
-              class="form-input" 
-              min="0" 
-              readonly
-              style="background: var(--sky-dust); cursor: not-allowed;"
-            />
-          </div>
-
-          <div class="form-group">
-            <label class="form-label">Players</label>
-            <input v-model.number="formData.party_size_players" type="number" class="form-input" min="0" />
-          </div>
-
-          <div class="form-group">
-            <label class="form-label">Staff</label>
-            <input v-model.number="formData.party_size_staff" type="number" class="form-input" min="0" />
           </div>
         </div>
 
@@ -774,22 +716,12 @@ const formData = ref({
   flag: '',
   group_pool: '',
   classification_type_id: '',
-  party_size_total: 0,
-  party_size_players: 0,
-  party_size_staff: 0,
-  hotel_name: '',
-  training_ground: '',
   origin_airport_id: '',
   destination_airport_id: '',
   gate: '',
-  flight_number: '',
-  arrival_date_time: '',
-  departure_date_time: '',
   arrival_manifest: null,
   flights: [],
   head_of_delegation: '',
-  sc_liaison_name: '',
-  sc_liaison_phone: '',
   bib_accent_color: '',
   notes: '',
 });
@@ -852,7 +784,6 @@ const filteredTeams = computed(() => {
       team.team_name?.toLowerCase().includes(query) ||
       team.country?.country_name?.toLowerCase().includes(query) ||
       team.country_id?.toLowerCase().includes(query) ||
-      team.hotel_name?.toLowerCase().includes(query) ||
       team.group_pool?.toLowerCase().includes(query)
     );
   }
@@ -866,18 +797,6 @@ const filteredTeams = computed(() => {
 
   return result;
 });
-
-const totalDelegation = computed(() => 
-  filteredTeams.value.reduce((sum, t) => sum + t.party_size_total, 0)
-);
-
-const totalPlayers = computed(() => 
-  filteredTeams.value.reduce((sum, t) => sum + t.party_size_players, 0)
-);
-
-const totalStaff = computed(() => 
-  filteredTeams.value.reduce((sum, t) => sum + t.party_size_staff, 0)
-);
 
 // Calculate total passengers from all flights
 const totalPassengersFromFlights = computed(() => {
@@ -957,22 +876,12 @@ function openAddModal() {
     flag: '',
     group_pool: '',
     classification_type_id: '',
-    party_size_total: 0,
-    party_size_players: 0,
-    party_size_staff: 0,
-    hotel_name: '',
-    training_ground: '',
     origin_airport_id: '',
     destination_airport_id: '',
     gate: '',
-    flight_number: '',
-    arrival_date_time: '',
-    departure_date_time: '',
     arrival_manifest: null,
     flights: [],
     head_of_delegation: '',
-    sc_liaison_name: '',
-    sc_liaison_phone: '',
     bib_accent_color: '',
     notes: '',
   };
@@ -993,22 +902,12 @@ function editTeam(team) {
     flag: team.flag || '',
     group_pool: team.group_pool || '',
     classification_type_id: team.classification_type_id || '',
-    party_size_total: team.party_size_total || 0,
-    party_size_players: team.party_size_players || 0,
-    party_size_staff: team.party_size_staff || 0,
-    hotel_name: team.hotel_name || '',
-    training_ground: team.training_ground || '',
     origin_airport_id: team.origin_airport_id || '',
     destination_airport_id: team.destination_airport_id || '',
     gate: team.gate || '',
-    flight_number: team.flight_number || '',
-    arrival_date_time: team.arrival_date_time ? formatDate(team.arrival_date_time) : '',
-    departure_date_time: team.departure_date_time ? formatDate(team.departure_date_time) : '',
     arrival_manifest: team.arrival_manifest || null,
     flights: hasManifest ? team.arrival_manifest.flights : [],
     head_of_delegation: team.head_of_delegation || '',
-    sc_liaison_name: team.sc_liaison_name || '',
-    sc_liaison_phone: team.sc_liaison_phone || '',
     bib_accent_color: team.bib_accent_color || '',
     notes: team.notes || '',
   };

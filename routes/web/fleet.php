@@ -16,7 +16,7 @@ Route::middleware('auth')->group(function () {
     // Fleet Overview
     Route::get('/fleet', [LmsController::class, 'fleet'])->name('fleet');
 
-    // Kit Truck Daily Movements Dashboard
+    // Movement Tracking Dashboard
     Route::get('/kit-truck', [KitTruckDashboardController::class, 'index'])->name('kit-truck');
     
     // Teams Management

@@ -205,6 +205,9 @@ class PlanManagementController extends Controller
                         $query->where('event_id', $activeEventId);
                     }
                 },
+                'flight.originAirport',
+                'flight.destinationAirport',
+                'accommodation',
                 'vehicle',
                 'driver',
                 'fieldSupervisor',
@@ -331,6 +334,19 @@ class PlanManagementController extends Controller
                                 'venue' => $movement->match->venue,
                                 'kick_off' => $movement->match->kick_off?->format('Y-m-d H:i:s'),
                             ] : null,
+                            'flight_id' => $movement->flight_id,
+                            'flight' => $movement->flight ? [
+                                'id' => $movement->flight->id,
+                                'flight_number' => $movement->flight->flight_number,
+                                'origin_airport' => $movement->flight->originAirport?->code ?? $movement->flight->origin_airport_id,
+                                'destination_airport' => $movement->flight->destinationAirport?->code ?? $movement->flight->destination_airport_id,
+                                'scheduled_at' => $movement->flight->scheduled_at?->format('Y-m-d H:i:s'),
+                            ] : null,
+                            'accommodation_id' => $movement->accommodation_id,
+                            'accommodation' => $movement->accommodation ? [
+                                'id' => $movement->accommodation->id,
+                                'hotel_name' => $movement->accommodation->hotel_name,
+                            ] : null,
                             'checkpoints' => $checkpoints->toArray(),
                         ];
                     })->values()->all()
@@ -396,6 +412,7 @@ class PlanManagementController extends Controller
             'flight_id' => 'nullable|exists:team_flights,id',
             'start_time' => 'nullable|date_format:H:i',
             'movement_template_id' => 'nullable|exists:movement_templates,id',
+            'functional_area' => 'nullable|in:LOG,AND,MOB',
             'team_assignments' => 'nullable|array', // ['default' => team_id] or [1 => team1_id, 2 => team2_id]
             'notes' => 'nullable|string',
         ]);
@@ -422,13 +439,21 @@ class PlanManagementController extends Controller
             $template = MovementTemplate::findOrFail($validated['movement_template_id']);
 
             // Determine team assignments
-            // Priority: team_assignments array > team_id > first available team
+            // Priority: team_assignments array > team_id > all event teams > first available team
             $teamAssignments = $validated['team_assignments'] ?? null;
             if (!$teamAssignments && !empty($validated['team_id'])) {
                 // User specified a single team
                 $teamAssignments = ['default' => $validated['team_id']];
+            } elseif (!$teamAssignments && $activeEventId) {
+                // No team specified but we have an event - create for all event teams
+                $eventTeamIds = EventTeam::where('event_id', $activeEventId)
+                    ->pluck('team_id')
+                    ->toArray();
+                if (!empty($eventTeamIds)) {
+                    $teamAssignments = ['teams' => $eventTeamIds];
+                }
             } elseif (!$teamAssignments) {
-                // No team specified, use first available team as default
+                // No team specified and no event, use first available team as default
                 $defaultTeam = \App\Models\Team::first();
                 if ($defaultTeam) {
                     $teamAssignments = ['default' => $defaultTeam->id];
@@ -462,6 +487,12 @@ class PlanManagementController extends Controller
         }
 
         // Otherwise, create a simple blank plan
+        $functionalArea = null;
+        if (!empty($validated['movement_template_id'])) {
+            $template = MovementTemplate::find($validated['movement_template_id']);
+            $functionalArea = $template?->functional_area;
+        }
+        
         $plan = Plan::create([
             'code' => $this->generatePlanCode($validated['date']),
             'name' => $planName,
@@ -469,6 +500,7 @@ class PlanManagementController extends Controller
             'status' => 'draft',
             'event_id' => $activeEventId,
             'movement_template_id' => $validated['movement_template_id'] ?? null,
+            'functional_area' => $functionalArea ?? $validated['functional_area'] ?? null,
             'notes' => $validated['notes'] ?? null,
             'created_by' => Auth::id(),
         ]);
@@ -637,6 +669,108 @@ class PlanManagementController extends Controller
     }
 
     /**
+     * Bulk create plans for matches (5 hours before kick-off).
+     * Groups teams by date - creates one plan per date with multiple teams.
+     */
+    public function bulkMatchStore(Request $request)
+    {
+        Log::info('Bulk creating match plans', ['request' => $request->all()]);
+        
+        // Get active event from session
+        $activeEventId = session('active_event_id');
+        
+        $validated = $request->validate([
+            'plans' => 'required|array|min:1',
+            'plans.*.date' => 'required|date',
+            'plans.*.teams' => 'required|array|min:1',
+            'plans.*.teams.*.team_id' => 'required|exists:teams,id',
+            'plans.*.teams.*.start_time' => 'required|date_format:H:i',
+            'plans.*.teams.*.match_id' => 'required|exists:matches,id',
+            'plans.*.movement_template_id' => 'required|exists:movement_templates,id',
+        ]);
+        
+        $createdPlans = [];
+        $totalMovements = 0;
+        
+        foreach ($validated['plans'] as $planData) {
+            $date = $planData['date'];
+            $teamsData = $planData['teams'];
+            $templateId = $planData['movement_template_id'];
+            
+            // Get the template
+            $template = MovementTemplate::findOrFail($templateId);
+            
+            // Extract team IDs and build team-time map and match map
+            $teamIds = [];
+            $teamStartTimes = [];
+            $teamMatchIds = [];
+            foreach ($teamsData as $teamInfo) {
+                $teamIds[] = $teamInfo['team_id'];
+                $teamStartTimes[$teamInfo['team_id']] = $teamInfo['start_time'];
+                $teamMatchIds[$teamInfo['team_id']] = $teamInfo['match_id'];
+            }
+            
+            // Generate plan name
+            $dateObj = new \DateTime($date);
+            $datePart = $dateObj->format('F j, Y');
+            $teamCount = count($teamIds);
+            $planName = "{$template->name} – Match Day – {$datePart} ({$teamCount} " . ($teamCount === 1 ? 'team' : 'teams') . ")";
+            
+            // Use earliest time as plan's base_time
+            $earliestTime = min(array_values($teamStartTimes));
+            $baseTime = Carbon::createFromFormat('Y-m-d H:i', $date . ' ' . $earliestTime, config('app.timezone'));
+            
+            // Create team assignments with start times
+            $teamAssignments = [
+                'teams' => $teamIds,
+                'team_start_times' => $teamStartTimes,
+            ];
+            
+            try {
+                $plan = $this->jobService->createPlanFromTemplate(
+                    $template,
+                    [
+                        'name' => $planName,
+                        'date' => $date,
+                        'base_time' => $baseTime,
+                        'status' => 'draft',
+                        'event_id' => $activeEventId,
+                        'created_by' => Auth::id(),
+                    ],
+                    $teamAssignments
+                );
+                
+                // Link movements to their respective matches based on team
+                foreach ($teamMatchIds as $teamId => $matchId) {
+                    $plan->movements()->where('team_id', $teamId)->update(['match_id' => $matchId]);
+                }
+                
+                $createdPlans[] = $plan;
+                $totalMovements += $plan->movements_count ?? 0;
+                
+                Log::info('Created match plan', [
+                    'plan_id' => $plan->id,
+                    'date' => $date,
+                    'teams' => $teamCount,
+                    'movements' => $plan->movements_count
+                ]);
+                
+            } catch (\Exception $e) {
+                Log::error('Failed to create match plan', [
+                    'date' => $date,
+                    'teams' => $teamIds,
+                    'error' => $e->getMessage()
+                ]);
+                // Continue with next plan
+            }
+        }
+        
+        $planCount = count($createdPlans);
+        return redirect()->route('plans.index')
+            ->with('success', "Successfully created {$planCount} match-day " . ($planCount === 1 ? 'plan' : 'plans') . " with {$totalMovements} movements");
+    }
+
+    /**
      * Update an existing plan.
      */
     public function update(Request $request, Plan $plan)
@@ -646,6 +780,7 @@ class PlanManagementController extends Controller
             'date' => 'required|date',
             'start_time' => 'nullable|date_format:H:i',
             'movement_template_id' => 'nullable|exists:movement_templates,id',
+            'functional_area' => 'nullable|in:LOG,AND,MOB',
             'status' => 'required|in:draft,active,completed,archived',
             'notes' => 'nullable|string',
         ]);
@@ -755,7 +890,7 @@ class PlanManagementController extends Controller
             ]
         );
 
-        return back()->with('success', count($jobs) . ' jobs generated successfully');
+        return redirect()->back()->with('success', count($jobs) . ' jobs generated successfully');
     }
 
     /**
@@ -794,6 +929,7 @@ class PlanManagementController extends Controller
                     'team_id' => $team->id,
                     'checkpoint_template_id' => $leg->checkpoint_template_id,
                     'kind' => $leg->leg_type ?? 'transfer',
+                    'functional_area' => $template->functional_area,
                     'from_location' => $leg->from_location,
                     'to_location' => $leg->to_location,
                     'window_start' => $scheduledDeparture,
@@ -825,6 +961,7 @@ class PlanManagementController extends Controller
             'flight_id' => 'nullable|exists:team_flights,id',
             'checkpoint_template_id' => 'required|exists:checkpoint_templates,id',
             'kind' => 'required|in:arrival,departure,transfer,training,match',
+            'functional_area' => 'nullable|in:LOG,AND,MOB',
             'from_location' => 'required|string',
             'to_location' => 'required|string',
             'window_start' => 'required|date',
@@ -930,6 +1067,7 @@ class PlanManagementController extends Controller
         $validated = $request->validate([
             'window_start' => 'nullable|date',
             'window_end' => 'nullable|date',
+            'functional_area' => 'nullable|in:LOG,AND,MOB',
             'vehicle_id' => 'nullable|exists:vehicles,id',
             'driver_id' => 'nullable|exists:drivers,id',
             'field_supervisor_id' => 'nullable|exists:users,id',

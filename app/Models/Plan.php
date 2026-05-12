@@ -18,6 +18,7 @@ class Plan extends Model
         'date',
         'status',
         'movement_template_id',
+        'functional_area',
         'notes',
         'movements_count',
         'teams_count',

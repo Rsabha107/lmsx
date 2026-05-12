@@ -179,10 +179,11 @@ class LmsController extends Controller
                     'from' => $movement?->from_location ?? 'Unknown',
                     'to' => $movement?->to_location ?? 'Unknown',
                     'dep' => $movement?->window_start?->format('H:i') ?? '--:--',
-                    'arr' => $movement?->window_end?->format('H:i') ?? '--:--',
+                    'arr' => $movement?->flight?->scheduled_at?->format('H:i') ?? $movement?->window_end?->format('H:i') ?? '--:--',
                     'date' => $movement?->date?->format('Y-m-d') ?? $movement?->window_start?->format('Y-m-d') ?? now()->format('Y-m-d'),
                     'event_name' => $job->event?->name ?? null,
                     'event_code' => $job->event?->code ?? null,
+                    'functional_area' => $job->functional_area ?? null,
                     'pax' => $movement?->passengers ?? $movement?->flight?->party_size_total ?? $team?->party_size_total ?? 0,
                     'vehicle' => $job->vehicle ? ($job->vehicle->code ?? $job->vehicle->plate_number ?? $job->vehicle->vehicle_type ?? 'Unassigned') : 'Unassigned',
                     'status' => $job->status,
@@ -296,11 +297,12 @@ class LmsController extends Controller
                     'from' => $movement?->from_location ?? 'Unknown',
                     'to' => $movement?->to_location ?? 'Unknown',
                     'dep' => $movement?->window_start?->format('H:i') ?? '--:--',
-                    'arr' => $movement?->window_end?->format('H:i') ?? '--:--',
+                    'arr' => $movement?->flight?->scheduled_at?->format('H:i') ?? $movement?->window_end?->format('H:i') ?? '--:--',
                     'window_start' => $movement?->window_start?->format('Y-m-d H:i') ?? null,
                     'pax' => $movement?->passengers ?? $movement?->flight?->party_size_total ?? $team?->party_size_total ?? 0,
                     'vehicle' => $job->vehicle ? ($job->vehicle->code ?? $job->vehicle->plate_number ?? $job->vehicle->vehicle_type ?? 'Unassigned') : 'Unassigned',
                     'status' => $job->status,
+                    'functional_area' => $job->functional_area ?? null,
                     'delay' => $movement?->delay_minutes,
                     'flight' => $movement?->flight ? [
                         'id' => $movement->flight->id,
@@ -373,10 +375,11 @@ class LmsController extends Controller
                 'from' => $movement?->from_location ?? 'Unknown',
                 'to' => $movement?->to_location ?? 'Unknown',
                 'dep' => $movement?->window_start?->format('H:i') ?? '--:--',
-                'arr' => $movement?->window_end?->format('H:i') ?? '--:--',
+                'arr' => $movement?->flight?->scheduled_at?->format('H:i') ?? $movement?->window_end?->format('H:i') ?? '--:--',
                 'pax' => $movement?->passengers ?? $movement?->flight?->party_size_total ?? $team?->party_size_total ?? 0,
                 'vehicle' => $jobOperation->vehicle ? ($jobOperation->vehicle->code ?? $jobOperation->vehicle->plate_number ?? $jobOperation->vehicle->vehicle_type ?? 'Unassigned') : 'Unassigned',
                 'status' => $jobOperation->status,
+                'functional_area' => $jobOperation->functional_area ?? null,
                 'flight' => $movement?->flight ? [
                     'id' => $movement->flight->id,
                     'flight_number' => $movement->flight->flight_number,
@@ -450,6 +453,7 @@ class LmsController extends Controller
         $jobOperation = JobOperation::with([
             'event',
             'movement.team',
+            'movement.flight',
             'movement',
             'vehicle',
             'driver',
@@ -477,7 +481,7 @@ class LmsController extends Controller
             'vehicle' => $jobOperation->vehicle ? $jobOperation->vehicle->code : 'N/A',
             'pax' => $movement->passenger_count ?? 0,
             'dep' => $movement->window_start ? \Carbon\Carbon::parse($movement->window_start)->format('H:i') : 'N/A',
-            'arr' => $movement->window_end ? \Carbon\Carbon::parse($movement->window_end)->format('H:i') : 'N/A',
+            'arr' => $movement->flight?->scheduled_at?->format('H:i') ?? ($movement->window_end ? \Carbon\Carbon::parse($movement->window_end)->format('H:i') : 'N/A'),
         ];
 
         // Transform checkpoints for frontend

@@ -307,7 +307,7 @@ class PlanManagementController extends Controller
                             'from' => $movement->from_location,
                             'to' => $movement->to_location,
                             'dep' => $movement->window_start?->format('H:i'),
-                            'arr' => $movement->window_end?->format('H:i'),
+                            'arr' => $movement->flight?->scheduled_at?->format('H:i') ?? $movement->window_end?->format('H:i'),
                             'window_start' => $movement->window_start?->format('Y-m-d H:i:s'),
                             'window_end' => $movement->window_end?->format('Y-m-d H:i:s'),
                             'actual' => $movement->actual_departure?->format('H:i'),

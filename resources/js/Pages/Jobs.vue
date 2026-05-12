@@ -101,6 +101,7 @@
               <div style="display: flex; align-items: center; gap: 4px; flex-wrap: wrap;">
                 <span class="jl-team">{{ job.team }}</span>
                 <span v-if="job.event_name" class="jl-event-badge">{{ job.event_code || job.event_name }}</span>
+                <span v-if="job.functional_area" class="jl-fa-badge">{{ job.functional_area }}</span>
               </div>
               <span class="jl-route">{{ formatJobFromLocation(job) }} → {{ formatJobToLocation(job) }}</span>
             </div>
@@ -142,6 +143,7 @@
               <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 2px;">
                 <div class="detail-id">{{ selectedJob.id }} · {{ selectedJob.team }}</div>
                 <span v-if="selectedJob.event_name" class="detail-event-badge">{{ selectedJob.event_code || selectedJob.event_name }}</span>
+                <span v-if="selectedJob.functional_area" class="detail-fa-badge">{{ formatFunctionalArea(selectedJob.functional_area) }}</span>
               </div>
               <div v-if="selectedJob.date" class="detail-date">{{ formatDateLong(selectedJob.date) }}</div>
             </div>
@@ -588,6 +590,15 @@ function formatTimeAgo(dateString) {
   
   const diffDays = Math.floor(diffHours / 24);
   return `${diffDays}d ago`;
+}
+
+function formatFunctionalArea(code) {
+  const areas = {
+    'LOG': 'LOG - Logistics',
+    'AND': 'AND - Arrival & Departure',
+    'MOB': 'MOB - Mobility'
+  };
+  return areas[code] || code;
 }
 
 // Location formatting functions
@@ -1263,10 +1274,18 @@ function submitOverride() {
   font-size: 12px; font-weight: 600; color: var(--ink2); cursor: pointer;
   outline: 1px solid var(--border); font-family: inherit;
 }
-.filter-pill:hover { background: var(--border); }
+.filter-pill:hover { 
+  background: var(--border); 
+  color: var(--ink);
+}
 .filter-pill--active {
   background: var(--accent); color: #fff;
   outline: none;
+}
+.filter-pill--active:hover {
+  background: var(--accent);
+  color: #fff;
+  opacity: 0.9;
 }
 .filter-count {
   background: rgba(0,0,0,0.1); border-radius: 10px;
@@ -1393,6 +1412,17 @@ function submitOverride() {
   letter-spacing: 0.3px;
 }
 
+.jl-fa-badge {
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--green);
+  background: rgba(34, 197, 94, 0.1);
+  padding: 1px 5px;
+  border-radius: 3px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
 .jl-col-progress {
   display: flex; flex-direction: column; gap: 4px;
 }
@@ -1499,6 +1529,17 @@ function submitOverride() {
   font-weight: 700;
   color: var(--accent);
   background: var(--accent-soft, rgba(99, 102, 241, 0.1));
+  padding: 2px 8px;
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.detail-fa-badge {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--green);
+  background: rgba(34, 197, 94, 0.1);
   padding: 2px 8px;
   border-radius: 4px;
   text-transform: uppercase;
@@ -1983,12 +2024,20 @@ function submitOverride() {
 .quick-filter-btn:hover {
   background: var(--panel);
   border-color: var(--ink3);
+  color: var(--ink);
 }
 
 .quick-filter-btn--active {
-  background: var(--primary);
-  color: white;
-  border-color: var(--primary);
+  background: var(--accent, #6366f1);
+  color: #ffffff;
+  border-color: var(--accent, #6366f1);
+}
+
+.quick-filter-btn--active:hover {
+  background: var(--accent, #6366f1);
+  color: #ffffff;
+  border-color: var(--accent, #6366f1);
+  opacity: 0.9;
 }
 
 .resource-select-mini {

@@ -26,6 +26,9 @@
                   <span v-if="job.source" :class="['source-badge', `source-badge--${job.source}`]">
                     {{ job.source === 'database' ? 'DB' : 'DEMO' }}
                   </span>
+                  <span v-if="job.functional_area" class="mobile-fa-badge">
+                    {{ job.functional_area }}
+                  </span>
                 </div>
               </div>
             </div>
@@ -112,6 +115,15 @@ function statusTone(s) {
 
 function statusLabel(s) {
   return statusMap[s]?.label ?? s;
+}
+
+function formatFunctionalArea(code) {
+  const map = {
+    'LOG': 'Logistics',
+    'AND': 'Arrival & Departure',
+    'MOB': 'Mobility'
+  };
+  return map[code] || code;
 }
 
 // Location formatting functions
@@ -400,6 +412,17 @@ function formatJobToLocation(job) {
 .source-badge--mock {
   background: #fef3c7;
   color: #92400e;
+}
+
+.mobile-fa-badge {
+  font-size: 8px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 4px;
+  letter-spacing: 0.5px;
+  font-family: var(--font-sans, sans-serif);
+  background: var(--green-soft, #dcfce7);
+  color: var(--green, #166534);
 }
 
 .job-card-route {

@@ -7,7 +7,7 @@ use App\Models\MovementTemplate;
 use App\Models\MovementTemplateLeg;
 use Illuminate\Database\Seeder;
 
-class MovementTemplateSeeder extends Seeder
+class MovementTemplateLibrarySeeder extends Seeder
 {
     /**
      * Seed movement templates with their legs.

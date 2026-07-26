@@ -133,6 +133,13 @@
                 <span v-if="cp.completed_at" :style="{ color: getTimeColor(cp), fontWeight: '600' }">{{ formatTime(cp.completed_at) }}</span>
                 <span v-else-if="cp.scheduled_at && getVisualState(cp, idx) !== 'done'"
                       style="color: var(--ink4);">{{ formatTime(cp.scheduled_at) }}</span>
+                <span v-else-if="!cp.scheduled_at && cp.estimated_at"
+                      style="color: var(--ink4); font-style: italic;"
+                      title="Estimated — not yet scheduled">~{{ formatTime(cp.estimated_at) }}</span>
+              </span>
+              <span v-if="cp.requires_baggage_count && bagCountLine(cp)"
+                    style="font-size: 10px; color: var(--ink4); font-family: var(--mono); white-space: nowrap;">
+                {{ bagCountLine(cp) }}
               </span>
             </div>
           </div>
@@ -209,6 +216,15 @@ function getVisualState(cp, idx) {
 
 function completedBy(cp) {
   return cp.by || cp.completed_by || null;
+}
+
+function bagCountLine(cp) {
+  const parts = [];
+  if (cp.planned_bags != null) parts.push(`Planned ${cp.planned_bags}`);
+  if (cp.bags_loaded != null) parts.push(`Actual ${cp.bags_loaded}`);
+  if (cp.food_bags != null) parts.push(`Food ${cp.food_bags}`);
+  if (cp.oversized_pieces != null) parts.push(`Oversized ${cp.oversized_pieces}`);
+  return parts.join(' · ');
 }
 
 function formatTime(value) {

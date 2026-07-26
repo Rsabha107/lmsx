@@ -149,6 +149,18 @@ class Movement extends Model
     }
 
     /**
+     * A 'BUS' flight_number is a placeholder meaning the team travels by
+     * road for this leg, not an actual flight — there's no real reference
+     * time to schedule against, so these movements get no window, no
+     * checkpoints, and can't be turned into jobs.
+     */
+    public function isBusMovement(): bool
+    {
+        return in_array($this->kind, ['arrival', 'departure'], true)
+            && $this->flight?->flight_number === 'BUS';
+    }
+
+    /**
      * Scope for movements without jobs.
      */
     public function scopeWithoutJob($query)

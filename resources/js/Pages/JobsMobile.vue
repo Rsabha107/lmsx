@@ -45,10 +45,10 @@
           </div>
 
           <div class="job-card-details">
-            <div v-if="job.window_start" class="detail-item detail-item--prominent">
+            <!-- <div v-if="job.window_start" class="detail-item detail-item--prominent">
               <svg-icon name="calendar" :size="14" />
               <span class="mono">{{ job.window_start }}</span>
-            </div>
+            </div> -->
             <div class="detail-item">
               <svg-icon name="clock" :size="14" />
               <span class="mono">{{ job.dep }} – {{ job.arr }}</span>
@@ -63,6 +63,15 @@
             </div>
           </div>
 
+          <div v-if="job.next_checkpoint" class="job-card-next-checkpoint">
+            <svg-icon name="check" :size="14" />
+            <span class="next-checkpoint-label">Next:</span>
+            <span class="next-checkpoint-name">{{ job.next_checkpoint.name }}</span>
+            <span v-if="job.next_checkpoint.scheduled_at" class="next-checkpoint-time mono">
+              {{ job.next_checkpoint.scheduled_at }}
+            </span>
+          </div>
+
           <div v-if="job.delay" class="job-card-alert">
             <svg-icon name="warn" :size="14" />
             <span>Delayed +{{ job.delay }}m</span>
@@ -71,9 +80,9 @@
       </div>
 
       <!-- Floating Action Button -->
-      <button class="fab" @click="showNewJob = true">
+      <!-- <button class="fab" @click="showNewJob = true">
         <svg-icon name="plus" :size="20" style="color: #fff;" />
-      </button>
+      </button> -->
     </div>
   </app-layout>
 </template>
@@ -458,6 +467,33 @@ function formatJobToLocation(job) {
   background: var(--accent-soft);
   border-radius: 6px;
   flex-basis: 100%;
+}
+
+.job-card-next-checkpoint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 12px;
+  padding: 8px 10px;
+  background: var(--blue-soft, #dbeafe);
+  color: var(--blue, #1e40af);
+  border-radius: 8px;
+  font-size: 12px;
+}
+
+.next-checkpoint-label {
+  font-weight: 600;
+  color: var(--blue-dark, #1e3a8a);
+}
+
+.next-checkpoint-name {
+  flex: 1;
+  font-weight: 500;
+}
+
+.next-checkpoint-time {
+  font-weight: 600;
+  color: var(--blue-dark, #1e3a8a);
 }
 
 .job-card-alert {

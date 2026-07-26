@@ -19,16 +19,6 @@ Route::middleware('auth')->group(function () {
     // Movement Tracking Dashboard
     Route::get('/kit-truck', [KitTruckDashboardController::class, 'index'])->name('kit-truck');
     
-    // Teams Management
-    Route::prefix('teams')->name('teams.')->group(function () {
-        Route::get('/', [LmsController::class, 'teams'])->name('index');
-        Route::post('/sync-flights', [LmsController::class, 'syncFlights'])->name('sync-flights');
-        Route::post('/{code}/sync-flight', [LmsController::class, 'syncTeamFlight'])->name('sync-flight');
-        Route::post('/', [LmsController::class, 'storeTeam'])->name('store');
-        Route::put('/{code}', [LmsController::class, 'updateTeam'])->name('update');
-        Route::delete('/{code}', [LmsController::class, 'destroyTeam'])->name('destroy');
-    });
-    
     // Matches Management
     Route::prefix('matches')->name('matches.')->group(function () {
         Route::get('/', [MatchesController::class, 'index'])->name('index');

@@ -1,8 +1,10 @@
 <?php
 
 use App\Http\Controllers\EventsController;
+use App\Http\Controllers\EventTeamsController;
 use App\Http\Controllers\TeamFlightsController;
 use App\Http\Controllers\TeamStaysController;
+use App\Http\Controllers\TeamTrainingsController;
 use Illuminate\Support\Facades\Route;
 
 Route::middleware('auth')->prefix('events')->name('events.')->group(function () {
@@ -10,8 +12,11 @@ Route::middleware('auth')->prefix('events')->name('events.')->group(function () 
     Route::post('/',                             [EventsController::class, 'store'])->name('store');
     Route::put('/{id}',                          [EventsController::class, 'update'])->name('update');
     Route::delete('/{id}',                       [EventsController::class, 'destroy'])->name('destroy');
-    Route::post('/{id}/teams',                   [EventsController::class, 'assignTeam'])->name('assign-team');
-    Route::delete('/{id}/teams/{teamCode}',      [EventsController::class, 'removeTeam'])->name('remove-team');
+
+    // Teams (event-owned)
+    Route::post('/{id}/teams',                   [EventTeamsController::class, 'store'])->name('teams.store');
+    Route::put('/{id}/teams/{teamCode}',         [EventTeamsController::class, 'update'])->name('teams.update');
+    Route::delete('/{id}/teams/{teamCode}',      [EventTeamsController::class, 'destroy'])->name('teams.destroy');
 
     // Event venues
     Route::post('/{id}/venues',                  [EventsController::class, 'assignVenue'])->name('assign-venue');
@@ -27,4 +32,9 @@ Route::middleware('auth')->prefix('events')->name('events.')->group(function () 
     Route::post('/{id}/teams/{teamCode}/stays',      [TeamStaysController::class, 'store'])->name('stays.store');
     Route::put('/{id}/stays/{stayId}',               [TeamStaysController::class, 'update'])->name('stays.update');
     Route::delete('/{id}/stays/{stayId}',            [TeamStaysController::class, 'destroy'])->name('stays.destroy');
+
+    // Team trainings
+    Route::post('/{id}/teams/{teamCode}/trainings',  [TeamTrainingsController::class, 'store'])->name('trainings.store');
+    Route::put('/{id}/trainings/{trainingId}',       [TeamTrainingsController::class, 'update'])->name('trainings.update');
+    Route::delete('/{id}/trainings/{trainingId}',    [TeamTrainingsController::class, 'destroy'])->name('trainings.destroy');
 });

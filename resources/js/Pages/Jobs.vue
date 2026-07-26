@@ -80,6 +80,21 @@
           <div class="jl-col-alerts">ALERTS</div>
         </div>
         <div class="jobs-list-scroll">
+          <!-- Empty State -->
+          <div v-if="filtered.length === 0" class="jobs-empty-state">
+            <div class="empty-state-icon">
+              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="2" y="7" width="20" height="14" rx="2" ry="2"></rect>
+                <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path>
+              </svg>
+            </div>
+            <h3 class="empty-state-title">No jobs found</h3>
+            <p class="empty-state-message">
+              {{ activeFilter === 'all' ? 'There are no jobs scheduled yet.' : `No ${filters.find(f => f.value === activeFilter)?.label.toLowerCase()} jobs.` }}
+            </p>
+          </div>
+
+          <!-- Job Items -->
           <div
             v-for="job in filtered" :key="job.id"
             @click="selectJob(job)"
@@ -217,7 +232,57 @@
         </div>
       </div>
       <div v-else class="job-detail-empty">
-        Select a job to view details
+        <div v-if="schedule.length === 0" class="job-detail-instructions">
+          <div class="instructions-icon">
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"></circle>
+              <line x1="12" y1="16" x2="12" y2="12"></line>
+              <line x1="12" y1="8" x2="12.01" y2="8"></line>
+            </svg>
+          </div>
+          <h3 class="instructions-title">How to Create Jobs</h3>
+          <div class="instructions-steps">
+            <div class="instruction-step">
+              <span class="step-number">1</span>
+              <div class="step-content">
+                <strong>Create Movement Plans</strong>
+                <p>Go to the Plans page and create movement templates for teams</p>
+              </div>
+            </div>
+            <div class="instruction-step">
+              <span class="step-number">2</span>
+              <div class="step-content">
+                <strong>Generate Jobs</strong>
+                <p>Use the job generation service to create operations from your plans</p>
+              </div>
+            </div>
+            <div class="instruction-step">
+              <span class="step-number">3</span>
+              <div class="step-content">
+                <strong>Assign Resources</strong>
+                <p>Assign drivers, vehicles, and supervisors to each job</p>
+              </div>
+            </div>
+            <div class="instruction-step">
+              <span class="step-number">4</span>
+              <div class="step-content">
+                <strong>Monitor Execution</strong>
+                <p>Track job progress and checkpoints in real-time on this page</p>
+              </div>
+            </div>
+          </div>
+          <div class="instructions-footer">
+            <Button variant="primary" size="sm" @click="router.visit('/plans')">
+              <template #icon>
+                <svg-icon name="arrow-right" :size="14" style="color: #fff;" />
+              </template>
+              Go to Plans
+            </Button>
+          </div>
+        </div>
+        <div v-else>
+          Select a job to view details
+        </div>
       </div>
     </div>
     <!-- Override Checkpoint Modal -->
@@ -278,11 +343,21 @@
         </div>
 
         <!-- Baggage Count (if required) -->
-        <div v-if="overrideState === 'done' && (overrideCheckpoint?.checkpoint?.requires_baggage_count || overrideCheckpoint?.requires_baggage_count)" class="override-two-col">
+        <div v-if="overrideState === 'done' && (overrideCheckpoint?.checkpoint?.requires_baggage_count || overrideCheckpoint?.requires_baggage_count)" class="override-four-col">
           <div class="override-field">
-            <label class="override-label">BAGS LOADED</label>
+            <label class="override-label">PLANNED BAGS</label>
+            <input type="number" v-model.number="overridePlannedBags" min="0" class="override-input" placeholder="0" />
+            <div class="override-field-hint">From the flight manifest</div>
+          </div>
+          <div class="override-field">
+            <label class="override-label">ACTUAL BAGS</label>
             <input type="number" v-model.number="overrideBagsLoaded" min="0" class="override-input" placeholder="0" />
             <div class="override-field-hint">Number of bags</div>
+          </div>
+          <div class="override-field">
+            <label class="override-label">FOOD BAGS</label>
+            <input type="number" v-model.number="overrideFoodBags" min="0" class="override-input" placeholder="0" />
+            <div class="override-field-hint">Number of food bags</div>
           </div>
           <div class="override-field">
             <label class="override-label">OVERSIZED PIECES</label>
@@ -847,7 +922,9 @@ const overrideTime = ref('');
 const overrideReason = ref('');
 const overrideNotes = ref('');
 const overrideNotify = ref(true);
+const overridePlannedBags = ref(0);
 const overrideBagsLoaded = ref(0);
+const overrideFoodBags = ref(0);
 const overrideOversizedPieces = ref(0);
 const overridePhoto = ref(null);
 const overridePhotoPreview = ref(null);
@@ -863,6 +940,20 @@ const overrideStates = computed(() => {
     { value: 'done', label: 'Done', icon: '✓', desc: 'Confirm completion manually' },
     { value: 'skipped', label: 'Skipped', icon: '↷', desc: 'No longer applies to this job' }
   ];
+});
+
+function syncOverrideBaggageFields() {
+  overridePlannedBags.value = overrideCheckpoint.value?.planned_bags || 0;
+  overrideBagsLoaded.value = overrideCheckpoint.value?.bags_loaded || 0;
+  overrideFoodBags.value = overrideCheckpoint.value?.food_bags || 0;
+  overrideOversizedPieces.value = overrideCheckpoint.value?.oversized_pieces || 0;
+}
+
+// Re-sync the baggage fields whenever the CHECKPOINT dropdown selection
+// changes — they only get set once in openOverrideModal() otherwise, so
+// switching checkpoints left them stuck on the first checkpoint's values.
+watch(overrideCheckpoint, () => {
+  syncOverrideBaggageFields();
 });
 
 function openOverrideModal() {
@@ -888,8 +979,7 @@ function openOverrideModal() {
   overrideReason.value = '';
   overrideNotes.value = '';
   overrideNotify.value = true;
-  overrideBagsLoaded.value = overrideCheckpoint.value?.bags_loaded || 0;
-  overrideOversizedPieces.value = overrideCheckpoint.value?.oversized_pieces || 0;
+  syncOverrideBaggageFields();
   overridePhoto.value = null;
   overridePhotoPreview.value = null;
   overrideSignature.value = null;
@@ -1132,7 +1222,9 @@ function submitOverride() {
     
     // Add baggage count if required
     if (overrideCheckpoint.value?.checkpoint?.requires_baggage_count || overrideCheckpoint.value?.requires_baggage_count) {
+      formData.append('planned_bags', overridePlannedBags.value);
       formData.append('bags_loaded', overrideBagsLoaded.value);
+      formData.append('food_bags', overrideFoodBags.value);
       formData.append('oversized_pieces', overrideOversizedPieces.value);
     }
     
@@ -1323,6 +1415,44 @@ function submitOverride() {
   min-height: 0;
 }
 
+.jobs-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 20px;
+  text-align: center;
+  flex: 1;
+  min-height: 300px;
+}
+
+.empty-state-icon {
+  width: 64px;
+  height: 64px;
+  border-radius: 12px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 16px;
+  color: var(--ink3);
+}
+
+.empty-state-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--ink);
+  margin: 0 0 6px;
+}
+
+.empty-state-message {
+  font-size: 13px;
+  color: var(--ink3);
+  margin: 0;
+  max-width: 400px;
+}
+
 .job-list-header {
   display: grid;
   grid-template-columns: 70px 88px 1fr 108px 62px 52px;
@@ -1484,6 +1614,87 @@ function submitOverride() {
   color: var(--ink4); font-size: 13px;
   align-self: start;
 }
+
+.job-detail-instructions {
+  text-align: center;
+  max-width: 500px;
+  width: 100%;
+}
+
+.instructions-icon {
+  width: 56px;
+  height: 56px;
+  border-radius: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 16px;
+  color: var(--accent);
+}
+
+.instructions-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--ink);
+  margin: 0 0 24px;
+}
+
+.instructions-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-bottom: 24px;
+  text-align: left;
+}
+
+.instruction-step {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.step-number {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  background: var(--accent-soft);
+  color: var(--accent-fg);
+  font-size: 12px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.step-content {
+  flex: 1;
+}
+
+.step-content strong {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+  margin-bottom: 2px;
+}
+
+.step-content p {
+  font-size: 12px;
+  color: var(--ink3);
+  margin: 0;
+  line-height: 1.5;
+}
+
+.instructions-footer {
+  display: flex;
+  justify-content: center;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
 @media (max-width: 640px) {
   .job-detail-empty {
     padding: 40px 20px;
@@ -1789,6 +2000,10 @@ function submitOverride() {
 
 .override-two-col {
   display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+}
+
+.override-four-col {
+  display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 12px;
 }
 
 .override-variance {

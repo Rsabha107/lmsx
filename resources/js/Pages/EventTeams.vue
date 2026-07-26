@@ -23,7 +23,7 @@
         </div>
         <div class="header-actions">
           <RefreshButton :only="['eventTeams', 'activeEvent']" />
-          <Button variant="primary" size="sm" @click="openAddTeamModal">
+          <Button variant="primary" size="sm" @click="openTeamForm(null)">
             <template #icon>
               <svg-icon name="plus" :size="14" style="color:#fff;" />
             </template>
@@ -82,16 +82,16 @@
               <tr v-for="et in filteredTeams" :key="et.id" class="table-row">
                 <td>
                   <div style="display: flex; align-items: center; gap: 8px">
-                    <span class="team-badge-sm">{{ et.team?.code }}</span>
+                    <span class="team-badge-sm">{{ et.code }}</span>
                     <span style="font-weight: 500">{{
-                      et.team?.team_name
+                      et.team_name
                     }}</span>
                   </div>
                 </td>
                 <td>
-                  <span v-if="et.team?.country"
-                    >{{ et.team.country.flag }}
-                    {{ et.team.country.country_name }}</span
+                  <span v-if="et.country" style="display: flex; align-items: center; gap: 6px">
+                    <flag-icon :code="et.country_id" :fallback="et.country.flag" />
+                    {{ et.country.country_name }}</span
                   >
                   <span v-else>—</span>
                 </td>
@@ -153,25 +153,57 @@
                   <span v-else style="color: var(--ink3)">—</span>
                 </td>
                 <td class="center">
-                  <button
-                    class="manage-team-btn"
-                    @click="openManageModal(et)"
-                    title="Manage flights & stay"
-                  >
-                    <svg
-                      width="13"
-                      height="13"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="2"
+                  <div style="display: flex; gap: 4px; justify-content: center">
+                    <button
+                      class="manage-team-btn"
+                      @click="openManageModal(et)"
+                      title="Manage flights & stay"
                     >
-                      <circle cx="12" cy="12" r="3" />
-                      <path
-                        d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14"
-                      />
-                    </svg>
-                  </button>
+                      <svg
+                        width="13"
+                        height="13"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                      >
+                        <circle cx="12" cy="12" r="3" />
+                        <path
+                          d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14"
+                        />
+                      </svg>
+                    </button>
+                    <button
+                      class="manage-team-btn"
+                      @click="openTeamForm(et)"
+                      title="Edit team"
+                    >
+                      <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
+                        <path
+                          d="M11.5 1.5L14.5 4.5L5 14H2V11L11.5 1.5Z"
+                          stroke="currentColor"
+                          stroke-width="1.5"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                        />
+                      </svg>
+                    </button>
+                    <button
+                      class="manage-team-btn"
+                      @click="deleteTeam(et)"
+                      title="Delete team"
+                    >
+                      <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
+                        <path
+                          d="M2 4H14M6 4V2H10V4M12 4V14H4V4"
+                          stroke="currentColor"
+                          stroke-width="1.5"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                        />
+                      </svg>
+                    </button>
+                  </div>
                 </td>
               </tr>
               <tr v-if="filteredTeams.length === 0">
@@ -196,8 +228,8 @@
     >
       <template #title>
         <div style="display: flex; align-items: center; gap: 8px">
-          <span class="team-badge-sm">{{ managingTeam?.team?.code }}</span>
-          <span>{{ managingTeam?.team?.team_name }}</span>
+          <span class="team-badge-sm">{{ managingTeam?.code }}</span>
+          <span>{{ managingTeam?.team_name }}</span>
         </div>
       </template>
       <div class="manage-modal">
@@ -238,6 +270,9 @@
                 }}</span>
                 <span v-if="fl.party_size_total" class="party-size-badge"
                   >{{ fl.party_size_total }} pax</span
+                >
+                <span v-if="fl.planned_bags" class="party-size-badge"
+                  >{{ fl.planned_bags }} bags</span
                 >
                 <div style="display: flex; gap: 4px; margin-left: auto">
                   <button
@@ -322,10 +357,6 @@
               <span class="stay-label">Hotel</span
               ><span>{{ managingTeam.stay.hotel_name || "—" }}</span>
             </div>
-            <div class="stay-row" v-if="managingTeam.stay.training_ground">
-              <span class="stay-label">Training</span
-              ><span>{{ managingTeam.stay.training_ground }}</span>
-            </div>
             <div
               class="stay-row"
               v-if="managingTeam.stay.check_in || managingTeam.stay.check_out"
@@ -348,6 +379,51 @@
             </button>
           </div>
           <div v-else class="empty-state">No accommodation added yet.</div>
+        </div>
+
+        <!-- ── Training ─────────────────────────────────────────── -->
+        <div class="manage-section">
+          <div class="manage-section-header">
+            <h4 class="manage-section-title">Training</h4>
+            <Button
+              v-if="!managingTeam?.training"
+              variant="secondary"
+              size="sm"
+              @click="openTrainingForm(null)"
+            >
+              <template #icon><svg-icon name="plus" :size="12" /></template>
+              Add Training
+            </Button>
+            <Button
+              v-else
+              variant="secondary"
+              size="sm"
+              @click="openTrainingForm(managingTeam.training)"
+              >Edit Training</Button
+            >
+          </div>
+
+          <div v-if="managingTeam?.training" class="stay-record">
+            <div class="stay-row" v-if="managingTeam.training.training_ground">
+              <span class="stay-label">Ground</span
+              ><span>{{ managingTeam.training.training_ground }}</span>
+            </div>
+            <div class="stay-row" v-if="managingTeam.training.training_start_at">
+              <span class="stay-label">Start Time</span
+              ><span class="mono">{{ formatDateTime(managingTeam.training.training_start_at) }}</span>
+            </div>
+            <div class="stay-row" v-if="managingTeam.training.notes">
+              <span class="stay-label">Notes</span
+              ><span>{{ managingTeam.training.notes }}</span>
+            </div>
+            <button
+              class="stay-delete-btn"
+              @click="deleteTraining(managingTeam.training)"
+            >
+              Delete Training
+            </button>
+          </div>
+          <div v-else class="empty-state">No training added yet.</div>
         </div>
       </div>
     </Modal>
@@ -408,9 +484,11 @@
           <div class="form-group">
             <label class="form-label">Scheduled Date/Time</label>
             <input
+              ref="scheduledAtInput"
               v-model="flightForm.scheduled_at"
-              type="datetime-local"
+              type="text"
               class="form-input"
+              placeholder="dd/mm/yyyy HH:mm"
             />
           </div>
           <div class="form-group">
@@ -446,17 +524,29 @@
             />
           </div>
         </div>
-        <div class="form-group">
-          <label class="form-label">Total Party Size (Auto-calculated)</label>
-          <input
-            v-model="flightForm.party_size_total"
-            type="number"
-            class="form-input"
-            min="0"
-            placeholder="0"
-            readonly
-            style="background: var(--panel); cursor: not-allowed;"
-          />
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Total Party Size (Auto-calculated)</label>
+            <input
+              v-model="flightForm.party_size_total"
+              type="number"
+              class="form-input"
+              min="0"
+              placeholder="0"
+              readonly
+              style="background: var(--panel); cursor: not-allowed;"
+            />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Planned Bags</label>
+            <input
+              v-model="flightForm.planned_bags"
+              type="number"
+              class="form-input"
+              min="0"
+              placeholder="0"
+            />
+          </div>
         </div>
         <div class="form-group">
           <label class="form-label">Notes</label>
@@ -509,14 +599,6 @@
           <label class="form-label">Address</label>
           <input v-model="stayForm.address" type="text" class="form-input" />
         </div>
-        <div class="form-group">
-          <label class="form-label">Training Ground</label>
-          <input
-            v-model="stayForm.training_ground"
-            type="text"
-            class="form-input"
-          />
-        </div>
         <div class="form-row">
           <div class="form-group">
             <label class="form-label">Check-in</label>
@@ -568,35 +650,138 @@
       </form>
     </Modal>
 
-    <!-- Add Team Modal -->
-    <Modal :show="showAddTeamModal" @close="showAddTeamModal = false" max-width="420px">
-      <template #title>Add Team to Event</template>
-      <form @submit.prevent="submitAddTeam" class="team-form">
+    <!-- Training Form Modal -->
+    <Modal :show="showTrainingForm" @close="showTrainingForm = false" max-width="480px">
+      <template #title>{{
+        editingTraining ? "Edit Training" : "Add Training"
+      }}</template>
+      <form @submit.prevent="submitTraining" class="team-form">
         <div class="form-group">
-          <label class="form-label">Team <span class="required">*</span></label>
-          <select v-model="addTeamForm.team_code" class="form-select" required>
-            <option value="">— Select team —</option>
-            <option v-for="t in availableTeams" :key="t.code" :value="t.code">
-              {{ t.code }} · {{ t.team_name }}
-            </option>
-          </select>
+          <label class="form-label">Training Ground</label>
+          <input
+            v-model="trainingForm.training_ground"
+            type="text"
+            class="form-input"
+          />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Training Start Time</label>
+          <input
+            v-model="trainingForm.training_start_at"
+            type="datetime-local"
+            class="form-input"
+          />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Notes</label>
+          <textarea v-model="trainingForm.notes" class="form-input" rows="2" />
+        </div>
+        <div class="form-actions">
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            @click="showTrainingForm = false"
+            >Cancel</Button
+          >
+          <Button
+            type="submit"
+            variant="primary"
+            size="sm"
+            :disabled="processing"
+          >
+            {{
+              processing
+                ? "Saving…"
+                : editingTraining
+                ? "Save Changes"
+                : "Add Training"
+            }}
+          </Button>
+        </div>
+      </form>
+    </Modal>
+
+    <!-- Add/Edit Team Modal -->
+    <Modal :show="showTeamForm" @close="showTeamForm = false" max-width="600px">
+      <template #title>{{ editingTeam ? "Edit Team" : "Add Team" }}</template>
+      <form @submit.prevent="submitTeam" class="team-form">
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Team Code <span class="required">*</span></label>
+            <input
+              v-model="teamForm.code"
+              type="text"
+              class="form-input"
+              maxlength="10"
+              placeholder="e.g., MER"
+              :disabled="!!editingTeam"
+              required
+            />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Team Name <span class="required">*</span></label>
+            <input
+              v-model="teamForm.team_name"
+              type="text"
+              class="form-input"
+              placeholder="e.g., Mercure FC"
+              required
+            />
+          </div>
         </div>
         <div class="form-row">
           <div class="form-group">
-            <label class="form-label">Group / Pool</label>
-            <input v-model="addTeamForm.group_pool" type="text" class="form-input" placeholder="e.g. Group A" maxlength="50" />
+            <label class="form-label">Country</label>
+            <select v-model="teamForm.country_id" class="form-select">
+              <option value="">— Select country —</option>
+              <option v-for="c in countries" :key="c.country_code" :value="c.country_code">
+                {{ c.country_name }}
+              </option>
+            </select>
           </div>
           <div class="form-group">
             <label class="form-label">Classification</label>
-            <select v-model="addTeamForm.classification_type_id" class="form-select">
+            <select v-model="teamForm.classification_type_id" class="form-select">
               <option value="">— None —</option>
               <option v-for="c in classifications" :key="c.id" :value="c.id">{{ c.name }}</option>
             </select>
           </div>
         </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Flag</label>
+            <div style="display: flex; align-items: center; gap: 8px; height: 34px">
+              <flag-icon :code="teamForm.country_id" :fallback="teamForm.flag" />
+              <span style="font-size: 12px; color: var(--ink3)">{{
+                teamForm.country_id ? "From selected country" : "Select a country to preview"
+              }}</span>
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Group / Pool</label>
+            <input v-model="teamForm.group_pool" type="text" class="form-input" placeholder="e.g. Group A" maxlength="50" />
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Head of Delegation</label>
+            <input v-model="teamForm.head_of_delegation" type="text" class="form-input" placeholder="Name" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Bib Accent Color</label>
+            <input v-model="teamForm.bib_accent_color" type="text" class="form-input" placeholder="#0055A4" />
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Notes</label>
+          <textarea v-model="teamForm.notes" class="form-input" rows="2" />
+        </div>
         <div class="form-actions">
-          <Button type="button" variant="secondary" size="sm" @click="showAddTeamModal = false">Cancel</Button>
-          <Button type="submit" variant="primary" size="sm" :disabled="processing">Add Team</Button>
+          <Button type="button" variant="secondary" size="sm" @click="showTeamForm = false">Cancel</Button>
+          <Button type="submit" variant="primary" size="sm" :disabled="processing">
+            {{ processing ? "Saving…" : editingTeam ? "Save Changes" : "Add Team" }}
+          </Button>
         </div>
       </form>
     </Modal>
@@ -700,8 +885,10 @@
 </template>
 
 <script setup>
-import { ref, computed, watch } from "vue";
+import { ref, computed, watch, nextTick, onUnmounted } from "vue";
 import { router } from "@inertiajs/vue3";
+import flatpickr from 'flatpickr';
+import 'flatpickr/dist/flatpickr.min.css';
 import AppLayout from "@/Components/AppLayout.vue";
 import Modal from "@/Components/Modal.vue";
 import Button from "@/Components/Button.vue";
@@ -709,12 +896,13 @@ import RefreshButton from "@/Components/RefreshButton.vue";
 import MiniStat from "@/Components/MiniStat.vue";
 import SvgIcon from "@/Components/SvgIcon.vue";
 import DeleteConfirmModal from "@/Components/DeleteConfirmModal.vue";
+import FlagIcon from "@/Components/FlagIcon.vue";
 
 const props = defineProps({
   activeEvent: { type: Object, default: null },
   eventTeams: { type: Array, default: () => [] },
   airports: { type: Array, default: () => [] },
-  teams: { type: Array, default: () => [] },
+  countries: { type: Array, default: () => [] },
   classifications: { type: Array, default: () => [] },
 });
 
@@ -727,8 +915,8 @@ const filteredTeams = computed(() => {
     const q = searchQuery.value.toLowerCase();
     teams = teams.filter(
       (et) =>
-        et.team?.team_name?.toLowerCase().includes(q) ||
-        et.team?.code?.toLowerCase().includes(q) ||
+        et.team_name?.toLowerCase().includes(q) ||
+        et.code?.toLowerCase().includes(q) ||
         et.group_pool?.toLowerCase().includes(q)
     );
   }
@@ -780,6 +968,36 @@ function formatDateTime(value) {
     " " +
     d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })
   );
+}
+
+// Format datetime for input field (d/m/Y HH:mm)
+function formatDateTimeForInput(value) {
+  if (!value) return "";
+  
+  // Parse the datetime string
+  const d = new Date(value);
+  if (isNaN(d)) return "";
+  
+  const day = String(d.getDate()).padStart(2, '0');
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const year = d.getFullYear();
+  const hours = String(d.getHours()).padStart(2, '0');
+  const minutes = String(d.getMinutes()).padStart(2, '0');
+  
+  return `${day}/${month}/${year} ${hours}:${minutes}`;
+}
+
+// Parse datetime from input field back to ISO format for database
+function parseDateTimeFromInput(value) {
+  if (!value) return "";
+  
+  // Expected format: dd/mm/yyyy HH:mm
+  const match = value.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})\s+(\d{1,2}):(\d{2})$/);
+  if (!match) return value; // Return as-is if format doesn't match
+  
+  const [, day, month, year, hours, minutes] = match;
+  // Return in format suitable for database: YYYY-MM-DD HH:mm:ss
+  return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')} ${hours.padStart(2, '0')}:${minutes}:00`;
 }
 
 // ── Manage Team Modal ──────────────────────────────────────────────────────
@@ -834,35 +1052,72 @@ function refreshManagingTeam() {
   router.reload({
     only: ["eventTeams"],
     onSuccess: () => {
-      const fresh = props.eventTeams.find((t) => t.team_id === et.team_id);
+      const fresh = props.eventTeams.find((t) => t.id === et.id);
       if (fresh) managingTeam.value = fresh;
     },
   });
 }
 
-// ── Add Team Modal ─────────────────────────────────────────────────────────
-const showAddTeamModal = ref(false);
-const addTeamForm = ref({ team_code: '', group_pool: '', classification_type_id: '' });
+// ── Add/Edit Team Modal ────────────────────────────────────────────────────
+const showTeamForm = ref(false);
+const editingTeam = ref(null);
+const teamForm = ref(emptyTeamForm());
 
-const availableTeams = computed(() => {
-  const assigned = new Set(props.eventTeams.map(et => et.team.code));
-  return props.teams.filter(t => !assigned.has(t.code));
-});
-
-function openAddTeamModal() {
-  addTeamForm.value = { team_code: '', group_pool: '', classification_type_id: '' };
-  showAddTeamModal.value = true;
+function emptyTeamForm() {
+  return {
+    code: "",
+    team_name: "",
+    country_id: "",
+    flag: "",
+    group_pool: "",
+    classification_type_id: "",
+    head_of_delegation: "",
+    bib_accent_color: "",
+    notes: "",
+  };
 }
 
-function submitAddTeam() {
+function openTeamForm(team) {
+  processing.value = false;
+  editingTeam.value = team;
+  teamForm.value = team
+    ? {
+        code: team.code || "",
+        team_name: team.team_name || "",
+        country_id: team.country_id || "",
+        flag: team.flag || "",
+        group_pool: team.group_pool || "",
+        classification_type_id: team.classification_type_id || "",
+        head_of_delegation: team.head_of_delegation || "",
+        bib_accent_color: team.bib_accent_color || "",
+        notes: team.notes || "",
+      }
+    : emptyTeamForm();
+  showTeamForm.value = true;
+}
+
+function submitTeam() {
   if (!props.activeEvent) return;
   processing.value = true;
-  router.post(`/events/${props.activeEvent.id}/teams`, addTeamForm.value, {
+  const url = editingTeam.value
+    ? `/events/${props.activeEvent.id}/teams/${editingTeam.value.code}`
+    : `/events/${props.activeEvent.id}/teams`;
+  const method = editingTeam.value ? "put" : "post";
+
+  router[method](url, teamForm.value, {
     onFinish: () => {
       processing.value = false;
-      showAddTeamModal.value = false;
+      showTeamForm.value = false;
     },
   });
+}
+
+function deleteTeam(team) {
+  openDeleteModal(
+    "Team",
+    `Are you sure you want to delete ${team.team_name || "this team"}? This cannot be undone.`,
+    { type: "team", code: team.code }
+  );
 }
 
 // ── Delete Modal ───────────────────────────────────────────────────────────
@@ -911,6 +1166,25 @@ function confirmDelete() {
         deleting.value = false;
       },
     });
+  } else if (item.type === "training") {
+    router.delete(`/events/${managingTeam.value.event_id}/trainings/${item.id}`, {
+      onSuccess: () => {
+        refreshManagingTeam();
+        closeDeleteModal();
+      },
+      onError: () => {
+        deleting.value = false;
+      },
+    });
+  } else if (item.type === "team") {
+    router.delete(`/events/${props.activeEvent.id}/teams/${item.code}`, {
+      onSuccess: () => {
+        closeDeleteModal();
+      },
+      onError: () => {
+        deleting.value = false;
+      },
+    });
   }
 }
 
@@ -918,6 +1192,8 @@ function confirmDelete() {
 const showFlightForm = ref(false);
 const editingFlight = ref(null);
 const flightForm = ref(emptyFlightForm());
+const scheduledAtInput = ref(null);
+let scheduledAtPicker = null;
 
 // Auto-calculate total party size
 watch(
@@ -928,6 +1204,39 @@ watch(
     flightForm.value.party_size_total = playersNum + staffNum || '';
   }
 );
+
+// Watch for modal opening to initialize flatpickr
+watch(showFlightForm, async (newVal) => {
+  if (newVal) {
+    await nextTick();
+    destroyScheduledAtPicker();
+    setTimeout(initializeScheduledAtPicker, 50);
+  } else {
+    destroyScheduledAtPicker();
+  }
+});
+
+function initializeScheduledAtPicker() {
+  if (scheduledAtInput.value) {
+    scheduledAtPicker = flatpickr(scheduledAtInput.value, {
+      enableTime: true,
+      dateFormat: 'd/m/Y H:i',
+      time_24hr: true,
+      allowInput: true,
+    });
+  }
+}
+
+function destroyScheduledAtPicker() {
+  if (scheduledAtPicker) {
+    scheduledAtPicker.destroy();
+    scheduledAtPicker = null;
+  }
+}
+
+onUnmounted(() => {
+  destroyScheduledAtPicker();
+});
 
 function emptyFlightForm() {
   return {
@@ -940,6 +1249,7 @@ function emptyFlightForm() {
     party_size_total: "",
     party_size_players: "",
     party_size_staff: "",
+    planned_bags: "",
     notes: "",
   };
 }
@@ -953,13 +1263,12 @@ function openFlightForm(fl) {
         flight_number: fl.flight_number || "",
         origin_airport_id: fl.origin_airport_id || "",
         destination_airport_id: fl.destination_airport_id || "",
-        scheduled_at: fl.scheduled_at
-          ? String(fl.scheduled_at).substring(0, 16)
-          : "",
+        scheduled_at: formatDateTimeForInput(fl.scheduled_at),
         gate: fl.gate || "",
         party_size_total: fl.party_size_total || "",
         party_size_players: fl.party_size_players || "",
         party_size_staff: fl.party_size_staff || "",
+        planned_bags: fl.planned_bags || "",
         notes: fl.notes || "",
       }
     : emptyFlightForm();
@@ -971,9 +1280,16 @@ function submitFlight() {
   const et = managingTeam.value;
   const url = editingFlight.value
     ? `/events/${et.event_id}/flights/${editingFlight.value.id}`
-    : `/events/${et.event_id}/teams/${et.team.code}/flights`;
+    : `/events/${et.event_id}/teams/${et.code}/flights`;
   const method = editingFlight.value ? "put" : "post";
-  router[method](url, flightForm.value, {
+  
+  // Parse the scheduled_at back to database format
+  const formData = {
+    ...flightForm.value,
+    scheduled_at: parseDateTimeFromInput(flightForm.value.scheduled_at)
+  };
+  
+  router[method](url, formData, {
     onFinish: () => {
       processing.value = false;
       showFlightForm.value = false;
@@ -1040,7 +1356,6 @@ function emptyStayForm() {
   return {
     hotel_name: "",
     address: "",
-    training_ground: "",
     check_in: "",
     check_out: "",
     room_count: "",
@@ -1055,7 +1370,6 @@ function openStayForm(stay) {
     ? {
         hotel_name: stay.hotel_name || "",
         address: stay.address || "",
-        training_ground: stay.training_ground || "",
         check_in: stay.check_in ? String(stay.check_in).substring(0, 10) : "",
         check_out: stay.check_out
           ? String(stay.check_out).substring(0, 10)
@@ -1072,7 +1386,7 @@ function submitStay() {
   const et = managingTeam.value;
   const url = editingStay.value
     ? `/events/${et.event_id}/stays/${editingStay.value.id}`
-    : `/events/${et.event_id}/teams/${et.team.code}/stays`;
+    : `/events/${et.event_id}/teams/${et.code}/stays`;
   const method = editingStay.value ? "put" : "post";
   router[method](url, stayForm.value, {
     onFinish: () => {
@@ -1090,6 +1404,62 @@ function deleteStay(stay) {
       stay.hotel_name || "this hotel"
     }?`,
     { type: "stay", id: stay.id }
+  );
+}
+
+// ── Trainings ────────────────────────────────────────────────────────────
+const showTrainingForm = ref(false);
+const editingTraining = ref(null);
+const trainingForm = ref(emptyTrainingForm());
+
+function emptyTrainingForm() {
+  return {
+    training_ground: "",
+    training_start_at: "",
+    notes: "",
+  };
+}
+
+function openTrainingForm(training) {
+  processing.value = false;
+  editingTraining.value = training;
+  trainingForm.value = training
+    ? {
+        training_ground: training.training_ground || "",
+        // "YYYY-MM-DD HH:mm:ss" -> "YYYY-MM-DDTHH:mm" for datetime-local input,
+        // via plain string slicing (no Date parsing, avoids timezone shifts)
+        training_start_at: training.training_start_at
+          ? String(training.training_start_at).substring(0, 16).replace(" ", "T")
+          : "",
+        notes: training.notes || "",
+      }
+    : emptyTrainingForm();
+  showTrainingForm.value = true;
+}
+
+function submitTraining() {
+  processing.value = true;
+  const et = managingTeam.value;
+  const url = editingTraining.value
+    ? `/events/${et.event_id}/trainings/${editingTraining.value.id}`
+    : `/events/${et.event_id}/teams/${et.code}/trainings`;
+  const method = editingTraining.value ? "put" : "post";
+  router[method](url, trainingForm.value, {
+    onFinish: () => {
+      processing.value = false;
+      showTrainingForm.value = false;
+    },
+    onSuccess: () => refreshManagingTeam(),
+  });
+}
+
+function deleteTraining(training) {
+  openDeleteModal(
+    "Training",
+    `Are you sure you want to delete the training at ${
+      training.training_ground || "this ground"
+    }?`,
+    { type: "training", id: training.id }
   );
 }
 </script>

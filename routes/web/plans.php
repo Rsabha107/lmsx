@@ -42,6 +42,7 @@ Route::middleware(['auth'])->group(function () {
     */
     
     Route::prefix('movements')->name('movements.')->group(function () {
+        Route::delete('/bulk-delete', [PlanManagementController::class, 'deleteMovementsBulk'])->name('bulk-delete');
         Route::put('/{movement}/checkpoint-template', [PlanManagementController::class, 'updateCheckpointTemplate'])->name('update-checkpoint-template');
         Route::put('/{movement}', [PlanManagementController::class, 'updateMovement'])->name('update');
         Route::delete('/{movement}', [PlanManagementController::class, 'deleteMovement'])->name('delete');
@@ -54,6 +55,10 @@ Route::middleware(['auth'])->group(function () {
     */
     
     Route::prefix('api')->name('api.')->group(function () {
+        // Duplicate Detection
+        Route::post('/check-duplicate', [PlanManagementController::class, 'checkDuplicate'])->name('check-duplicate');
+        Route::post('/check-duplicate-bulk', [PlanManagementController::class, 'checkDuplicateBulk'])->name('check-duplicate-bulk');
+        
         // Checkpoint Templates
         Route::get('/checkpoint-templates', [PlanManagementController::class, 'getCheckpointTemplates'])->name('checkpoint-templates');
         Route::get('/checkpoint-templates/{template}', [PlanManagementController::class, 'previewCheckpointTemplate'])->name('checkpoint-template.show');

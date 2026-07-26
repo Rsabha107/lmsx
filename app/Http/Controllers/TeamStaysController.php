@@ -14,7 +14,6 @@ class TeamStaysController extends Controller
         $validated = $request->validate([
             'hotel_name'      => 'nullable|string|max:255',
             'address'         => 'nullable|string|max:255',
-            'training_ground' => 'nullable|string|max:255',
             'check_in'        => 'nullable|date',
             'check_out'       => 'nullable|date|after_or_equal:check_in',
             'room_count'      => 'nullable|integer|min:0',
@@ -22,7 +21,7 @@ class TeamStaysController extends Controller
         ]);
 
         // Convert team code to team_id
-        $team = Team::where('code', $teamCode)->firstOrFail();
+        $team = Team::where('event_id', $eventId)->where('code', $teamCode)->firstOrFail();
 
         TeamStay::create([...$validated, 'event_id' => $eventId, 'team_id' => $team->id]);
 
@@ -35,7 +34,6 @@ class TeamStaysController extends Controller
         $validated = $request->validate([
             'hotel_name'      => 'nullable|string|max:255',
             'address'         => 'nullable|string|max:255',
-            'training_ground' => 'nullable|string|max:255',
             'check_in'        => 'nullable|date',
             'check_out'       => 'nullable|date|after_or_equal:check_in',
             'room_count'      => 'nullable|integer|min:0',

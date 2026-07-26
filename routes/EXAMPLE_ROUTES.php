@@ -41,8 +41,9 @@ Route::prefix('api')->name('api.')->middleware(['auth:sanctum'])->group(function
 // Note: Middleware commented out for testing. Add back: ->middleware(['auth', 'admin'])
 Route::prefix('admin')->name('admin.')->group(function () {
     // Checkpoint Library
+    Route::delete('checkpoints/bulk-delete', [CheckpointController::class, 'destroyBulk'])->name('checkpoints.bulk-delete');
     Route::resource('checkpoints', CheckpointController::class);
-    
+
     // Checkpoint Templates
     Route::resource('checkpoint-templates', CheckpointTemplateController::class);
     Route::post('checkpoint-templates/{template}/checkpoints', [CheckpointTemplateController::class, 'attachCheckpoint'])->name('checkpoint-templates.attach-checkpoint');

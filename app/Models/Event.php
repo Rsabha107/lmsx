@@ -32,16 +32,9 @@ class Event extends Model
         return $this->belongsTo(Country::class, 'host_country', 'country_code');
     }
 
-    public function eventTeams(): HasMany
+    public function teams(): HasMany
     {
-        return $this->hasMany(EventTeam::class);
-    }
-
-    public function teams(): BelongsToMany
-    {
-        return $this->belongsToMany(Team::class, 'event_teams', 'event_id', 'team_code', 'id', 'code')
-                    ->withPivot('group_pool', 'classification_type_id')
-                    ->withTimestamps();
+        return $this->hasMany(Team::class);
     }
 
     public function venues(): BelongsToMany

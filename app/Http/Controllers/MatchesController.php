@@ -28,8 +28,10 @@ class MatchesController extends Controller
         
         $matches = $query->get();
 
-        $teams = Team::orderBy('team_name', 'asc')->get();
-        $events = Event::with(['venues', 'eventTeams.team'])->orderBy('name', 'asc')->get();
+        $teams = $activeEventId
+            ? Team::where('event_id', $activeEventId)->orderBy('team_name', 'asc')->get()
+            : collect();
+        $events = Event::with(['venues', 'teams'])->orderBy('name', 'asc')->get();
         $venues = Venue::with('country')->orderBy('name', 'asc')->get();
 
         return Inertia::render('Matches', [
@@ -49,8 +51,8 @@ class MatchesController extends Controller
             'match_number' => 'required|string|max:50|unique:matches,match_number',
             'event_id' => 'nullable|integer|exists:events,id',
             'venue_id' => 'nullable|integer|exists:venues,id',
-            'team1_id' => 'nullable|string|exists:teams,code',
-            'team2_id' => 'nullable|string|exists:teams,code',
+            'team1_id' => 'nullable|integer|exists:teams,id',
+            'team2_id' => 'nullable|integer|exists:teams,id',
             'stage' => 'nullable|string|max:100',
             'match_date' => 'nullable|date',
             'gates_opening' => 'nullable|string',
@@ -86,8 +88,8 @@ class MatchesController extends Controller
             'match_number' => 'required|string|max:50|unique:matches,match_number,' . $match->id,
             'event_id' => 'nullable|integer|exists:events,id',
             'venue_id' => 'nullable|integer|exists:venues,id',
-            'team1_id' => 'nullable|string|exists:teams,code',
-            'team2_id' => 'nullable|string|exists:teams,code',
+            'team1_id' => 'nullable|integer|exists:teams,id',
+            'team2_id' => 'nullable|integer|exists:teams,id',
             'stage' => 'nullable|string|max:100',
             'match_date' => 'nullable|date',
             'gates_opening' => 'nullable|string',

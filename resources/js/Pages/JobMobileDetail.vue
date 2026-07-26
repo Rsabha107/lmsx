@@ -105,6 +105,7 @@
                 <span class="time-planned">Est. {{ cp.time }}</span>
                 <span v-if="cp.actual" :class="['time-actual', isDelayed(cp.time, cp.actual) ? 'time-actual--delayed' : '']">Actual {{ cp.actual }}</span>
                 <span v-else-if="cp.status === 'active'" class="time-progress">Awaiting supervisor confirmation</span>
+                <span v-if="cp.requires_baggage_count && bagCountLine(cp)" class="time-bags">{{ bagCountLine(cp) }}</span>
               </div>
             </div>
 
@@ -190,6 +191,25 @@
                   <button class="now-btn" @click="setCurrentTime" type="button">
                     Now
                   </button>
+                </div>
+              </div>
+
+              <div v-if="selectedCheckpoint?.requires_baggage_count" style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                <div class="form-field">
+                  <label class="form-label">Planned Bags</label>
+                  <input v-model.number="plannedBags" type="number" min="0" class="form-input" placeholder="0" />
+                </div>
+                <div class="form-field">
+                  <label class="form-label">Actual Bags</label>
+                  <input v-model.number="bagsLoaded" type="number" min="0" class="form-input" placeholder="0" />
+                </div>
+                <div class="form-field">
+                  <label class="form-label">Food Bags</label>
+                  <input v-model.number="foodBags" type="number" min="0" class="form-input" placeholder="0" />
+                </div>
+                <div class="form-field">
+                  <label class="form-label">Oversized</label>
+                  <input v-model.number="oversizedPieces" type="number" min="0" class="form-input" placeholder="0" />
                 </div>
               </div>
 
@@ -289,6 +309,10 @@ const showCheckpointModal = ref(false);
 const selectedCheckpoint = ref(null);
 const actualTime = ref('');
 const checkpointNote = ref('');
+const plannedBags = ref(0);
+const bagsLoaded = ref(0);
+const foodBags = ref(0);
+const oversizedPieces = ref(0);
 const signatureCanvas = ref(null);
 const signatureData = ref(null);
 const photoInput = ref(null);
@@ -359,10 +383,23 @@ function isDelayed(estimatedTime, actualTime) {
   return diff > 10;
 }
 
+function bagCountLine(cp) {
+  const parts = [];
+  if (cp.planned_bags != null) parts.push(`Planned ${cp.planned_bags}`);
+  if (cp.bags_loaded != null) parts.push(`Actual ${cp.bags_loaded}`);
+  if (cp.food_bags != null) parts.push(`Food ${cp.food_bags}`);
+  if (cp.oversized_pieces != null) parts.push(`Oversized ${cp.oversized_pieces}`);
+  return parts.join(' · ');
+}
+
 function openCheckpointModal(checkpoint) {
   selectedCheckpoint.value = checkpoint;
   actualTime.value = checkpoint.actual || '';
   checkpointNote.value = '';
+  plannedBags.value = checkpoint.planned_bags || 0;
+  bagsLoaded.value = checkpoint.bags_loaded || 0;
+  foodBags.value = checkpoint.food_bags || 0;
+  oversizedPieces.value = checkpoint.oversized_pieces || 0;
   signatureData.value = null;
   photoData.value = null;
   photoPreview.value = null;
@@ -523,6 +560,12 @@ function confirmCheckpoint() {
       notes: checkpointNote.value,
       signature: signatureData.value,
       photo: photoData.value,
+      ...(selectedCheckpoint.value?.requires_baggage_count ? {
+        planned_bags: plannedBags.value,
+        bags_loaded: bagsLoaded.value,
+        food_bags: foodBags.value,
+        oversized_pieces: oversizedPieces.value,
+      } : {}),
     }),
   })
     .then(response => {
@@ -1093,6 +1136,11 @@ function formatJobToLocation(job) {
 
 .time-actual--delayed {
   color: #d97706;
+}
+
+.time-bags {
+  color: var(--ink4);
+  font-size: 10px;
 }
 
 .time-progress {

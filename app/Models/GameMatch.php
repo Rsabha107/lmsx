@@ -47,7 +47,7 @@ class GameMatch extends Model
      */
     public function team1()
     {
-        return $this->belongsTo(Team::class, 'team1_id', 'code');
+        return $this->belongsTo(Team::class, 'team1_id');
     }
 
     /**
@@ -55,6 +55,6 @@ class GameMatch extends Model
      */
     public function team2()
     {
-        return $this->belongsTo(Team::class, 'team2_id', 'code');
+        return $this->belongsTo(Team::class, 'team2_id');
     }
 }

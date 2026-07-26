@@ -42,9 +42,12 @@ A complete hierarchical system for managing logistics operations with reusable c
 - ✅ `Admin\CheckpointTemplateController.php` - Admin CRUD for checkpoint templates
 - ✅ `Admin\MovementTemplateController.php` - Admin CRUD for movement templates
 
-### Documentation (4 files)
+### Documentation (6 files)
 - ✅ `CHECKPOINT_SYSTEM.md` - Full documentation
 - ✅ `CHECKPOINT_QUICK_REFERENCE.md` - Visual guide
+- ✅ `MOVEMENT_TYPES_GUIDE.md` - Complete movement types guide
+- ✅ `MOVEMENT_TYPES_QUICK_REFERENCE.md` - Movement types quick reference
+- ✅ `DUPLICATE_PREVENTION_SYSTEM.md` - Duplicate detection and prevention
 - ✅ `routes/EXAMPLE_ROUTES.php` - Route examples
 - ✅ `README_IMPLEMENTATION.md` - This file
 
@@ -250,6 +253,85 @@ await axios.post(`/plans/${planId}/generate-jobs`, {
 - See `CHECKPOINT_SYSTEM.md` for full documentation
 - See `PlanManagementController.php` for usage examples
 - See `JobGenerationService.php` for generation logic
+
+---
+
+## 📋 Movement Types Documentation
+
+### Available Guides
+- ✅ `MOVEMENT_TYPES_GUIDE.md` - Complete guide with examples and decision trees
+- ✅ `MOVEMENT_TYPES_QUICK_REFERENCE.md` - One-page quick reference
+
+### Movement Type Overview
+
+The system supports 6 movement types:
+
+| Type | Purpose | Key Use |
+|------|---------|---------|
+| **arrival** ✈️ | Airport to hotel | Team arriving from flight |
+| **departure** 🛫 | Hotel to airport | Team leaving on flight |
+| **match** ⚽ | Match day transport | Hotel ↔ Stadium for game |
+| **training** 🏃 | Training sessions | Hotel ↔ Training ground |
+| **transfer** 🚌 | Event-driven movement | One-time team events |
+| **daily_ops** 🔄 | Recurring operations | Daily meal/equipment runs |
+
+### Quick Decision Rule
+
+**Transfer vs Daily Ops** (most commonly confused):
+- **Transfer**: One-time or event-specific movements (teams, officials, VIPs)
+- **Daily Ops**: Recurring daily operational tasks (supplies, equipment, support staff)
+
+**Example:**
+- ✅ Team going to sponsor event → **Transfer**
+- ✅ Daily meal delivery to hotels → **Daily Ops**
+
+See the full guides for detailed examples and decision trees.
+
+---
+
+## 🛡️ Duplicate Prevention System
+
+### Overview
+
+Prevents duplicate movements using a two-tier approach:
+
+**Strict Blocking:**
+- Arrival: team + flight (can only arrive on each flight once)
+- Departure: team + flight (can only depart on each flight once)
+- Match: team + match (can only have one match movement per game)
+
+**Smart Warnings:**
+- Transfer/Training/Daily Ops: warns if similar movement exists (same route within 30 minutes)
+- Allows creation after confirmation (legitimate multiple movements per day)
+
+### Implementation
+
+**Database**: Migration adds indexes for efficient duplicate detection
+
+**Backend**: `PlanManagementController::checkDuplicate()` API endpoint
+
+**Frontend**: Real-time checking with visual warnings/errors
+
+### Quick Example
+
+```php
+// API: POST /api/check-duplicate
+{
+  "kind": "arrival",
+  "team_id": 1,
+  "flight_id": 5
+}
+
+// Response if duplicate exists:
+{
+  "exists": true,
+  "strict": true,  // blocks creation
+  "message": "This team already has an arrival movement for this flight.",
+  "existing": { "id": 45, "code": "M-2026-045" }
+}
+```
+
+See `DUPLICATE_PREVENTION_SYSTEM.md` for complete documentation and frontend integration examples.
 
 ---
 

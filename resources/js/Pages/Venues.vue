@@ -70,7 +70,10 @@
                 </td>
                 <td>{{ venue.city || '—' }}</td>
                 <td>
-                  <span v-if="venue.country">{{ venue.country.flag }} {{ venue.country.country_name }}</span>
+                  <span v-if="venue.country" style="display: inline-flex; align-items: center; gap: 6px">
+                    <flag-icon :code="venue.country_code" :fallback="venue.country.flag" />
+                    {{ venue.country.country_name }}</span
+                  >
                   <span v-else>—</span>
                 </td>
                 <td>
@@ -117,7 +120,10 @@
               <div class="detail-row">
                 <span class="detail-label">Country</span>
                 <span class="detail-value">
-                  <span v-if="selectedVenue.country">{{ selectedVenue.country.flag }} {{ selectedVenue.country.country_name }}</span>
+                  <span v-if="selectedVenue.country" style="display: inline-flex; align-items: center; gap: 6px">
+                    <flag-icon :code="selectedVenue.country_code" :fallback="selectedVenue.country.flag" />
+                    {{ selectedVenue.country.country_name }}</span
+                  >
                   <span v-else>—</span>
                 </span>
               </div>
@@ -227,6 +233,7 @@ import Modal           from '../Components/Modal.vue';
 import DeleteConfirmModal from '../Components/DeleteConfirmModal.vue';
 import TableActions    from '../Components/TableActions.vue';
 import RefreshButton   from '../Components/RefreshButton.vue';
+import FlagIcon        from '../Components/FlagIcon.vue';
 
 const props = defineProps({
   venues:    { type: Array, required: true },

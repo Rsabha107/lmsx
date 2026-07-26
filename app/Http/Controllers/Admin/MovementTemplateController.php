@@ -91,7 +91,7 @@ class MovementTemplateController extends Controller
             'legs.*.leg_type' => 'required|in:arrival,departure,transfer,training,match,daily_ops',
             'legs.*.from_location' => 'nullable|string|max:255',
             'legs.*.to_location' => 'nullable|string|max:255',
-            'legs.*.transport_type' => 'required|in:bus,walk,car,other',
+            'legs.*.transport_type' => 'required|in:bus,coach,van,walk,car,other',
             'legs.*.estimated_duration_minutes' => 'nullable|integer|min:1',
         ]);
 
@@ -234,7 +234,7 @@ class MovementTemplateController extends Controller
             'legs.*.leg_type' => 'required|in:arrival,departure,transfer,training,match,daily_ops',
             'legs.*.from_location' => 'nullable|string|max:255',
             'legs.*.to_location' => 'nullable|string|max:255',
-            'legs.*.transport_type' => 'required|in:bus,walk,car,other',
+            'legs.*.transport_type' => 'required|in:bus,coach,van,walk,car,other',
             'legs.*.estimated_duration_minutes' => 'nullable|integer|min:1',
         ]);
 
@@ -323,7 +323,7 @@ class MovementTemplateController extends Controller
             'from_location' => 'nullable|string|max:255',
             'to_location' => 'nullable|string|max:255',
             'estimated_duration_minutes' => 'nullable|integer|min:1',
-            'transport_type' => 'required|in:coach,van,car,walk,auto,bus',
+            'transport_type' => 'required|in:bus,coach,van,walk,car,other',
         ]);
 
         $leg = MovementTemplateLeg::create([
@@ -360,7 +360,7 @@ class MovementTemplateController extends Controller
             'from_location' => 'nullable|string|max:255',
             'to_location' => 'nullable|string|max:255',
             'estimated_duration_minutes' => 'nullable|integer|min:1',
-            'transport_type' => 'required|in:coach,van,car,walk,auto,bus',
+            'transport_type' => 'required|in:bus,coach,van,walk,car,other',
         ]);
 
         $leg->update([

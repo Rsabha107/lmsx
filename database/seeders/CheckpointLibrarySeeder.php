@@ -5,7 +5,7 @@ namespace Database\Seeders;
 use App\Models\Checkpoint;
 use Illuminate\Database\Seeder;
 
-class CheckpointSeeder extends Seeder
+class CheckpointLibrarySeeder extends Seeder
 {
     /**
      * Seed the global checkpoint library.

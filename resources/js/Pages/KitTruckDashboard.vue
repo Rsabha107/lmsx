@@ -130,7 +130,7 @@
                 v-for="col in columns"
                 :key="col.order"
                 class="mv-th mv-th--cp-group"
-                colspan="2"
+                :colspan="col.requires_baggage_count ? 4 : 2"
               >{{ col.name }}</th>
             </tr>
 
@@ -141,10 +141,12 @@
                 <th class="mv-th mv-th--sub mv-th--planned">Planned</th>
                 <th class="mv-th mv-th--sub mv-th--actual">Actual</th>
               </template>
-              
+
               <template v-for="col in columns" :key="col.order">
                 <template v-if="col.requires_baggage_count">
-                  <th class="mv-th mv-th--sub mv-th--baggage">Bags Loaded</th>
+                  <th class="mv-th mv-th--sub mv-th--baggage">Planned Bags</th>
+                  <th class="mv-th mv-th--sub mv-th--baggage">Actual Bags</th>
+                  <th class="mv-th mv-th--sub mv-th--baggage">Food Bags</th>
                   <th class="mv-th mv-th--sub mv-th--baggage">Oversized Pieces</th>
                 </template>
                 <template v-else>
@@ -171,7 +173,7 @@
               >
                 <!-- PMA -->
                 <td class="mv-td mv-td--pma">
-                  <span v-if="row.flag" class="mv-flag">{{ row.flag }}</span>
+                  <flag-icon :code="row.country_code" :fallback="row.flag" class="mv-flag" />
                   <div>
                     <div class="team-code">{{ row.team_code }}</div>
                     <div class="team-name">{{ row.team_name }}</div>
@@ -227,7 +229,13 @@
                 <template v-for="col in columns" :key="col.order">
                   <template v-if="col.requires_baggage_count">
                     <td class="mv-td mv-td--center mv-td--baggage">
+                      <span class="baggage-count">{{ cpField(row, col.order, 'planned_bags') ?? '—' }}</span>
+                    </td>
+                    <td class="mv-td mv-td--center mv-td--baggage">
                       <span class="baggage-count">{{ cpField(row, col.order, 'bags_loaded') ?? '—' }}</span>
+                    </td>
+                    <td class="mv-td mv-td--center mv-td--baggage">
+                      <span class="baggage-count">{{ cpField(row, col.order, 'food_bags') ?? '—' }}</span>
                     </td>
                     <td class="mv-td mv-td--center mv-td--baggage">
                       <span class="baggage-count">{{ cpField(row, col.order, 'oversized_pieces') ?? '—' }}</span>
@@ -276,6 +284,7 @@ import SvgIcon     from '../Components/SvgIcon.vue';
 import Button      from '../Components/Button.vue';
 import StatusPill  from '../Components/StatusPill.vue';
 import RefreshButton from '../Components/RefreshButton.vue';
+import FlagIcon     from '../Components/FlagIcon.vue';
 
 const props = defineProps({
   rows:       { type: Array,  default: () => [] },
@@ -317,7 +326,9 @@ const staticCols = computed(() => {
   }
 });
 
-const totalCols = computed(() => staticCols.value + props.columns.length * 2);
+const totalCols = computed(() =>
+  staticCols.value + props.columns.reduce((sum, col) => sum + (col.requires_baggage_count ? 4 : 2), 0)
+);
 
 // ── Status ────────────────────────────────────────────────────────────────
 function statusTone(s) {

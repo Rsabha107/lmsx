@@ -8,7 +8,6 @@ use App\Models\MovementTemplate;
 use App\Models\Plan;
 use App\Models\Movement;
 use App\Models\Event;
-use App\Models\EventTeam;
 use App\Services\JobGenerationService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -41,7 +40,20 @@ class PlanManagementController extends Controller
         
         // Get active event
         $activeEvent = $activeEventId ? Event::with('country')->find($activeEventId) : null;
-        
+
+        // The same movement appears in both the "by plan" ($plans) and "by
+        // team" ($movementsByTeam) views below via two separate queries, so
+        // estimateCheckpointSchedule() would otherwise run twice per
+        // movement. Memoize by movement id since the estimate is a pure
+        // function of the movement's own (already-loaded) data.
+        $estimateCache = [];
+        $getEstimatedSchedule = function ($movement) use (&$estimateCache) {
+            if ($movement->job) {
+                return [];
+            }
+            return $estimateCache[$movement->id] ??= $this->jobService->estimateCheckpointSchedule($movement);
+        };
+
         $plans = Plan::with([
                 'movements.team', 
                 'movements.flight.originAirport',
@@ -62,17 +74,27 @@ class PlanManagementController extends Controller
             })
             ->latest()
             ->get()
-            ->map(function ($plan) {
+            ->map(function ($plan) use ($getEstimatedSchedule) {
                 // Transform each movement to include merged checkpoint data
-                $plan->movements->transform(function ($movement) {
+                $plan->movements->transform(function ($movement) use ($getEstimatedSchedule) {
                     // Get actual job checkpoints if job exists
                     $jobCheckpoints = $movement->job?->checkpoints ?? collect();
-                    
+
+                    // Live estimate for checkpoints that don't have a job yet
+                    $estimatedSchedule = $getEstimatedSchedule($movement);
+
+                    // BUS movements (flight_number === 'BUS') have no
+                    // reference time — no checkpoints get generated or shown.
+                    if ($movement->isBusMovement()) {
+                        $movement->checkpoints = [];
+                        return $movement;
+                    }
+
                     // Build checkpoint data with real status from job_checkpoints table
-                    $checkpoints = $movement->checkpointTemplate?->checkpoints->map(function ($checkpoint) use ($jobCheckpoints) {
+                    $checkpoints = $movement->checkpointTemplate?->checkpoints->map(function ($checkpoint) use ($jobCheckpoints, $estimatedSchedule, $movement) {
                         // Find matching job checkpoint by checkpoint_id
                         $jobCheckpoint = $jobCheckpoints->firstWhere('checkpoint_id', $checkpoint->id);
-                        
+
                         if ($jobCheckpoint) {
                             // Use actual data from job_checkpoints table
                             return [
@@ -81,6 +103,11 @@ class PlanManagementController extends Controller
                                 'type' => $checkpoint->type,
                                 'requires_photo' => $checkpoint->requires_photo,
                                 'requires_signature' => $checkpoint->requires_signature,
+                                'requires_baggage_count' => $checkpoint->requires_baggage_count,
+                                'planned_bags' => $jobCheckpoint->planned_bags,
+                                'bags_loaded' => $jobCheckpoint->bags_loaded,
+                                'food_bags' => $jobCheckpoint->food_bags,
+                                'oversized_pieces' => $jobCheckpoint->oversized_pieces,
                                 'state' => $jobCheckpoint->state ?? 'pending',
                                 'scheduled_at' => $jobCheckpoint->scheduled_at?->format('Y-m-d H:i:s'),
                                 'started_at' => $jobCheckpoint->started_at?->format('Y-m-d H:i:s'),
@@ -98,8 +125,14 @@ class PlanManagementController extends Controller
                                 'type' => $checkpoint->type,
                                 'requires_photo' => $checkpoint->requires_photo,
                                 'requires_signature' => $checkpoint->requires_signature,
+                                'requires_baggage_count' => $checkpoint->requires_baggage_count,
+                                'planned_bags' => $checkpoint->requires_baggage_count ? $movement->flight?->planned_bags : null,
+                                'bags_loaded' => null,
+                                'food_bags' => null,
+                                'oversized_pieces' => null,
                                 'state' => 'pending',
                                 'scheduled_at' => null,
+                                'estimated_at' => $estimatedSchedule[$checkpoint->id] ?? null,
                                 'started_at' => null,
                                 'completed_at' => null,
                                 'completed_by' => null,
@@ -127,26 +160,22 @@ class PlanManagementController extends Controller
         // Load teams from active event only
         $teams = collect();
         if ($activeEventId) {
-            $teams = EventTeam::where('event_id', $activeEventId)
+            $teams = \App\Models\Team::where('event_id', $activeEventId)
                 ->with([
-                    'team.originAirport',
-                    'team.destinationAirport',
-                    'team.country',
-                    'team.classification',
+                    'originAirport',
+                    'destinationAirport',
+                    'country',
+                    'classification',
                     'flights' => function ($query) use ($activeEventId) {
-                        $query->where('direction', 'arrival')
-                              ->where('event_id', $activeEventId)
+                        $query->where('event_id', $activeEventId)
                               ->with(['destinationAirport', 'originAirport'])
                               ->orderBy('scheduled_at');
                     },
                     'stay'
                 ])
                 ->get()
-                ->map(function ($et) {
-                    if (!$et->team) return null;
-                    
-                    // Get all arrival flights
-                    $arrivalFlights = $et->flights->map(function ($flight) {
+                ->map(function ($team) {
+                    $mapFlight = function ($flight) {
                         return [
                             'id' => $flight->id,
                             'flight_number' => $flight->flight_number,
@@ -156,28 +185,34 @@ class PlanManagementController extends Controller
                             'origin_airport' => $flight->originAirport?->code,
                             'destination_airport' => $flight->destinationAirport?->code,
                         ];
-                    })->values();
-                    
-                    // Use first flight as default
+                    };
+
+                    // Split the team's flights by direction
+                    $arrivalFlights = $team->flights->where('direction', 'arrival')->map($mapFlight)->values();
+                    $departureFlights = $team->flights->where('direction', 'departure')->map($mapFlight)->values();
+
+                    // Use first flight of each direction as default
                     $defaultFlight = $arrivalFlights->first();
-                    
+                    $defaultDepartureFlight = $departureFlights->first();
+
                     // Build a combined object with team info + all flights
                     return [
-                        'id' => $et->team_id,
-                        'event_team_id' => $et->id,
-                        'code' => $et->team->code ?? $et->team->team ?? 'TEAM',
-                        'team_name' => $et->team->team_name ?? $et->team->team ?? 'Unnamed Team',
+                        'id' => $team->id,
+                        'code' => $team->code ?? 'TEAM',
+                        'team_name' => $team->team_name ?? 'Unnamed Team',
                         'arrival_date_time' => $defaultFlight ? $defaultFlight['scheduled_at'] : null,
                         'arrival_date' => $defaultFlight ? $defaultFlight['scheduled_date'] : null,
+                        'departure_date_time' => $defaultDepartureFlight ? $defaultDepartureFlight['scheduled_at'] : null,
+                        'departure_date' => $defaultDepartureFlight ? $defaultDepartureFlight['scheduled_date'] : null,
                         'flights' => $arrivalFlights,
+                        'departure_flights' => $departureFlights,
                         'selected_flight_id' => $defaultFlight ? $defaultFlight['id'] : null,
-                        'origin_airport' => $et->team->originAirport,
-                        'destination_airport' => $et->team->destinationAirport,
-                        'country' => $et->team->country,
-                        'classification' => $et->team->classification,
+                        'origin_airport' => $team->originAirport,
+                        'destination_airport' => $team->destinationAirport,
+                        'country' => $team->country,
+                        'classification' => $team->classification,
                     ];
                 })
-                ->filter()
                 ->sortBy('team_name')
                 ->values();
         }
@@ -219,10 +254,13 @@ class PlanManagementController extends Controller
                 'job.checkpoints' // Load job checkpoints for status
             ])
             ->whereNotNull('team_id')
+            ->when($activeEventId, function ($query) use ($activeEventId) {
+                $query->where('event_id', $activeEventId);
+            })
             ->orderBy('window_start')
             ->get()
             ->groupBy('team_id')
-            ->map(function ($movements, $teamId) use ($activeEventId) {
+            ->map(function ($movements, $teamId) use ($activeEventId, $getEstimatedSchedule) {
                 $team = $movements->first()->team;
                 
                 // Get arrival and departure dates from TeamFlight records for this event
@@ -252,15 +290,21 @@ class PlanManagementController extends Controller
                     'liaison' => $team->sc_liaison_name,
                     'arrival_date_time' => $arrivalFlight?->scheduled_at?->format('Y-m-d H:i:s'),
                     'departure_date_time' => $departureFlight?->scheduled_at?->format('Y-m-d H:i:s'),
-                    'items' => $movements->map(function ($movement) {
+                    'items' => $movements->map(function ($movement) use ($getEstimatedSchedule) {
                         // Get actual job checkpoints if job exists
                         $jobCheckpoints = $movement->job?->checkpoints ?? collect();
-                        
-                        // Build checkpoint data with real status from job_checkpoints table
-                        $checkpoints = $movement->checkpointTemplate?->checkpoints->map(function ($checkpoint) use ($jobCheckpoints) {
+
+                        // Live estimate for checkpoints that don't have a job yet
+                        $estimatedSchedule = $getEstimatedSchedule($movement);
+
+                        // BUS movements (flight_number === 'BUS') have no
+                        // reference time — no checkpoints get generated or shown.
+                        $checkpoints = $movement->isBusMovement()
+                            ? collect()
+                            : ($movement->checkpointTemplate?->checkpoints->map(function ($checkpoint) use ($jobCheckpoints, $estimatedSchedule, $movement) {
                             // Find matching job checkpoint by checkpoint_id
                             $jobCheckpoint = $jobCheckpoints->firstWhere('checkpoint_id', $checkpoint->id);
-                            
+
                             if ($jobCheckpoint) {
                                 // Use actual data from job_checkpoints table
                                 return [
@@ -269,6 +313,11 @@ class PlanManagementController extends Controller
                                     'type' => $checkpoint->type,
                                     'requires_photo' => $checkpoint->requires_photo,
                                     'requires_signature' => $checkpoint->requires_signature,
+                                    'requires_baggage_count' => $checkpoint->requires_baggage_count,
+                                    'planned_bags' => $jobCheckpoint->planned_bags,
+                                    'bags_loaded' => $jobCheckpoint->bags_loaded,
+                                    'food_bags' => $jobCheckpoint->food_bags,
+                                    'oversized_pieces' => $jobCheckpoint->oversized_pieces,
                                     'state' => $jobCheckpoint->state ?? 'pending',
                                     'scheduled_at' => $jobCheckpoint->scheduled_at?->format('Y-m-d H:i:s'),
                                     'started_at' => $jobCheckpoint->started_at?->format('Y-m-d H:i:s'),
@@ -285,8 +334,14 @@ class PlanManagementController extends Controller
                                     'type' => $checkpoint->type,
                                     'requires_photo' => $checkpoint->requires_photo,
                                     'requires_signature' => $checkpoint->requires_signature,
+                                    'requires_baggage_count' => $checkpoint->requires_baggage_count,
+                                    'planned_bags' => $checkpoint->requires_baggage_count ? $movement->flight?->planned_bags : null,
+                                    'bags_loaded' => null,
+                                    'food_bags' => null,
+                                    'oversized_pieces' => null,
                                     'state' => 'pending',
                                     'scheduled_at' => null,
+                                    'estimated_at' => $estimatedSchedule[$checkpoint->id] ?? null,
                                     'started_at' => null,
                                     'completed_at' => null,
                                     'completed_by' => null,
@@ -294,7 +349,7 @@ class PlanManagementController extends Controller
                                     'signature_path' => null,
                                 ];
                             }
-                        }) ?? collect();
+                        }) ?? collect());
                         
                         return [
                             'id' => $movement->id,
@@ -341,6 +396,7 @@ class PlanManagementController extends Controller
                                 'origin_airport' => $movement->flight->originAirport?->code ?? $movement->flight->origin_airport_id,
                                 'destination_airport' => $movement->flight->destinationAirport?->code ?? $movement->flight->destination_airport_id,
                                 'scheduled_at' => $movement->flight->scheduled_at?->format('Y-m-d H:i:s'),
+                                'planned_bags' => $movement->flight->planned_bags,
                             ] : null,
                             'accommodation_id' => $movement->accommodation_id,
                             'accommodation' => $movement->accommodation ? [
@@ -366,6 +422,18 @@ class PlanManagementController extends Controller
         // Get active plan from session (shared with Jobs page)
         $activePlanId = $request->session()->get('active_plan_id');
 
+        // Next globally-unique movement code, so the UI can show the real
+        // M-number a movement will get instead of a template-relative index
+        // (matches JobGenerationService::generateMovementCode()'s logic —
+        // derived from the highest CODE in use including soft-deleted rows,
+        // since a "deleted" movement's code is still enforced by the DB's
+        // unique index).
+        $maxMovementNumber = Movement::withTrashed()
+            ->whereNotNull('code')
+            ->selectRaw("MAX(CAST(SUBSTRING(code, 2) AS UNSIGNED)) as max_number")
+            ->value('max_number');
+        $nextMovementNumber = ($maxMovementNumber ?? 0) + 1;
+
         return Inertia::render('Plans', [
             'activeEvent' => $activeEvent,
             'activePlan' => $activePlanId,
@@ -377,6 +445,7 @@ class PlanManagementController extends Controller
             'drivers' => $drivers,
             'supervisors' => $supervisors,
             'matches' => $matches,
+            'nextMovementNumber' => $nextMovementNumber,
             'schedule' => LmsData::schedule(), // For backward compatibility - will be removed
         ]);
     }
@@ -417,9 +486,21 @@ class PlanManagementController extends Controller
             'notes' => 'nullable|string',
         ]);
         
-        // If flight_id is provided, use flight's arrival time
+        // If flight_id is provided, use that flight's own time — but flight_id
+        // here only ever refers to the team's ARRIVAL flight (the New Plan
+        // modal's flight picker is arrival-only), so this must not run for a
+        // departure template: doing so silently overwrote the frontend's
+        // already-correct departure date/time with the arrival flight's time.
         $startTime = $validated['start_time'] ?? '09:00';
-        if (!empty($validated['flight_id'])) {
+
+        $isDepartureTemplate = false;
+        if (!empty($validated['movement_template_id'])) {
+            $timingTemplate = MovementTemplate::find($validated['movement_template_id']);
+            $templateText = strtolower(($timingTemplate->scenario_type ?? '') . ' ' . ($timingTemplate->name ?? '') . ' ' . ($timingTemplate->code ?? ''));
+            $isDepartureTemplate = str_contains($templateText, 'departure');
+        }
+
+        if (!$isDepartureTemplate && !empty($validated['flight_id'])) {
             $flight = \App\Models\TeamFlight::find($validated['flight_id']);
             if ($flight) {
                 // Use actual, estimated, or scheduled time (in that priority)
@@ -446,8 +527,8 @@ class PlanManagementController extends Controller
                 $teamAssignments = ['default' => $validated['team_id']];
             } elseif (!$teamAssignments && $activeEventId) {
                 // No team specified but we have an event - create for all event teams
-                $eventTeamIds = EventTeam::where('event_id', $activeEventId)
-                    ->pluck('team_id')
+                $eventTeamIds = \App\Models\Team::where('event_id', $activeEventId)
+                    ->pluck('id')
                     ->toArray();
                 if (!empty($eventTeamIds)) {
                     $teamAssignments = ['teams' => $eventTeamIds];
@@ -593,7 +674,8 @@ class PlanManagementController extends Controller
         
         $createdPlans = [];
         $totalMovements = 0;
-        
+        $errors = [];
+
         foreach ($validated['plans'] as $planData) {
             $date = $planData['date'];
             $teamsData = $planData['teams']; // Array of ['team_id' => X, 'start_time' => 'HH:MM']
@@ -659,13 +741,24 @@ class PlanManagementController extends Controller
                     'teams' => $teamIds,
                     'error' => $e->getMessage()
                 ]);
+                $errors[] = "{$date}: {$e->getMessage()}";
                 // Continue with next plan
             }
         }
-        
+
         $planCount = count($createdPlans);
-        return redirect()->route('plans.index')
-            ->with('success', "Successfully created {$planCount} " . ($planCount === 1 ? 'plan' : 'plans') . " with {$totalMovements} movements");
+
+        if ($planCount === 0) {
+            return redirect()->route('plans.index')
+                ->with('error', 'Failed to create any plans. ' . ($errors[0] ?? 'Unknown error.'));
+        }
+
+        $message = "Successfully created {$planCount} " . ($planCount === 1 ? 'plan' : 'plans') . " with {$totalMovements} movements";
+        if (!empty($errors)) {
+            $message .= '. ' . count($errors) . ' failed: ' . $errors[0];
+        }
+
+        return redirect()->route('plans.index')->with('success', $message);
     }
 
     /**
@@ -691,7 +784,8 @@ class PlanManagementController extends Controller
         
         $createdPlans = [];
         $totalMovements = 0;
-        
+        $errors = [];
+
         foreach ($validated['plans'] as $planData) {
             $date = $planData['date'];
             $teamsData = $planData['teams'];
@@ -720,13 +814,22 @@ class PlanManagementController extends Controller
             $earliestTime = min(array_values($teamStartTimes));
             $baseTime = Carbon::createFromFormat('Y-m-d H:i', $date . ' ' . $earliestTime, config('app.timezone'));
             
-            // Create team assignments with start times
+            // Create team assignments with start times and match IDs
             $teamAssignments = [
                 'teams' => $teamIds,
                 'team_start_times' => $teamStartTimes,
+                'team_match_ids' => $teamMatchIds,
             ];
             
             try {
+                // Debug: Log date being sent to createPlanFromTemplate
+                Log::info('Creating plan for date', [
+                    'input_date' => $date,
+                    'base_time' => $baseTime->toDateTimeString(),
+                    'earliest_time' => $earliestTime,
+                    'teams' => count($teamIds)
+                ]);
+                
                 $plan = $this->jobService->createPlanFromTemplate(
                     $template,
                     [
@@ -739,6 +842,15 @@ class PlanManagementController extends Controller
                     ],
                     $teamAssignments
                 );
+                
+                // Debug: Log what was actually stored
+                $plan->refresh(); // Reload from DB
+                Log::info('Plan created in database', [
+                    'plan_id' => $plan->id,
+                    'stored_date' => $plan->date ? $plan->date->toDateTimeString() : 'null',
+                    'input_date' => $date,
+                    'date_column_value' => $plan->getAttributes()['date'] // Raw DB value
+                ]);
                 
                 // Link movements to their respective matches based on team
                 foreach ($teamMatchIds as $teamId => $matchId) {
@@ -761,13 +873,24 @@ class PlanManagementController extends Controller
                     'teams' => $teamIds,
                     'error' => $e->getMessage()
                 ]);
+                $errors[] = "{$date}: {$e->getMessage()}";
                 // Continue with next plan
             }
         }
-        
+
         $planCount = count($createdPlans);
-        return redirect()->route('plans.index')
-            ->with('success', "Successfully created {$planCount} match-day " . ($planCount === 1 ? 'plan' : 'plans') . " with {$totalMovements} movements");
+
+        if ($planCount === 0) {
+            return redirect()->route('plans.index')
+                ->with('error', 'Failed to create any match-day plans. ' . ($errors[0] ?? 'Unknown error.'));
+        }
+
+        $message = "Successfully created {$planCount} match-day " . ($planCount === 1 ? 'plan' : 'plans') . " with {$totalMovements} movements";
+        if (!empty($errors)) {
+            $message .= '. ' . count($errors) . ' failed: ' . $errors[0];
+        }
+
+        return redirect()->route('plans.index')->with('success', $message);
     }
 
     /**
@@ -882,7 +1005,8 @@ class PlanManagementController extends Controller
             return back()->with('error', 'No valid movements to generate jobs from');
         }
 
-        // Generate jobs
+        // Generate jobs (BUS movements are silently skipped internally —
+        // they have no reference time to schedule against)
         $jobs = $this->jobService->generateJobsFromMovements(
             $movements->pluck('id')->toArray(),
             [
@@ -890,7 +1014,17 @@ class PlanManagementController extends Controller
             ]
         );
 
-        return redirect()->back()->with('success', count($jobs) . ' jobs generated successfully');
+        $skipped = $movements->count() - count($jobs);
+        $message = count($jobs) . ' jobs generated successfully';
+        if ($skipped > 0) {
+            $message .= ". {$skipped} skipped (BUS movement, no reference time).";
+        }
+
+        if (count($jobs) === 0) {
+            return back()->with('error', $skipped > 0 ? "No jobs generated. {$skipped} movement(s) skipped (BUS movement, no reference time)." : 'No jobs generated.');
+        }
+
+        return redirect()->back()->with('success', $message);
     }
 
     /**
@@ -1008,11 +1142,20 @@ class PlanManagementController extends Controller
      */
     protected function generateMovementCode(Plan $plan): string
     {
-        // Generate globally unique movement code
-        $latestMovement = Movement::orderBy('id', 'desc')->first();
-        $nextNumber = $latestMovement ? (intval(ltrim($latestMovement->code, 'M')) + 1) : 1;
-        
-        return sprintf('M%d', $nextNumber);
+        // Generate globally unique movement code. Derived from the highest
+        // CODE in use, not the highest row id — after deletions, id order
+        // and code order can diverge, so "latest by id + 1" can recompute a
+        // code an older, undeleted row already holds and collide on the
+        // unique constraint. Includes soft-deleted rows (withTrashed):
+        // Movement uses SoftDeletes, so a "deleted" movement's code is
+        // still physically in the table and still enforced by the DB's
+        // unique index, which doesn't know about deleted_at.
+        $maxNumber = Movement::withTrashed()
+            ->whereNotNull('code')
+            ->selectRaw("MAX(CAST(SUBSTRING(code, 2) AS UNSIGNED)) as max_number")
+            ->value('max_number');
+
+        return sprintf('M%d', ($maxNumber ?? 0) + 1);
     }
 
     /**
@@ -1107,5 +1250,175 @@ class PlanManagementController extends Controller
         $movement->delete();
 
         return redirect()->back()->with('success', 'Movement deleted successfully.');
+    }
+
+    /**
+     * Delete multiple movements in one request. Movements that already have
+     * a generated job are skipped rather than blocking the whole batch.
+     */
+    public function deleteMovementsBulk(Request $request)
+    {
+        $validated = $request->validate([
+            'ids' => 'required|array|min:1',
+            'ids.*' => 'integer|exists:movements,id',
+        ]);
+
+        $movements = Movement::whereIn('id', $validated['ids'])->get();
+
+        $deletableIds = $movements->filter(fn ($movement) => !$movement->job_id)->pluck('id');
+        $skippedCount = $movements->count() - $deletableIds->count();
+
+        Movement::whereIn('id', $deletableIds)->delete();
+
+        $message = "Deleted {$deletableIds->count()} movement(s).";
+        if ($skippedCount > 0) {
+            $message .= " {$skippedCount} skipped (job already generated).";
+        }
+
+        return redirect()->back()->with(
+            $deletableIds->count() > 0 ? 'success' : 'error',
+            $message
+        );
+    }
+
+    /**
+     * Check for duplicate movements based on movement type.
+     * Returns array with 'exists' boolean and optional 'existing' movement details.
+     */
+    protected function checkDuplicateMovement(array $data): array
+    {
+        $kind = $data['kind'] ?? 'transfer';
+        $teamId = $data['team_id'] ?? null;
+
+        if (!$teamId) {
+            return ['exists' => false];
+        }
+
+        // STRICT: Check flight-based movements (arrival/departure)
+        if (in_array($kind, ['arrival', 'departure']) && !empty($data['flight_id'])) {
+            $existing = Movement::where('team_id', $teamId)
+                ->where('flight_id', $data['flight_id'])
+                ->where('kind', $kind)
+                ->whereNull('deleted_at')
+                ->first();
+
+            if ($existing) {
+                return [
+                    'exists' => true,
+                    'strict' => true,
+                    'message' => "This team already has a {$kind} movement for this flight.",
+                    'existing' => [
+                        'id' => $existing->id,
+                        'code' => $existing->code,
+                        'plan_name' => $existing->plan->name ?? null,
+                    ]
+                ];
+            }
+        }
+
+        // STRICT: Check match movements
+        if ($kind === 'match' && !empty($data['match_id'])) {
+            $existing = Movement::where('team_id', $teamId)
+                ->where('match_id', $data['match_id'])
+                ->where('kind', 'match')
+                ->whereNull('deleted_at')
+                ->first();
+
+            if ($existing) {
+                return [
+                    'exists' => true,
+                    'strict' => true,
+                    'message' => "This team already has a match movement for this match.",
+                    'existing' => [
+                        'id' => $existing->id,
+                        'code' => $existing->code,
+                        'plan_name' => $existing->plan->name ?? null,
+                    ]
+                ];
+            }
+        }
+
+        // SOFT WARNING: Check similar transfers/training/daily_ops
+        if (in_array($kind, ['transfer', 'training', 'daily_ops']) 
+            && !empty($data['from_location']) 
+            && !empty($data['to_location'])
+            && !empty($data['window_start'])) {
+            
+            $windowStart = Carbon::parse($data['window_start']);
+            $windowStartMinus30 = $windowStart->copy()->subMinutes(30);
+            $windowStartPlus30 = $windowStart->copy()->addMinutes(30);
+
+            $similar = Movement::where('team_id', $teamId)
+                ->where('kind', $kind)
+                ->where('from_location', $data['from_location'])
+                ->where('to_location', $data['to_location'])
+                ->whereBetween('window_start', [$windowStartMinus30, $windowStartPlus30])
+                ->whereNull('deleted_at')
+                ->first();
+
+            if ($similar) {
+                return [
+                    'exists' => true,
+                    'strict' => false,
+                    'message' => "Similar {$kind} movement found: {$similar->from_location} → {$similar->to_location} at " . $similar->window_start->format('H:i'),
+                    'existing' => [
+                        'id' => $similar->id,
+                        'code' => $similar->code,
+                        'plan_name' => $similar->plan->name ?? null,
+                        'window_start' => $similar->window_start->format('Y-m-d H:i:s'),
+                    ]
+                ];
+            }
+        }
+
+        return ['exists' => false];
+    }
+
+    /**
+     * API endpoint to check for duplicates before creating movement.
+     */
+    public function checkDuplicate(Request $request)
+    {
+        $validated = $request->validate([
+            'kind' => 'required|in:arrival,departure,transfer,training,match,daily_ops',
+            'team_id' => 'required|exists:teams,id',
+            'flight_id' => 'nullable|exists:team_flights,id',
+            'match_id' => 'nullable|exists:matches,id',
+            'from_location' => 'nullable|string',
+            'to_location' => 'nullable|string',
+            'window_start' => 'nullable|date',
+        ]);
+
+        $result = $this->checkDuplicateMovement($validated);
+
+        return response()->json($result);
+    }
+
+    /**
+     * Bulk variant of checkDuplicate — runs many checks in a single request
+     * instead of one HTTP round trip per team, which is what bulk plan
+     * creation (dozens of teams) needs to stay fast.
+     */
+    public function checkDuplicateBulk(Request $request)
+    {
+        $validated = $request->validate([
+            'checks' => 'required|array',
+            'checks.*.key' => 'required|string',
+            'checks.*.kind' => 'required|in:arrival,departure,transfer,training,match,daily_ops',
+            'checks.*.team_id' => 'required|integer|exists:teams,id',
+            'checks.*.flight_id' => 'nullable|integer|exists:team_flights,id',
+            'checks.*.match_id' => 'nullable|integer|exists:matches,id',
+            'checks.*.from_location' => 'nullable|string',
+            'checks.*.to_location' => 'nullable|string',
+            'checks.*.window_start' => 'nullable|date',
+        ]);
+
+        $results = [];
+
+        foreach ($validated['checks'] as $check) {
+            $results[$check['key']] = $this->checkDuplicateMovement($check);
+        }
+
+        return response()->json(['results' => $results]);
     }
 }

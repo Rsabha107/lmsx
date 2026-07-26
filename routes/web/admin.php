@@ -2,11 +2,12 @@
 
 /**
  * Admin & Setup Routes
- * Routes for user management, roles, and permissions
+ * Routes for user management, roles, permissions, and system settings
  */
 
 use App\Http\Controllers\PermissionController;
 use App\Http\Controllers\RoleController;
+use App\Http\Controllers\SettingsController;
 use App\Http\Controllers\UserController;
 use Illuminate\Support\Facades\Route;
 
@@ -34,5 +35,15 @@ Route::middleware('auth')->prefix('setups')->name('setups.')->group(function () 
         Route::post('/', [PermissionController::class, 'store'])->name('store');
         Route::put('/{id}', [PermissionController::class, 'update'])->name('update');
         Route::delete('/{id}', [PermissionController::class, 'destroy'])->name('destroy');
+    });
+    
+    // System Settings - Movement Time Offsets
+    Route::prefix('settings')->name('settings.')->group(function () {
+        Route::get('/', [SettingsController::class, 'index'])->name('index');
+        Route::post('/global', [SettingsController::class, 'updateGlobal'])->name('update-global');
+        Route::post('/event', [SettingsController::class, 'updateEvent'])->name('update-event');
+        Route::delete('/{id}', [SettingsController::class, 'destroy'])->name('destroy');
+        Route::post('/preview', [SettingsController::class, 'preview'])->name('preview');
+        Route::post('/preview-impact', [SettingsController::class, 'previewImpact'])->name('preview-impact');
     });
 });

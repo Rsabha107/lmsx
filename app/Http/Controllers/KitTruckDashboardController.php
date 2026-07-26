@@ -4,10 +4,10 @@ namespace App\Http\Controllers;
 
 use App\Models\Airport;
 use App\Models\Event;
-use App\Models\EventTeam;
 use App\Models\GameMatch;
 use App\Models\JobOperation;
 use App\Models\Movement;
+use App\Models\Team;
 use App\Models\TeamFlight;
 use App\Models\TeamStay;
 use Carbon\Carbon;
@@ -42,7 +42,7 @@ class KitTruckDashboardController extends Controller
             ->orderBy('dispatched_at')
             ->get();
 
-        // Load EventTeam data with flights and accommodation for all jobs
+        // Load Team data with flights and accommodation for all jobs
         $eventTeamPairs = $jobs->map(fn($j) => [
             'event_id' => $j->event_id, 
             'team_id' => $j->team_id
@@ -50,18 +50,11 @@ class KitTruckDashboardController extends Controller
         
         $eventTeams = collect();
         if ($eventTeamPairs->isNotEmpty()) {
-            // First load EventTeam records
-            $eventTeams = EventTeam::with('team.country')
-                ->where(function($query) use ($eventTeamPairs) {
-                    foreach ($eventTeamPairs as $pair) {
-                        $query->orWhere(function($q) use ($pair) {
-                            $q->where('event_id', $pair['event_id'])
-                              ->where('team_id', $pair['team_id']);
-                        });
-                    }
-                })
+            // First load Team records
+            $eventTeams = Team::with('country')
+                ->whereIn('id', $eventTeamPairs->pluck('team_id'))
                 ->get()
-                ->keyBy(fn($et) => $et->event_id . '_' . $et->team_id);
+                ->keyBy(fn($team) => $team->event_id . '_' . $team->id);
             
             // Load flights for each event-team pair
             $flightsMap = [];
@@ -83,14 +76,14 @@ class KitTruckDashboardController extends Controller
                 $staysMap[$pair['event_id'] . '_' . $pair['team_id']] = $stay;
             }
             
-            // Attach flights and stays to EventTeam records
-            foreach ($eventTeams as $key => $eventTeam) {
-                $eventTeam->setRelation('flights', $flightsMap[$key] ?? collect());
-                $eventTeam->setRelation('stay', $staysMap[$key] ?? null);
+            // Attach flights and stays to Team records
+            foreach ($eventTeams as $key => $team) {
+                $team->setRelation('flights', $flightsMap[$key] ?? collect());
+                $team->setRelation('stay', $staysMap[$key] ?? null);
             }
         }
 
-        // Attach EventTeam to each job
+        // Attach Team (with flights/stay) to each job
         foreach ($jobs as $job) {
             $key = $job->event_id . '_' . $job->team_id;
             $job->eventTeam = $eventTeams[$key] ?? null;
@@ -137,7 +130,7 @@ class KitTruckDashboardController extends Controller
             // Resolve match via movement's direct FK or team+date index
             $match = $movement?->match;
             if (!$match && $job->team) {
-                $key   = $job->team->code . '_' . $movement?->window_start?->toDateString();
+                $key   = $job->team->id . '_' . $movement?->window_start?->toDateString();
                 $match = $matchIndex[$key] ?? null;
             }
 
@@ -153,14 +146,16 @@ class KitTruckDashboardController extends Controller
                     'completed_ts'     => $cp->completed_at?->timestamp,
                     'is_on_time'       => $cp->is_on_time,
                     'delay_minutes'    => $cp->delay_minutes,
+                    'planned_bags'     => $cp->planned_bags,
                     'bags_loaded'      => $cp->bags_loaded,
+                    'food_bags'        => $cp->food_bags,
                     'oversized_pieces' => $cp->oversized_pieces,
                 ])
                 ->values();
 
-            // Use EventTeam data if available, fallback to direct Team
+            // Use the event-scoped Team (with flights/stay attached) if available, fallback to direct Team
             $eventTeam = $job->eventTeam;
-            $team = $eventTeam?->team ?? $job->team;
+            $team = $eventTeam ?? $job->team;
             $flights = $eventTeam?->flights ?? collect();
             
             // Match flight to movement kind (arrival/departure)
@@ -181,8 +176,9 @@ class KitTruckDashboardController extends Controller
                 'movement_status'  => $movement?->status,
                 'job_status'       => $job->status,
 
-                // Team (from EventTeam)
+                // Team
                 'flag'             => $team?->flag ?? '',
+                'country_code'     => $team?->country_id ?? '',
                 'team_code'        => $team?->code ?? '',
                 'team_name'        => $team?->team_name ?? '',
                 'hotel'            => $stay?->hotel_name ?? '',

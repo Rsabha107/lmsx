@@ -4,12 +4,25 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
-// Events table already exists with: id, name, event_logo, active_flag, created_by, updated_by
-// This migration adds the missing platform fields.
+// This migration originally assumed an `events` table already existed (created
+// out-of-band, not via migration) and only added the platform fields below.
+// It now also creates the base table if missing, so a fresh install works.
 return new class extends Migration
 {
     public function up(): void
     {
+        if (! Schema::hasTable('events')) {
+            Schema::create('events', function (Blueprint $table) {
+                $table->id();
+                $table->string('name');
+                $table->string('event_logo')->nullable();
+                $table->boolean('active_flag')->default(true);
+                $table->unsignedBigInteger('created_by')->nullable();
+                $table->unsignedBigInteger('updated_by')->nullable();
+                $table->timestamps();
+            });
+        }
+
         Schema::table('events', function (Blueprint $table) {
             $table->string('short_name', 100)->nullable()->after('name');
             $table->string('host_country', 10)->nullable()->after('short_name');

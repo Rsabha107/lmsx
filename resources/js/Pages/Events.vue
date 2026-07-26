@@ -69,7 +69,10 @@
                 </td>
                 <td class="mono">{{ event.short_name || '—' }}</td>
                 <td>
-                  <span v-if="event.country">{{ event.country.flag }} {{ event.country.country_name }}</span>
+                  <span v-if="event.country" style="display: inline-flex; align-items: center; gap: 6px">
+                    <flag-icon :code="event.host_country" :fallback="event.country.flag" />
+                    {{ event.country.country_name }}</span
+                  >
                   <span v-else>—</span>
                 </td>
                 <td class="mono">
@@ -78,7 +81,7 @@
                   </span>
                   <span v-else>—</span>
                 </td>
-                <td class="center mono">{{ event.event_teams?.length ?? 0 }}</td>
+                <td class="center mono">{{ event.teams?.length ?? 0 }}</td>
                 <td class="center">
                   <span :class="['status-pill', `status-pill--${event.status}`]">{{ event.status }}</span>
                 </td>
@@ -132,7 +135,9 @@
                     <div style="font-size:11px;color:var(--ink3);">
                       <span v-if="venue.pivot.purpose" class="venue-purpose-badge">{{ venue.pivot.purpose }}</span>
                       <span v-if="venue.city">{{ venue.city }}</span>
-                      <span v-if="venue.country"> · {{ venue.country.flag }} {{ venue.country.country_name }}</span>
+                      <span v-if="venue.country" style="display: inline-flex; align-items: center; gap: 4px">
+                        · <flag-icon :code="venue.country_code" :fallback="venue.country.flag" /> {{ venue.country.country_name }}</span
+                      >
                       <span v-if="venue.capacity"> · {{ venue.capacity }} capacity</span>
                     </div>
                   </div>
@@ -147,19 +152,15 @@
             <div class="detail-section">
               <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
                 <h4 class="detail-section-title" style="margin:0;">
-                  Teams ({{ selectedEvent.event_teams?.length ?? 0 }})
+                  Teams ({{ selectedEvent.teams?.length ?? 0 }})
                 </h4>
-                <Button variant="secondary" size="sm" @click="openAssignModal(selectedEvent)">
-                  <template #icon><svg-icon name="plus" :size="12" /></template>
-                  Assign
-                </Button>
               </div>
-              <div v-if="!selectedEvent.event_teams?.length" style="font-size:12px;color:var(--ink3);">No teams assigned yet.</div>
-              <div v-for="et in selectedEvent.event_teams" :key="et.id" class="assigned-team-row">
+              <div v-if="!selectedEvent.teams?.length" style="font-size:12px;color:var(--ink3);">No teams assigned yet. Manage teams from the Event Teams page.</div>
+              <div v-for="et in selectedEvent.teams" :key="et.id" class="assigned-team-row">
                 <div class="assigned-team-info">
-                  <span class="team-badge-sm">{{ et.team?.code }}</span>
+                  <span class="team-badge-sm">{{ et.code }}</span>
                   <div>
-                    <div style="font-size:13px;font-weight:500;">{{ et.team?.team_name }}</div>
+                    <div style="font-size:13px;font-weight:500;">{{ et.team_name }}</div>
                     <div style="font-size:11px;color:var(--ink3);">
                       {{ et.group_pool || 'No group' }}
                       <span v-if="et.classification"> · {{ et.classification.name }}</span>
@@ -179,7 +180,7 @@
                   <button class="manage-team-btn" @click="openManageModal(selectedEvent, et)" title="Manage flights & stay">
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14"/></svg>
                   </button>
-                  <button class="remove-team-btn" @click="removeTeam(selectedEvent, et.team.code)" title="Remove from event">
+                  <button class="remove-team-btn" @click="removeTeam(selectedEvent, et.code)" title="Remove from event">
                     <svg-icon name="x" :size="13" />
                   </button>
                 </div>
@@ -289,43 +290,10 @@
       </form>
     </Modal>
 
-    <!-- Assign Team Modal -->
-    <Modal :show="showAssignModal" @close="showAssignModal = false" max-width="420px">
-      <template #title>Assign Team to Event</template>
-      <form @submit.prevent="submitAssign" class="team-form">
-        <div class="form-group">
-          <label class="form-label">Team <span class="required">*</span></label>
-          <select v-model="assignForm.team_code" class="form-select" required>
-            <option value="">— Select team —</option>
-            <option v-for="t in availableTeams" :key="t.code" :value="t.code">
-              {{ t.code }} · {{ t.team_name }}
-            </option>
-          </select>
-        </div>
-        <div class="form-row">
-          <div class="form-group">
-            <label class="form-label">Group / Pool</label>
-            <input v-model="assignForm.group_pool" type="text" class="form-input" placeholder="e.g. Group A" maxlength="50" />
-          </div>
-          <div class="form-group">
-            <label class="form-label">Classification</label>
-            <select v-model="assignForm.classification_type_id" class="form-select">
-              <option value="">— None —</option>
-              <option v-for="c in classifications" :key="c.id" :value="c.id">{{ c.name }}</option>
-            </select>
-          </div>
-        </div>
-        <div class="form-actions">
-          <Button type="button" variant="secondary" size="sm" @click="showAssignModal = false">Cancel</Button>
-          <Button type="submit" variant="primary" size="sm" :disabled="processing">Assign Team</Button>
-        </div>
-      </form>
-    </Modal>
-
     <!-- Manage Team Modal (flights + stay) -->
     <Modal :show="showManageModal" @close="showManageModal = false" max-width="620px">
       <template #title>
-        <span>{{ managingTeam?.team?.code }} · {{ managingTeam?.team?.team_name }}</span>
+        <span>{{ managingTeam?.code }} · {{ managingTeam?.team_name }}</span>
       </template>
 
       <div v-if="managingTeam" class="manage-body">
@@ -559,10 +527,10 @@ import Modal           from '../Components/Modal.vue';
 import DeleteConfirmModal from '../Components/DeleteConfirmModal.vue';
 import TableActions    from '../Components/TableActions.vue';
 import RefreshButton   from '../Components/RefreshButton.vue';
+import FlagIcon        from '../Components/FlagIcon.vue';
 
 const props = defineProps({
   events:          { type: Array, required: true },
-  teams:           { type: Array, required: true },
   classifications: { type: Array, required: true },
   countries:       { type: Array, required: true },
   airports:        { type: Array, default: () => [] },
@@ -575,18 +543,15 @@ const filterStatus  = ref('');
 const selectedEvent = ref(null);
 
 const showEventModal   = ref(false);
-const showAssignModal  = ref(false);
 const showVenueModal   = ref(false);
 const showDeleteModal  = ref(false);
 const processing       = ref(false);
 const deleting         = ref(false);
 const editingEvent     = ref(null);
 const eventToDelete    = ref(null);
-const assigningEvent   = ref(null);
 const assigningVenueEvent = ref(null);
 
 const form = ref(emptyForm());
-const assignForm = ref({ team_code: '', group_pool: '', classification_type_id: '' });
 const venueForm = ref({ venue_id: '', purpose: '', notes: '' });
 
 function emptyForm() {
@@ -601,12 +566,6 @@ const filteredEvents = computed(() => {
     const matchS = !filterStatus.value || e.status === filterStatus.value;
     return matchQ && matchS;
   });
-});
-
-const availableTeams = computed(() => {
-  if (!assigningEvent.value) return props.teams;
-  const assigned = new Set((assigningEvent.value.event_teams || []).map(et => et.team.code));
-  return props.teams.filter(t => !assigned.has(t.code));
 });
 
 const availableVenues = computed(() => {
@@ -674,26 +633,7 @@ function confirmDelete() {
   });
 }
 
-// ── Team assignment ────────────────────────────────────────────────────────
-function openAssignModal(event) {
-  assigningEvent.value = event;
-  assignForm.value = { team_code: '', group_pool: '', classification_type_id: '' };
-  showAssignModal.value = true;
-}
-
-function submitAssign() {
-  processing.value = true;
-  router.post(`/events/${assigningEvent.value.id}/teams`, assignForm.value, {
-    onFinish: () => {
-      processing.value = false;
-      showAssignModal.value = false;
-      // Refresh selectedEvent data
-      const updated = props.events.find(e => e.id === assigningEvent.value.id);
-      if (updated) selectedEvent.value = updated;
-    },
-  });
-}
-
+// ── Team removal ───────────────────────────────────────────────────────────
 function removeTeam(event, teamCode) {
   router.delete(`/events/${event.id}/teams/${teamCode}`, {
     onSuccess: () => {
@@ -788,7 +728,7 @@ function refreshManagingTeam() {
   if (!et) return;
   const event = props.events.find(e => e.id === et.event_id);
   if (!event) return;
-  const fresh = event.event_teams?.find(t => t.team_id === et.team_id);
+  const fresh = event.teams?.find(t => t.id === et.id);
   if (fresh) managingTeam.value = fresh;
 }
 
@@ -857,7 +797,7 @@ function openFlightForm(fl) {
 function submitFlight() {
   processing.value = true;
   const et = managingTeam.value;
-  const url    = editingFlight.value ? `/events/${et.event_id}/flights/${editingFlight.value.id}` : `/events/${et.event_id}/teams/${et.team.code}/flights`;
+  const url    = editingFlight.value ? `/events/${et.event_id}/flights/${editingFlight.value.id}` : `/events/${et.event_id}/teams/${et.code}/flights`;
   const method = editingFlight.value ? 'put' : 'post';
   router[method](url, flightForm.value, {
     onFinish:  () => { processing.value = false; showFlightForm.value = false; },
@@ -902,7 +842,7 @@ function openStayForm(stay) {
 function submitStay() {
   processing.value = true;
   const et = managingTeam.value;
-  const url    = editingStay.value ? `/events/${et.event_id}/stays/${editingStay.value.id}` : `/events/${et.event_id}/teams/${et.team.code}/stays`;
+  const url    = editingStay.value ? `/events/${et.event_id}/stays/${editingStay.value.id}` : `/events/${et.event_id}/teams/${et.code}/stays`;
   const method = editingStay.value ? 'put' : 'post';
   router[method](url, stayForm.value, {
     onFinish:  () => { processing.value = false; showStayForm.value = false; },

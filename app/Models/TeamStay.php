@@ -12,7 +12,6 @@ class TeamStay extends Model
         'team_id',
         'hotel_name',
         'address',
-        'training_ground',
         'check_in',
         'check_out',
         'room_count',

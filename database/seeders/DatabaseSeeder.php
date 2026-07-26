@@ -33,12 +33,21 @@ class DatabaseSeeder extends Seeder
             DriverSeeder::class,
             ContactSeeder::class,
             
+            // Events (teams require an event to belong to)
+            EventSeeder::class,
+
             // Teams
             TeamSeeder::class,
+            U17EventTeamsSeeder::class,
+            U17EventTeamStaysSeeder::class,
             
             // Airports
             AirportSeeder::class,
-            
+            U17EventTeamFlightsSeeder::class,
+
+            // Matches
+            U17EventMatchesSeeder::class,
+
             // Checkpoint system (NEW)
             CheckpointLibrarySeeder::class,
             CheckpointTemplateLibrarySeeder::class,

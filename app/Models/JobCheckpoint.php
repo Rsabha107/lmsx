@@ -50,7 +50,9 @@ class JobCheckpoint extends Model
         'overridden_by',
         'overridden_at',
         'override_actual_time',
+        'planned_bags',
         'bags_loaded',
+        'food_bags',
         'oversized_pieces',
     ];
 
@@ -66,7 +68,9 @@ class JobCheckpoint extends Model
         'is_required' => 'boolean',
         'is_on_time' => 'boolean',
         'was_overridden' => 'boolean',
+        'planned_bags' => 'integer',
         'bags_loaded' => 'integer',
+        'food_bags' => 'integer',
         'oversized_pieces' => 'integer',
     ];
 

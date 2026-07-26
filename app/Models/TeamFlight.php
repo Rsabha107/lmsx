@@ -26,6 +26,7 @@ class TeamFlight extends Model
         'party_size_total',
         'party_size_players',
         'party_size_staff',
+        'planned_bags',
         'notes',
     ];
 
@@ -39,6 +40,7 @@ class TeamFlight extends Model
         'party_size_total'    => 'integer',
         'party_size_players'  => 'integer',
         'party_size_staff'    => 'integer',
+        'planned_bags'        => 'integer',
     ];
 
     public function event(): BelongsTo

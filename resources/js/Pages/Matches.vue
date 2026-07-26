@@ -92,11 +92,13 @@
             </div>
             <div class="mc-teams">
               <div class="mc-team">
+                <flag-icon :code="match.team1?.country_id" />
                 <span class="mc-team-badge">{{ match.team1?.code || '—' }}</span>
                 <span class="mc-team-name">{{ match.team1?.team_name || 'TBD' }}</span>
               </div>
               <div class="mc-vs">vs</div>
               <div class="mc-team">
+                <flag-icon :code="match.team2?.country_id" />
                 <span class="mc-team-badge">{{ match.team2?.code || '—' }}</span>
                 <span class="mc-team-name">{{ match.team2?.team_name || 'TBD' }}</span>
               </div>
@@ -112,7 +114,7 @@
               </div>
               <div class="mc-info-row" v-if="match.match_date">
                 <svg-icon name="clock" :size="12" />
-                <span>{{ formatDate(match.match_date) }}</span>
+                <span>{{ formatMatchDateWeekday(match.match_date) }}</span>
               </div>
             </div>
             <div class="mc-footer">
@@ -140,14 +142,11 @@
           <thead>
             <tr>
               <th>Match #</th>
-              <th v-if="visibleColumns.event">Event</th>
-              <th v-if="visibleColumns.venue">Venue</th>
-              <th>TEAM 1</th>
-              <th>TEAM 2</th>
-              <th v-if="visibleColumns.stage">Stage</th>
               <th v-if="visibleColumns.matchDate">Match Date</th>
-              <th v-if="visibleColumns.gatesOpening">Gates Opening</th>
-              <th v-if="visibleColumns.kickOff">Kick Off</th>
+              <th v-if="visibleColumns.kickOff">KO</th>
+              <th>Teams</th>
+              <th v-if="visibleColumns.venue">Venue</th>
+              <th v-if="visibleColumns.stage">Stage</th>
               <th class="center" style="width: 120px;">Actions</th>
             </tr>
           </thead>
@@ -162,24 +161,28 @@
               <td class="code-cell">
                 <span class="match-badge-sm">{{ match.match_number }}</span>
               </td>
-              <td v-if="visibleColumns.event">{{ match.event?.name || '—' }}</td>
-              <td v-if="visibleColumns.venue">{{ match.venue?.name || '—' }}</td>
+              <td v-if="visibleColumns.matchDate" class="mono">{{ formatMatchDateWeekday(match.match_date) }}</td>
+              <td v-if="visibleColumns.kickOff" class="mono">{{ formatTime(match.kick_off) || '—' }}</td>
               <td class="team-cell">
-                <div class="team-display">
-                  <span class="team-code">{{ match.team1?.code || '—' }}</span>
-                  <span class="team-name">{{ match.team1?.team_name || 'TBD' }}</span>
+                <div class="teams-vs-display">
+                  <span class="team-display">
+                    <flag-icon :code="match.team1?.country_id" />
+                    <span class="team-code">{{ match.team1?.code || '—' }}</span>
+                  </span>
+                  <span class="vs-separator">vs</span>
+                  <span class="team-display">
+                    <flag-icon :code="match.team2?.country_id" />
+                    <span class="team-code">{{ match.team2?.code || '—' }}</span>
+                  </span>
                 </div>
               </td>
-              <td class="team-cell">
-                <div class="team-display">
-                  <span class="team-code">{{ match.team2?.code || '—' }}</span>
-                  <span class="team-name">{{ match.team2?.team_name || 'TBD' }}</span>
+              <td v-if="visibleColumns.venue" class="venue-event-cell">
+                <div class="venue-event-stack">
+                  <div class="venue-name">{{ match.venue?.name || '—' }}</div>
+                  <div class="event-name">{{ match.event?.name || '—' }}</div>
                 </div>
               </td>
               <td v-if="visibleColumns.stage">{{ match.stage || '—' }}</td>
-              <td v-if="visibleColumns.matchDate" class="mono">{{ formatDate(match.match_date) }}</td>
-              <td v-if="visibleColumns.gatesOpening" class="mono">{{ formatDate(match.gates_opening) }}</td>
-              <td v-if="visibleColumns.kickOff" class="mono">{{ formatDate(match.kick_off) }}</td>
               <td class="actions-cell" @click.stop>
                 <TableActions 
                   :is-deleting="deleting && matchToDelete?.id === match.id" 
@@ -241,6 +244,7 @@
               <div class="detail-row">
                 <span class="detail-label">Team 1</span>
                 <div class="team-detail">
+                  <flag-icon :code="selectedMatch.team1?.country_id" />
                   <span class="team-code-badge">{{ selectedMatch.team1?.code || '—' }}</span>
                   <span class="detail-value">{{ selectedMatch.team1?.team_name || 'TBD' }}</span>
                 </div>
@@ -248,6 +252,7 @@
               <div class="detail-row">
                 <span class="detail-label">Team 2</span>
                 <div class="team-detail">
+                  <flag-icon :code="selectedMatch.team2?.country_id" />
                   <span class="team-code-badge">{{ selectedMatch.team2?.code || '—' }}</span>
                   <span class="detail-value">{{ selectedMatch.team2?.team_name || 'TBD' }}</span>
                 </div>
@@ -344,7 +349,7 @@
             <label class="form-label">Team 1</label>
             <select v-model="formData.team1_id" class="form-input" :disabled="!formData.event_id">
               <option value="">{{ formData.event_id ? 'Select Team 1' : 'Select Event First' }}</option>
-              <option v-for="team in availableTeams" :key="team.code" :value="team.code">
+              <option v-for="team in availableTeams" :key="team.id" :value="team.id">
                 {{ team.code }} - {{ team.team_name }}
               </option>
             </select>
@@ -354,7 +359,7 @@
             <label class="form-label">Team 2</label>
             <select v-model="formData.team2_id" class="form-input" :disabled="!formData.event_id">
               <option value="">{{ formData.event_id ? 'Select Team 2' : 'Select Event First' }}</option>
-              <option v-for="team in availableTeams" :key="team.code" :value="team.code">
+              <option v-for="team in availableTeams" :key="team.id" :value="team.id">
                 {{ team.code }} - {{ team.team_name }}
               </option>
             </select>
@@ -450,7 +455,7 @@
             <label class="form-label">Team 1</label>
             <select v-model="formData.team1_id" class="form-input" :disabled="!formData.event_id">
               <option value="">{{ formData.event_id ? 'Select Team 1' : 'Select Event First' }}</option>
-              <option v-for="team in availableTeams" :key="team.code" :value="team.code">
+              <option v-for="team in availableTeams" :key="team.id" :value="team.id">
                 {{ team.code }} - {{ team.team_name }}
               </option>
             </select>
@@ -460,7 +465,7 @@
             <label class="form-label">Team 2</label>
             <select v-model="formData.team2_id" class="form-input" :disabled="!formData.event_id">
               <option value="">{{ formData.event_id ? 'Select Team 2' : 'Select Event First' }}</option>
-              <option v-for="team in availableTeams" :key="team.code" :value="team.code">
+              <option v-for="team in availableTeams" :key="team.id" :value="team.id">
                 {{ team.code }} - {{ team.team_name }}
               </option>
             </select>
@@ -518,6 +523,7 @@ import DeleteConfirmModal from '../Components/DeleteConfirmModal.vue';
 import ColumnToggle from '../Components/ColumnToggle.vue';
 import TableActions from '../Components/TableActions.vue';
 import RefreshButton from '../Components/RefreshButton.vue';
+import FlagIcon from '../Components/FlagIcon.vue';
 
 const props = defineProps({
   matches: {
@@ -586,7 +592,6 @@ const visibleColumns = ref({
   venue: true,
   stage: true,
   matchDate: true,
-  gatesOpening: false,
   kickOff: true,
 });
 
@@ -595,7 +600,6 @@ const availableColumns = [
   { key: 'venue', label: 'Venue', required: false },
   { key: 'stage', label: 'Stage', required: false },
   { key: 'matchDate', label: 'Match Date', required: false },
-  { key: 'gatesOpening', label: 'Gates Opening', required: false },
   { key: 'kickOff', label: 'Kick Off', required: false },
 ];
 
@@ -668,13 +672,13 @@ const availableTeams = computed(() => {
   if (!formData.value.event_id) {
     return props.teams;
   }
-  
+
   const selectedEvent = props.events.find(e => e.id === parseInt(formData.value.event_id));
-  if (!selectedEvent || !selectedEvent.event_teams || selectedEvent.event_teams.length === 0) {
+  if (!selectedEvent || !selectedEvent.teams || selectedEvent.teams.length === 0) {
     return props.teams;
   }
-  
-  return selectedEvent.event_teams.map(et => et.team).filter(Boolean);
+
+  return selectedEvent.teams;
 });
 
 // Watch for modal opening to initialize flatpickr
@@ -714,14 +718,14 @@ watch(() => formData.value.event_id, (newEventId) => {
     }
     
     // Reset teams if not available in the selected event
-    if (selectedEvent && selectedEvent.event_teams) {
-      const availableTeamCodes = selectedEvent.event_teams.map(et => et.team?.code).filter(Boolean);
-      
-      if (formData.value.team1_id && !availableTeamCodes.includes(formData.value.team1_id)) {
+    if (selectedEvent && selectedEvent.teams) {
+      const availableTeamIds = selectedEvent.teams.map(t => t.id);
+
+      if (formData.value.team1_id && !availableTeamIds.includes(formData.value.team1_id)) {
         formData.value.team1_id = '';
       }
-      
-      if (formData.value.team2_id && !availableTeamCodes.includes(formData.value.team2_id)) {
+
+      if (formData.value.team2_id && !availableTeamIds.includes(formData.value.team2_id)) {
         formData.value.team2_id = '';
       }
     }
@@ -921,16 +925,31 @@ function formatTime(dateString) {
 }
 
 function formatDateOnly(dateString) {
-  if (!dateString) return '';
-  
+  if (!dateString) return '—';
+
   // Extract date only from datetime string
   const match = dateString.match(/^(\d{4})-(\d{2})-(\d{2})/);
   if (match) {
     const [, year, month, day] = match;
     return `${year}-${month}-${day}`;
   }
-  
-  return dateString;
+
+  return '—';
+}
+
+// e.g. "Mon, 03-Nov-25" — used for the Matches table's Match Date column
+function formatMatchDateWeekday(dateString) {
+  if (!dateString) return '—';
+
+  const match = dateString.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!match) return '—';
+
+  const [, year, month, day] = match;
+  const d = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+  const weekday = d.toLocaleDateString('en-GB', { weekday: 'short' });
+  const monthShort = d.toLocaleDateString('en-GB', { month: 'short' });
+
+  return `${weekday}, ${day}-${monthShort}-${year.slice(-2)}`;
 }
 
 onMounted(() => {
@@ -1124,13 +1143,15 @@ onUnmounted(() => {
 }
 
 .match-badge-md {
-  width: 40px;
+  min-width: 40px;
   height: 40px;
+  padding: 0 8px;
   border-radius: 6px;
   background: var(--accent-soft);
   color: var(--accent-fg);
   font-size: 11px;
   font-weight: 700;
+  white-space: nowrap;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1297,6 +1318,27 @@ onUnmounted(() => {
   padding: 11px 14px;
 }
 
+.venue-event-cell {
+  padding: 8px 14px !important;
+}
+
+.venue-event-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.venue-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.event-name {
+  font-size: 11px;
+  color: var(--ink3);
+}
+
 .match-badge-sm {
   display: inline-flex;
   align-items: center;
@@ -1315,10 +1357,25 @@ onUnmounted(() => {
   font-weight: 500;
 }
 
+.teams-vs-display {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .team-display {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.vs-separator {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--ink3);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  flex-shrink: 0;
 }
 
 .team-code {

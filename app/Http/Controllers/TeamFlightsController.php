@@ -25,11 +25,12 @@ class TeamFlightsController extends Controller
             'party_size_total'       => 'nullable|integer|min:0',
             'party_size_players'     => 'nullable|integer|min:0',
             'party_size_staff'       => 'nullable|integer|min:0',
+            'planned_bags'           => 'nullable|integer|min:0',
             'notes'                  => 'nullable|string',
         ]);
 
         // Convert team code to team_id
-        $team = Team::where('code', $teamCode)->firstOrFail();
+        $team = Team::where('event_id', $eventId)->where('code', $teamCode)->firstOrFail();
 
         TeamFlight::create([...$validated, 'event_id' => $eventId, 'team_id' => $team->id]);
 
@@ -50,6 +51,7 @@ class TeamFlightsController extends Controller
             'party_size_total'       => 'nullable|integer|min:0',
             'party_size_players'     => 'nullable|integer|min:0',
             'party_size_staff'       => 'nullable|integer|min:0',
+            'planned_bags'           => 'nullable|integer|min:0',
             'notes'                  => 'nullable|string',
         ]);
 

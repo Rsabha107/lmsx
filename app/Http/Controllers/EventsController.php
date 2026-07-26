@@ -5,7 +5,6 @@ namespace App\Http\Controllers;
 use App\Models\Airport;
 use App\Models\Country;
 use App\Models\Event;
-use App\Models\EventTeam;
 use App\Models\Team;
 use App\Models\TeamClassification;
 use App\Models\TeamFlight;
@@ -21,11 +20,11 @@ class EventsController extends Controller
 {
     public function index(): Response
     {
-        $events = Event::with(['country', 'eventTeams.team', 'eventTeams.classification', 'venues.country'])
+        $events = Event::with(['country', 'teams.country', 'teams.classification', 'venues.country'])
                        ->orderBy('start_date', 'desc')
                        ->get();
 
-        // Attach flights and stays to each event_team
+        // Attach flights and stays to each team
         $eventIds = $events->pluck('id')->toArray();
 
         $flights = TeamFlight::with(['originAirport', 'destinationAirport'])
@@ -38,16 +37,15 @@ class EventsController extends Controller
             ->groupBy(fn ($s) => "{$s->event_id}_{$s->team_id}");
 
         $events->each(function ($event) use ($flights, $stays) {
-            $event->eventTeams->each(function ($et) use ($flights, $stays) {
-                $key         = "{$et->event_id}_{$et->team_id}";
-                $et->flights = $flights->get($key, collect())->values();
-                $et->stay    = $stays->get($key, collect())->first();
+            $event->teams->each(function ($team) use ($flights, $stays) {
+                $key           = "{$team->event_id}_{$team->id}";
+                $team->flights = $flights->get($key, collect())->values();
+                $team->stay    = $stays->get($key, collect())->first();
             });
         });
 
         return Inertia::render('Events', [
             'events'          => $events,
-            'teams'           => Team::active()->orderBy('code')->get(),
             'classifications' => TeamClassification::active()->orderBy('name')->get(),
             'countries'       => Country::active()->orderBy('country_name')->get(),
             'airports'        => Airport::orderBy('name')->get(),
@@ -96,41 +94,6 @@ class EventsController extends Controller
         Event::findOrFail($id)->delete();
 
         return redirect()->back()->with('success', 'Event deleted successfully.');
-    }
-
-    // Assign a team to an event
-    public function assignTeam(Request $request, int $id): RedirectResponse
-    {
-        $event = Event::findOrFail($id);
-
-        $validated = $request->validate([
-            'team_code'              => 'required|string|exists:teams,code',
-            'group_pool'             => 'nullable|string|max:50',
-            'classification_type_id' => 'nullable|integer|exists:team_classifications,id',
-        ]);
-
-        // Convert team code to team_id
-        $team = \App\Models\Team::where('code', $validated['team_code'])->firstOrFail();
-
-        EventTeam::updateOrCreate(
-            ['event_id' => $event->id, 'team_id' => $team->id],
-            ['group_pool' => $validated['group_pool'] ?? null, 'classification_type_id' => $validated['classification_type_id'] ?? null]
-        );
-
-        return redirect()->back()->with('success', 'Team assigned to event.');
-    }
-
-    // Remove a team from an event
-    public function removeTeam(int $id, string $teamCode): RedirectResponse
-    {
-        // Convert team code to team_id
-        $team = \App\Models\Team::where('code', $teamCode)->firstOrFail();
-        
-        EventTeam::where('event_id', $id)
-                 ->where('team_id', $team->id)
-                 ->delete();
-
-        return redirect()->back()->with('success', 'Team removed from event.');
     }
 
     // Assign a venue to an event

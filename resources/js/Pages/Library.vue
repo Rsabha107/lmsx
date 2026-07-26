@@ -45,10 +45,10 @@
             <div class="table-controls">
               <div class="search-box">
                 <svg-icon name="search" :size="14" />
-                <input 
-                  v-model="checkpointSearch" 
-                  type="text" 
-                  placeholder="Search checkpoints..." 
+                <input
+                  v-model="checkpointSearch"
+                  type="text"
+                  placeholder="Search checkpoints..."
                   class="search-input"
                 />
               </div>
@@ -59,24 +59,45 @@
                 </option>
               </select>
             </div>
+            <div v-if="selectedCheckpointIds.size > 0" style="display: flex; align-items: center; gap: 10px;">
+              <span style="font-size: 12px; color: var(--ink2); font-weight: 600;">{{ selectedCheckpointIds.size }} selected</span>
+              <Button variant="ghost" size="sm" @click="selectedCheckpointIds = new Set()" :disabled="bulkDeletingCheckpoints">Clear</Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                style="color: #DC2626; border-color: #DC2626;"
+                :disabled="bulkDeletingCheckpoints"
+                @click="deleteSelectedCheckpoints"
+              >
+                {{ bulkDeletingCheckpoints ? 'Deleting...' : `Delete Selected (${selectedCheckpointIds.size})` }}
+              </Button>
+            </div>
           </div>
         </div>
-        
-        <div style="display: grid; grid-template-columns: 120px 1.5fr 140px 140px 140px 120px 120px; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--border); font-size: 11px; font-weight: 700; color: var(--ink3); letter-spacing: 0.6px; text-transform: uppercase; position: sticky; top: 0; background: var(--surface);">
+
+        <div style="display: grid; grid-template-columns: 32px 120px 1.5fr 140px 140px 140px 120px 120px; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--border); font-size: 11px; font-weight: 700; color: var(--ink3); letter-spacing: 0.6px; text-transform: uppercase; position: sticky; top: 0; background: var(--surface);">
+          <div style="display: flex; align-items: center;">
+            <input
+              type="checkbox"
+              :checked="allCheckpointsSelected"
+              @change="toggleSelectAllCheckpoints"
+              aria-label="Select all checkpoints"
+            />
+          </div>
           <div>Code</div><div>Name</div><div>Category</div><div>Type</div><div>Capture Method</div><div>Usage Count</div><div>Actions</div>
         </div>
-        
+
         <div v-if="!filteredCheckpoints || filteredCheckpoints.length === 0" style="padding: 40px; text-align: center; color: var(--ink3);">
           <div style="font-size: 14px; font-weight: 600; margin-bottom: 8px;">No checkpoints found</div>
           <div style="font-size: 12px;">Create your first checkpoint to get started</div>
         </div>
-        
-        <div 
-          v-for="(checkpoint, i) in filteredCheckpoints" 
+
+        <div
+          v-for="(checkpoint, i) in filteredCheckpoints"
           :key="checkpoint.id"
           :style="{
-            display: 'grid', 
-            gridTemplateColumns: '120px 1.5fr 140px 140px 140px 120px 120px', 
+            display: 'grid',
+            gridTemplateColumns: '32px 120px 1.5fr 140px 140px 140px 120px 120px',
             gap: '10px',
             padding: '12px 14px',
             borderBottom: i === filteredCheckpoints.length - 1 ? 'none' : '1px solid var(--border)',
@@ -86,8 +107,21 @@
           @mouseenter="$event.currentTarget.style.background = 'var(--panel)'"
           @mouseleave="$event.currentTarget.style.background = 'transparent'"
         >
+          <div style="display: flex; align-items: center;">
+            <input
+              type="checkbox"
+              :checked="selectedCheckpointIds.has(checkpoint.id)"
+              @change="toggleCheckpointSelection(checkpoint.id)"
+              :aria-label="`Select ${checkpoint.name}`"
+            />
+          </div>
           <div style="font-family: var(--mono); font-size: 11px; color: var(--ink); font-weight: 700;">{{ checkpoint.code }}</div>
-          <div style="font-size: 13px; color: var(--ink); font-weight: 600;">{{ checkpoint.name }}</div>
+          <div style="font-size: 13px; color: var(--ink); font-weight: 600; display: flex; align-items: center; gap: 6px;">
+            <span>{{ checkpoint.name }}</span>
+            <svg-icon v-if="checkpoint.requires_photo" name="camera" :size="13" style="color: var(--ink3); flex-shrink: 0;" title="Requires photo" />
+            <svg-icon v-if="checkpoint.requires_signature" name="signature" :size="13" style="color: var(--ink3); flex-shrink: 0;" title="Requires signature" />
+            <svg-icon v-if="checkpoint.requires_baggage_count" name="bag" :size="13" style="color: var(--ink3); flex-shrink: 0;" title="Requires baggage count" />
+          </div>
           <div>
             <span :style="categoryPillStyle(checkpoint.category)">{{ checkpoint.category }}</span>
           </div>
@@ -97,8 +131,8 @@
           <div style="font-size: 12px; color: var(--ink2);">{{ checkpoint.capture_method }}</div>
           <div style="font-size: 12px; color: var(--ink2); text-align: center;">{{ checkpoint.usage_count || 0 }}</div>
           <div style="display: flex; gap: 4px;">
-            <TableActions 
-              @edit="editCheckpoint(checkpoint)" 
+            <TableActions
+              @edit="editCheckpoint(checkpoint)"
               @delete="deleteCheckpoint(checkpoint.id)"
             />
           </div>
@@ -1076,12 +1110,40 @@
       </template>
     </Modal>
 
+    <!-- Bulk Delete Confirmation Modal -->
+    <Modal :show="showBulkDeleteConfirmation" @close="cancelBulkDeleteCheckpoints">
+      <template #title>
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: #DC2626;">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+          </svg>
+          <span>Delete Checkpoints</span>
+        </div>
+      </template>
+      <div style="padding: 4px 0;">
+        <p style="font-size: 14px; color: var(--ink); margin-bottom: 12px;">
+          Are you sure you want to delete <strong>{{ selectedCheckpointIds.size }}</strong> checkpoint(s)?
+        </p>
+        <p style="font-size: 13px; color: var(--ink2);">
+          This action cannot be undone. Any checkpoint still in use by a template will be skipped.
+        </p>
+      </div>
+      <template #footer>
+        <div style="display: flex; gap: 8px; justify-content: flex-end;">
+          <Button variant="secondary" size="sm" @click="cancelBulkDeleteCheckpoints" :disabled="bulkDeletingCheckpoints">Cancel</Button>
+          <Button variant="primary" size="sm" @click="confirmDeleteSelectedCheckpoints" :disabled="bulkDeletingCheckpoints" style="background: #DC2626; border-color: #DC2626;">
+            {{ bulkDeletingCheckpoints ? 'Deleting...' : `Delete ${selectedCheckpointIds.size}` }}
+          </Button>
+        </div>
+      </template>
+    </Modal>
+
   </app-layout>
 </template>
 
 <script setup>
 import { ref, computed } from 'vue';
-import { router } from '@inertiajs/vue3';
+import { router, usePage } from '@inertiajs/vue3';
 import AppLayout from '../Components/AppLayout.vue';
 import Button from '../Components/Button.vue';
 import Modal from '../Components/Modal.vue';
@@ -1091,6 +1153,7 @@ import RefreshButton from '../Components/RefreshButton.vue';
 import { useToast } from '../Composables/useToast';
 
 const { error: showErrorToast, success: showSuccessToast } = useToast();
+const page = usePage();
 
 // Props from backend
 const props = defineProps({
@@ -1139,6 +1202,65 @@ const filteredCheckpoints = computed(() => {
 
   return result;
 });
+
+// Bulk selection for the checkpoints table
+const selectedCheckpointIds = ref(new Set());
+const bulkDeletingCheckpoints = ref(false);
+const showBulkDeleteConfirmation = ref(false);
+
+const allCheckpointsSelected = computed(() =>
+  filteredCheckpoints.value.length > 0 &&
+  filteredCheckpoints.value.every(c => selectedCheckpointIds.value.has(c.id))
+);
+
+function toggleSelectAllCheckpoints() {
+  selectedCheckpointIds.value = allCheckpointsSelected.value
+    ? new Set()
+    : new Set(filteredCheckpoints.value.map(c => c.id));
+}
+
+function toggleCheckpointSelection(id) {
+  const next = new Set(selectedCheckpointIds.value);
+  next.has(id) ? next.delete(id) : next.add(id);
+  selectedCheckpointIds.value = next;
+}
+
+function deleteSelectedCheckpoints() {
+  if (selectedCheckpointIds.value.size === 0) return;
+  showBulkDeleteConfirmation.value = true;
+}
+
+function cancelBulkDeleteCheckpoints() {
+  showBulkDeleteConfirmation.value = false;
+}
+
+function confirmDeleteSelectedCheckpoints() {
+  const ids = Array.from(selectedCheckpointIds.value);
+  if (ids.length === 0) return;
+
+  bulkDeletingCheckpoints.value = true;
+
+  router.delete('/admin/checkpoints/bulk-delete', {
+    data: { ids },
+    preserveScroll: true,
+    onSuccess: () => {
+      selectedCheckpointIds.value = new Set();
+      showBulkDeleteConfirmation.value = false;
+      const flash = page.props.flash;
+      if (flash?.error) {
+        showErrorToast(flash.error);
+      } else if (flash?.success) {
+        showSuccessToast(flash.success);
+      }
+    },
+    onError: () => {
+      showErrorToast('Failed to delete checkpoints');
+    },
+    onFinish: () => {
+      bulkDeletingCheckpoints.value = false;
+    },
+  });
+}
 
 // Filter checkpoints by category for template builder
 const filteredCheckpointsForTemplate = computed(() => {
@@ -1868,6 +1990,14 @@ function confirmDelete() {
 
   router.delete(routes[type], {
     onSuccess: () => {
+      // Laravel's back()->with('error', ...) guard (e.g. "template is in
+      // use") is still an HTTP redirect, so Inertia treats it as success —
+      // check the actual flash message to know whether the delete happened.
+      const flash = page.props.flash;
+      if (flash?.error) {
+        showErrorToast(flash.error);
+        return;
+      }
       showDeleteConfirmation.value = false;
       deleteTarget.value = null;
       showSuccessToast('Deleted successfully');

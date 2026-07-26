@@ -6,7 +6,7 @@ use App\Models\Checkpoint;
 use App\Models\CheckpointTemplate;
 use Illuminate\Database\Seeder;
 
-class CheckpointTemplateSeeder extends Seeder
+class CheckpointTemplateLibrarySeeder extends Seeder
 {
     /**
      * Seed checkpoint templates with their checkpoint sequences.

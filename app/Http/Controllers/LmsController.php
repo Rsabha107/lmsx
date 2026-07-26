@@ -18,11 +18,9 @@ use App\Models\JobOperation;
 use App\Models\JobCheckpoint;
 use App\Models\User;
 use App\Models\Event;
-use App\Models\EventTeam;
 use App\Models\Plan;
 use App\Models\Movement;
 use App\Services\CheckpointUploadService;
-use App\Services\FlightSyncService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -60,14 +58,9 @@ class LmsController extends Controller
         // Get teams from active event
         $teams = [];
         if ($activeEventId) {
-            $teams = EventTeam::where('event_id', $activeEventId)
-                ->with(['team.country'])
-                ->get()
-                ->map(function ($et) {
-                    return $et->team;
-                })
-                ->filter()
-                ->values();
+            $teams = Team::where('event_id', $activeEventId)
+                ->with('country')
+                ->get();
         }
 
         // Get plans for active event
@@ -249,7 +242,9 @@ class LmsController extends Controller
                             'requires_photo' => $checkpoint->requires_photo,
                             'requires_signature' => $checkpoint->requires_signature,
                             'requires_baggage_count' => $checkpoint->checkpoint?->requires_baggage_count ?? false,
+                            'planned_bags' => $checkpoint->planned_bags,
                             'bags_loaded' => $checkpoint->bags_loaded,
+                            'food_bags' => $checkpoint->food_bags,
                             'oversized_pieces' => $checkpoint->oversized_pieces,
                             'has_photo' => $checkpoint->photo_path ? true : false,
                             'has_signature' => $checkpoint->signature_path ? true : false,
@@ -288,6 +283,12 @@ class LmsController extends Controller
                 $movement = $job->movement;
                 $team = $movement?->team;
 
+                // Get the latest unactioned (pending) checkpoint
+                $nextCheckpoint = $job->checkpoints()
+                    ->where('state', 'pending')
+                    ->orderBy('order', 'asc')
+                    ->first();
+
                 return [
                     'id' => $job->job_id ?? 'J-' . $job->id,
                     'jobId' => $job->job_id,
@@ -304,6 +305,11 @@ class LmsController extends Controller
                     'status' => $job->status,
                     'functional_area' => $job->functional_area ?? null,
                     'delay' => $movement?->delay_minutes,
+                    'next_checkpoint' => $nextCheckpoint ? [
+                        'id' => $nextCheckpoint->id,
+                        'name' => $nextCheckpoint->name,
+                        'scheduled_at' => $nextCheckpoint->scheduled_at?->format('H:i'),
+                    ] : null,
                     'flight' => $movement?->flight ? [
                         'id' => $movement->flight->id,
                         'flight_number' => $movement->flight->flight_number,
@@ -358,7 +364,8 @@ class LmsController extends Controller
             'vehicle',
             'driver',
             'supervisor',
-            'checkpoints.completedBy'
+            'checkpoints.completedBy',
+            'checkpoints.checkpoint'
         ])->where('job_id', $id)
             ->orWhere('id', $id)
             ->first();
@@ -422,6 +429,11 @@ class LmsController extends Controller
                     'actual' => $checkpoint->completed_at?->format('H:i'),
                     'requires_photo' => $checkpoint->requires_photo,
                     'requires_signature' => $checkpoint->requires_signature,
+                    'requires_baggage_count' => $checkpoint->checkpoint?->requires_baggage_count ?? false,
+                    'planned_bags' => $checkpoint->planned_bags,
+                    'bags_loaded' => $checkpoint->bags_loaded,
+                    'food_bags' => $checkpoint->food_bags,
+                    'oversized_pieces' => $checkpoint->oversized_pieces,
                     'has_photo' => $checkpoint->photo_path ? true : false,
                     'has_signature' => $checkpoint->signature_path ? true : false,
                     'photo_url' => $checkpoint->photo_path ? route('checkpoint.photo', $checkpoint->id) : null,
@@ -630,145 +642,6 @@ class LmsController extends Controller
         return redirect()->route('contacts');
     }
 
-    public function teams(): Response
-    {
-        return Inertia::render('Teams', [
-            'teams' => Team::with(['classification', 'country', 'originAirport', 'destinationAirport'])->active()->orderBy('code')->get(),
-            'classifications' => TeamClassification::active()->orderBy('name')->get(),
-            'countries' => Country::active()->orderBy('country_name')->get(),
-            'airports' => Airport::orderBy('name')->get(),
-        ]);
-    }
-
-    public function syncFlights(FlightSyncService $service): JsonResponse
-    {
-        $result = $service->syncAll();
-        return response()->json($result);
-    }
-
-    public function syncTeamFlight(FlightSyncService $service, string $code): JsonResponse
-    {
-        $team   = Team::where('code', $code)->firstOrFail();
-        $flight = $service->syncTeam($team);
-
-        if (!$flight) {
-            return response()->json(['success' => false, 'message' => 'No flight data available for ' . $team->flight_number], 404);
-        }
-
-        $dep = $flight['departure'] ?? [];
-        $arr = $flight['arrival']   ?? [];
-
-        // AviationStack may put the real time in actual_runway, or leave actual null.
-        // If still missing but delay is known, derive it by adding delay to scheduled.
-        $depActual = $dep['actual'] ?? $dep['actual_runway'] ?? null;
-        if (!$depActual && !empty($dep['delay']) && !empty($dep['scheduled'])) {
-            $depActual = \Carbon\Carbon::parse($dep['scheduled'])->addMinutes((int) $dep['delay'])->toIso8601String();
-        }
-
-        $arrActual    = $arr['actual']    ?? $arr['actual_runway'] ?? null;
-        $arrEstimated = $arr['estimated'] ?? $arr['estimated_runway'] ?? null;
-        if (!$arrEstimated && !$arrActual && !empty($arr['delay']) && !empty($arr['scheduled'])) {
-            $arrEstimated = \Carbon\Carbon::parse($arr['scheduled'])->addMinutes((int) $arr['delay'])->toIso8601String();
-        }
-
-        return response()->json([
-            'success'       => true,
-            'date_mismatch' => !empty($flight['_date_mismatch']),
-            'planned_date'  => $flight['_planned_date'] ?? null,
-            'flight_date'   => $flight['flight_date']   ?? null,
-            'flight_number' => $team->flight_number,
-            'flight_status' => $flight['flight_status'] ?? null,
-            'airline'       => $flight['airline']['name'] ?? null,
-            'departure'     => [
-                'iata'      => $dep['iata']      ?? null,
-                'airport'   => $dep['airport']   ?? null,
-                'scheduled' => $dep['scheduled'] ?? null,
-                'actual'    => $depActual,
-                'estimated' => $dep['estimated'] ?? null,
-                'terminal'  => $dep['terminal']  ?? null,
-                'gate'      => $dep['gate']      ?? $team->gate,
-                'delay'     => $dep['delay']     ?? null,
-            ],
-            'arrival'       => [
-                'iata'      => $arr['iata']      ?? null,
-                'airport'   => $arr['airport']   ?? null,
-                'scheduled' => $arr['scheduled'] ?? null,
-                'actual'    => $arrActual,
-                'estimated' => $arrEstimated,
-                'terminal'  => $arr['terminal']  ?? null,
-                'gate'      => $arr['gate']      ?? null,
-                'delay'     => $arr['delay']     ?? null,
-            ],
-            'synced_at'     => now()->toISOString(),
-        ]);
-    }
-
-    public function storeTeam(Request $request): RedirectResponse
-    {
-        Log::info('Storing new team', ['request' => $request->all()]);
-        $validated = $request->validate([
-            'code' => 'required|string|max:10|unique:teams,code',
-            'team_name' => 'required|string|max:255',
-            'country_id' => 'required|string|max:10|exists:countries,country_code',
-            'flag' => 'nullable|string|max:10',
-            'group_pool' => 'nullable|string|max:50',
-            'classification_type_id' => 'nullable|integer|exists:team_classifications,id',
-            'origin_airport_id' => 'nullable|integer|exists:airports,id',
-            'destination_airport_id' => 'nullable|integer|exists:airports,id',
-            'gate' => 'nullable|string|max:50',
-            'arrival_manifest' => 'nullable|array',
-            'head_of_delegation' => 'nullable|string|max:255',
-            'bib_accent_color' => 'nullable|string|max:20',
-            'notes' => 'nullable|string',
-        ]);
-
-        Log::info('Validated team data', ['validated' => $validated]);
-        Team::create($validated);
-
-        Log::info('Team created successfully', ['team_code' => $validated['code']]);
-        return redirect()->route('teams.index')->with('success', 'Team added successfully.');
-    }
-
-    public function updateTeam(Request $request, string $code): RedirectResponse
-    {
-        Log::info('Updating team', ['code' => $code, 'request' => $request->all()]);
-
-        $team = Team::where('code', $code)->firstOrFail();
-
-        $validated = $request->validate([
-            'code' => 'required|string|max:10',
-            'team_name' => 'required|string|max:255',
-            'country_id' => 'required|string|max:10|exists:countries,country_code',
-            'flag' => 'nullable|string|max:10',
-            'group_pool' => 'nullable|string|max:50',
-            'classification_type_id' => 'nullable|integer|exists:team_classifications,id',
-            'origin_airport_id' => 'nullable|integer|exists:airports,id',
-            'destination_airport_id' => 'nullable|integer|exists:airports,id',
-            'gate' => 'nullable|string|max:50',
-            'arrival_manifest' => 'nullable|array',
-            'head_of_delegation' => 'nullable|string|max:255',
-            'bib_accent_color' => 'nullable|string|max:20',
-            'notes' => 'nullable|string',
-        ]);
-
-        Log::info('Validated team update data', ['validated' => $validated]);
-        $team->update($validated);
-
-        Log::info('Team updated successfully', ['team_code' => $code]);
-        return redirect()->route('teams.index')->with('success', 'Team updated successfully.');
-    }
-
-    public function destroyTeam(string $code): RedirectResponse
-    {
-        Log::info('Deleting team', ['code' => $code]);
-
-        $team = Team::where('code', $code)->firstOrFail();
-        $team->delete();
-
-        Log::info('Team deleted successfully', ['team_code' => $code]);
-        return redirect()->route('teams.index')->with('success', 'Team deleted successfully.');
-    }
-
     public function notifications(): Response
     {
         return Inertia::render('Notifications', [
@@ -810,7 +683,9 @@ class LmsController extends Controller
                 'actual_time' => 'nullable|date_format:H:i',
                 'reason' => 'required|string|max:255',
                 'notes' => 'nullable|string',
+                'planned_bags' => 'nullable|integer|min:0',
                 'bags_loaded' => 'nullable|integer|min:0',
+                'food_bags' => 'nullable|integer|min:0',
                 'oversized_pieces' => 'nullable|integer|min:0',
                 'photo' => 'nullable|image|max:10240', // Max 10MB
                 'signature_data' => 'nullable|string', // Base64 encoded image
@@ -860,8 +735,14 @@ class LmsController extends Controller
                 $updateData['notes'] = $validated['notes'] ?? null;
 
                 // Add baggage count if provided
+                if (isset($validated['planned_bags'])) {
+                    $updateData['planned_bags'] = $validated['planned_bags'];
+                }
                 if (isset($validated['bags_loaded'])) {
                     $updateData['bags_loaded'] = $validated['bags_loaded'];
+                }
+                if (isset($validated['food_bags'])) {
+                    $updateData['food_bags'] = $validated['food_bags'];
                 }
                 if (isset($validated['oversized_pieces'])) {
                     $updateData['oversized_pieces'] = $validated['oversized_pieces'];
@@ -1006,6 +887,10 @@ class LmsController extends Controller
             'notes' => 'nullable|string|max:500',
             'signature' => 'nullable|string',
             'photo' => 'nullable|string',
+            'planned_bags' => 'nullable|integer|min:0',
+            'bags_loaded' => 'nullable|integer|min:0',
+            'food_bags' => 'nullable|integer|min:0',
+            'oversized_pieces' => 'nullable|integer|min:0',
         ]);
 
         $checkpoint = JobCheckpoint::with(['job', 'checkpoint'])->findOrFail($checkpointId);
@@ -1026,6 +911,19 @@ class LmsController extends Controller
             'completion_method' => 'mobile',
             'notes' => $validated['notes'] ?? null,
         ];
+
+        if (isset($validated['planned_bags'])) {
+            $updateData['planned_bags'] = $validated['planned_bags'];
+        }
+        if (isset($validated['bags_loaded'])) {
+            $updateData['bags_loaded'] = $validated['bags_loaded'];
+        }
+        if (isset($validated['food_bags'])) {
+            $updateData['food_bags'] = $validated['food_bags'];
+        }
+        if (isset($validated['oversized_pieces'])) {
+            $updateData['oversized_pieces'] = $validated['oversized_pieces'];
+        }
 
         // Save photo to private storage if provided
         if (!empty($validated['photo'])) {

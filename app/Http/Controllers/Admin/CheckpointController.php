@@ -165,6 +165,41 @@ class CheckpointController extends Controller
     }
 
     /**
+     * Remove multiple checkpoints from storage in one request. Checkpoints
+     * still in use by a template are skipped rather than blocking the
+     * whole batch.
+     */
+    public function destroyBulk(Request $request)
+    {
+        $validated = $request->validate([
+            'ids' => 'required|array|min:1',
+            'ids.*' => 'integer|exists:checkpoints,id',
+        ]);
+
+        $checkpoints = Checkpoint::withCount('checkpointTemplates')
+            ->whereIn('id', $validated['ids'])
+            ->get();
+
+        $deletableIds = $checkpoints
+            ->filter(fn ($checkpoint) => $checkpoint->checkpoint_templates_count === 0)
+            ->pluck('id');
+
+        $skippedCount = $checkpoints->count() - $deletableIds->count();
+
+        Checkpoint::whereIn('id', $deletableIds)->delete();
+
+        $message = "Deleted {$deletableIds->count()} checkpoint(s).";
+        if ($skippedCount > 0) {
+            $message .= " {$skippedCount} skipped (in use by a template).";
+        }
+
+        return redirect()->route('library')->with(
+            $deletableIds->count() > 0 ? 'success' : 'error',
+            $message
+        );
+    }
+
+    /**
      * Generate a unique checkpoint code.
      */
     protected function generateCheckpointCode(): string

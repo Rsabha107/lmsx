@@ -221,7 +221,6 @@ const navItems = [
   { label: 'Planning',      route: 'plans',             icon: 'plans' },
   { label: 'Jobs Queue',    route: 'jobs',              icon: 'jobs' },
   { label: 'Jobs (Mobile)', route: 'jobs/mobile',       icon: 'phone' },
-  { label: 'Live Tracker',  route: 'tracker',           icon: 'tracker' },
   { label: 'Matches',       route: 'matches',           icon: 'trophy' },
   { label: 'Notifications', route: 'notifications',     icon: 'bell' },
   { label: 'Daily Email',   route: 'email',             icon: 'email' },
@@ -235,7 +234,6 @@ const navItems = [
       { label: 'Library',       route: 'library',           icon: 'database' },
       { label: 'Events',        route: 'events',            icon: 'trophy' },
       { label: 'Venues',        route: 'venues',            icon: 'building' },
-      { label: 'Teams',         route: 'teams',             icon: 'team' },
       { label: 'Fleet',         route: 'fleet',             icon: 'fleet' },
       { label: 'Movement Tracking', route: 'kit-truck',     icon: 'fleet' },
       { label: 'Contacts',      route: 'contacts',          icon: 'contacts' },
@@ -250,6 +248,7 @@ const navItems = [
       { label: 'Users',         route: 'setups/users',       icon: 'user'   },
       { label: 'Roles',         route: 'setups/roles',       icon: 'shield' },
       { label: 'Permissions',   route: 'setups/permissions', icon: 'key'    },
+      { label: 'Settings',      route: 'setups/settings',    icon: 'settings' },
     ]
   },
 ];

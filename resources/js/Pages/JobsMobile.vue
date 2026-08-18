@@ -20,12 +20,16 @@
             <div class="job-card-left">
               <div class="team-badge">{{ job.code }}</div>
               <div>
-                <div class="job-card-team">{{ job.team }}</div>
+                <div style="display: flex; align-items: center; gap: 6px;">
+                  <div class="job-card-team" style="margin-bottom: 0;">{{ job.team }}</div>
+                  <span
+                    v-if="job.kind"
+                    class="mobile-kind-badge"
+                    :class="`mobile-kind-badge--${job.kind}`"
+                  >{{ job.kind }}</span>
+                </div>
                 <div class="job-card-id">
                   {{ job.jobId || job.id }}
-                  <span v-if="job.source" :class="['source-badge', `source-badge--${job.source}`]">
-                    {{ job.source === 'database' ? 'DB' : 'DEMO' }}
-                  </span>
                   <span v-if="job.functional_area" class="mobile-fa-badge">
                     {{ job.functional_area }}
                   </span>
@@ -106,7 +110,7 @@ function selectJob(job) {
 
 const statusMap = {
   'in-progress': { tone: 'live', label: 'In Progress' },
-  'live': { tone: 'live', label: 'Live' },
+  'live': { tone: 'live', label: 'In Progress' },
   'pending': { tone: 'primary', label: 'Scheduled' },
   'scheduled': { tone: 'primary', label: 'Scheduled' },
   'dispatched': { tone: 'primary', label: 'Dispatched' },
@@ -404,25 +408,6 @@ function formatJobToLocation(job) {
   gap: 6px;
 }
 
-.source-badge {
-  font-size: 8px;
-  font-weight: 700;
-  padding: 2px 6px;
-  border-radius: 4px;
-  letter-spacing: 0.5px;
-  font-family: var(--font-sans, sans-serif);
-}
-
-.source-badge--database {
-  background: #dcfce7;
-  color: #166534;
-}
-
-.source-badge--mock {
-  background: #fef3c7;
-  color: #92400e;
-}
-
 .mobile-fa-badge {
   font-size: 8px;
   font-weight: 700;
@@ -433,6 +418,22 @@ function formatJobToLocation(job) {
   background: var(--green-soft, #dcfce7);
   color: var(--green, #166534);
 }
+
+.mobile-kind-badge {
+  font-size: 9px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 4px;
+  text-transform: capitalize;
+  letter-spacing: 0.3px;
+  flex-shrink: 0;
+}
+.mobile-kind-badge--arrival { background: var(--ok-soft); color: var(--ok); }
+.mobile-kind-badge--departure { background: var(--danger-soft); color: var(--danger); }
+.mobile-kind-badge--transfer { background: var(--accent-soft); color: var(--accent-fg); }
+.mobile-kind-badge--match { background: #fef3c7; color: #92400e; }
+.mobile-kind-badge--training { background: #ede9fe; color: #6d28d9; }
+.mobile-kind-badge--daily_ops { background: var(--panel); color: var(--ink3); }
 
 .job-card-route {
   display: flex;

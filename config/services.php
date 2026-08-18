@@ -39,4 +39,13 @@ return [
         'key' => env('AVIATIONSTACK_API_KEY'),
     ],
 
+    // The API key itself lives in config('ai.providers.anthropic.key') via
+    // laravel/ai's own auto-merged config — this block only holds the
+    // AI Copilot's model/timeout knobs, kept in services.php to match this
+    // app's existing convention (see aviationstack above).
+    'anthropic' => [
+        'model' => env('AI_MODEL'),
+        'timeout' => (int) env('AI_TIMEOUT', 15),
+    ],
+
 ];

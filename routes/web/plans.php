@@ -43,6 +43,7 @@ Route::middleware(['auth'])->group(function () {
     
     Route::prefix('movements')->name('movements.')->group(function () {
         Route::delete('/bulk-delete', [PlanManagementController::class, 'deleteMovementsBulk'])->name('bulk-delete');
+        Route::get('/{movement}/checkpoints', [PlanManagementController::class, 'checkpoints'])->name('checkpoints');
         Route::put('/{movement}/checkpoint-template', [PlanManagementController::class, 'updateCheckpointTemplate'])->name('update-checkpoint-template');
         Route::put('/{movement}', [PlanManagementController::class, 'updateMovement'])->name('update');
         Route::delete('/{movement}', [PlanManagementController::class, 'deleteMovement'])->name('delete');

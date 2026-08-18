@@ -23,6 +23,10 @@ class DatabaseSeeder extends Seeder
         ]);
 
         $this->call([
+            // Access control (roles/permissions — no role assignment to
+            // existing users; that's a manual/deploy-time step)
+            RolePermissionSeeder::class,
+
             // Master data
             CountrySeeder::class,
             TeamClassificationSeeder::class,

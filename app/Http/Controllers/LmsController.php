@@ -41,10 +41,56 @@ class LmsController extends Controller
         ]);
     }
 
-    public function schedule(): Response
+    public function schedule(Request $request): Response
     {
+        // Accept an optional ?date=YYYY-MM-DD so the page can browse other
+        // days' movements; malformed input silently falls back to today
+        // rather than erroring out.
+        $date = $request->query('date');
+        try {
+            $date = $date ? \Carbon\Carbon::parse($date)->toDateString() : now()->toDateString();
+        } catch (\Exception) {
+            $date = now()->toDateString();
+        }
+
+        $movements = JobOperation::with(['movement.team', 'movement.flight', 'vehicle'])
+            ->join('movements', 'jobs_operations.movement_id', '=', 'movements.id')
+            ->whereDate('movements.window_start', $date)
+            ->orderBy('movements.window_start', 'asc')
+            ->select('jobs_operations.*')
+            ->get()
+            ->map(function ($job) {
+                $movement = $job->movement;
+                $team = $movement?->team;
+                $delay = $movement?->delay_minutes;
+
+                $status = 'scheduled';
+                if ($delay > 0) {
+                    $status = 'delayed';
+                } elseif ($job->status === 'completed') {
+                    $status = 'done';
+                } elseif ($job->status === 'in-progress') {
+                    $status = 'in-progress';
+                }
+
+                return [
+                    'id' => $job->job_id ?? 'J-' . $job->id,
+                    'code' => $team?->code ?? 'UNK',
+                    'team' => $team?->team_name ?? 'Unknown Team',
+                    'from' => $movement?->from_location ?? 'Unknown',
+                    'to' => $movement?->to_location ?? 'Unknown',
+                    'dep' => $movement?->window_start?->format('H:i') ?? '--:--',
+                    'arr' => $movement?->window_end?->format('H:i') ?? '--:--',
+                    'pax' => $movement?->passengers ?? $movement?->flight?->party_size_total ?? $team?->party_size_total ?? 0,
+                    'vehicle' => $job->vehicle ? ($job->vehicle->code ?? $job->vehicle->plate_number ?? $job->vehicle->vehicle_type ?? 'Unassigned') : 'Unassigned',
+                    'status' => $status,
+                    'delay' => $delay > 0 ? $delay : null,
+                ];
+            });
+
         return Inertia::render('Schedule', [
-            'schedule' => LmsData::schedule(),
+            'schedule' => $movements,
+            'scheduleDate' => $date,
         ]);
     }
 
@@ -168,11 +214,13 @@ class LmsController extends Controller
                     'id' => $job->job_id ?? 'J-' . $job->id,
                     'team' => $team?->team_name ?? 'Unknown Team',
                     'code' => $team?->code ?? 'UNK',
+                    'country_code' => $team?->country_id,
+                    'flag' => $team?->flag,
                     'kind' => $movement?->kind ?? 'transfer',
                     'from' => $movement?->from_location ?? 'Unknown',
                     'to' => $movement?->to_location ?? 'Unknown',
                     'dep' => $movement?->window_start?->format('H:i') ?? '--:--',
-                    'arr' => $movement?->flight?->scheduled_at?->format('H:i') ?? $movement?->window_end?->format('H:i') ?? '--:--',
+                    'arr' => $movement?->flight?->scheduled_at?->format('H:i') ?? $movement?->window_start?->format('H:i') ?? '--:--',
                     'date' => $movement?->date?->format('Y-m-d') ?? $movement?->window_start?->format('Y-m-d') ?? now()->format('Y-m-d'),
                     'event_name' => $job->event?->name ?? null,
                     'event_code' => $job->event?->code ?? null,
@@ -262,7 +310,8 @@ class LmsController extends Controller
 
     public function jobsMobile(): Response
     {
-        // Get database jobs
+        // "My Jobs" is a field supervisor's active worklist — only jobs
+        // currently underway, real data only (no mock/demo rows).
         $dbJobs = JobOperation::with([
             'movement.team',
             'movement.flight.originAirport',
@@ -276,6 +325,7 @@ class LmsController extends Controller
             'checkpoints.checkpoint'
         ])
             ->join('movements', 'jobs_operations.movement_id', '=', 'movements.id')
+            ->where('jobs_operations.status', 'in-progress')
             ->orderBy('movements.window_start', 'asc')
             ->select('jobs_operations.*')
             ->get()
@@ -298,7 +348,7 @@ class LmsController extends Controller
                     'from' => $movement?->from_location ?? 'Unknown',
                     'to' => $movement?->to_location ?? 'Unknown',
                     'dep' => $movement?->window_start?->format('H:i') ?? '--:--',
-                    'arr' => $movement?->flight?->scheduled_at?->format('H:i') ?? $movement?->window_end?->format('H:i') ?? '--:--',
+                    'arr' => $movement?->flight?->scheduled_at?->format('H:i') ?? $movement?->window_start?->format('H:i') ?? '--:--',
                     'window_start' => $movement?->window_start?->format('Y-m-d H:i') ?? null,
                     'pax' => $movement?->passengers ?? $movement?->flight?->party_size_total ?? $team?->party_size_total ?? 0,
                     'vehicle' => $job->vehicle ? ($job->vehicle->code ?? $job->vehicle->plate_number ?? $job->vehicle->vehicle_type ?? 'Unassigned') : 'Unassigned',
@@ -331,20 +381,11 @@ class LmsController extends Controller
                         'destination_airport' => $team->destinationAirport?->code,
                         'training_ground' => $team->training_ground,
                     ] : null,
-                    'source' => 'database',
                 ];
             });
 
-        // Get mock data
-        $mockJobs = collect(LmsData::schedule())->map(function ($job) {
-            return array_merge($job, ['source' => 'mock']);
-        });
-
-        // Combine both sources
-        $allJobs = $dbJobs->concat($mockJobs);
-
         return Inertia::render('JobsMobile', [
-            'schedule' => $allJobs,
+            'schedule' => $dbJobs,
         ]);
     }
 
@@ -382,7 +423,7 @@ class LmsController extends Controller
                 'from' => $movement?->from_location ?? 'Unknown',
                 'to' => $movement?->to_location ?? 'Unknown',
                 'dep' => $movement?->window_start?->format('H:i') ?? '--:--',
-                'arr' => $movement?->flight?->scheduled_at?->format('H:i') ?? $movement?->window_end?->format('H:i') ?? '--:--',
+                'arr' => $movement?->flight?->scheduled_at?->format('H:i') ?? $movement?->window_start?->format('H:i') ?? '--:--',
                 'pax' => $movement?->passengers ?? $movement?->flight?->party_size_total ?? $team?->party_size_total ?? 0,
                 'vehicle' => $jobOperation->vehicle ? ($jobOperation->vehicle->code ?? $jobOperation->vehicle->plate_number ?? $jobOperation->vehicle->vehicle_type ?? 'Unassigned') : 'Unassigned',
                 'status' => $jobOperation->status,
@@ -486,6 +527,8 @@ class LmsController extends Controller
             'id' => $jobOperation->id,
             'code' => $team ? $team->code : 'N/A',
             'team' => $team ? $team->team_name : 'Unknown Team',
+            'country_code' => $team?->country_id,
+            'flag' => $team?->flag,
             'status' => $jobOperation->status,
             'delay' => null, // Calculate delay if needed
             'from' => $movement->origin ?? 'Unknown',
@@ -493,7 +536,7 @@ class LmsController extends Controller
             'vehicle' => $jobOperation->vehicle ? $jobOperation->vehicle->code : 'N/A',
             'pax' => $movement->passenger_count ?? 0,
             'dep' => $movement->window_start ? \Carbon\Carbon::parse($movement->window_start)->format('H:i') : 'N/A',
-            'arr' => $movement->flight?->scheduled_at?->format('H:i') ?? ($movement->window_end ? \Carbon\Carbon::parse($movement->window_end)->format('H:i') : 'N/A'),
+            'arr' => $movement->flight?->scheduled_at?->format('H:i') ?? ($movement->window_start ? \Carbon\Carbon::parse($movement->window_start)->format('H:i') : 'N/A'),
         ];
 
         // Transform checkpoints for frontend
@@ -789,11 +832,15 @@ class LmsController extends Controller
                 $movement = $job->movement;
                 if ($movement && $movement->window_end) {
                     $windowEnd = \Carbon\Carbon::parse($movement->window_end);
-                    $delayMinutes = $actualDateTime->diffInMinutes($windowEnd, false);
-                    // On-time if completed before or at window_end
-                    $updateData['is_on_time'] = $delayMinutes <= 0;
-                    // Only store positive delays (after window_end)
-                    $updateData['delay_minutes'] = max(0, -$delayMinutes);
+                    // diffInMinutes()'s signed mode is relative to the argument, not
+                    // $this, so a plain "<= 0" check on it gets the direction backwards
+                    // (late completions read as on-time and vice versa). greaterThan()
+                    // for direction + an explicit absolute diff for magnitude avoids
+                    // that footgun (and Carbon 3 defaults diffInMinutes() to signed,
+                    // unlike Carbon 2, so the second argument must be passed explicitly).
+                    $isLate = $actualDateTime->greaterThan($windowEnd);
+                    $updateData['is_on_time'] = !$isLate;
+                    $updateData['delay_minutes'] = $isLate ? $actualDateTime->diffInMinutes($windowEnd, true) : 0;
                 }
             } elseif ($validated['state'] === 'skipped') {
                 $updateData['skip_reason'] = $validated['reason'];
@@ -986,11 +1033,15 @@ class LmsController extends Controller
             $movement = $job->movement;
             if ($movement && $movement->window_end) {
                 $windowEnd = \Carbon\Carbon::parse($movement->window_end);
-                $delayMinutes = $actualDateTime->diffInMinutes($windowEnd, false);
-                // On-time if completed before or at window_end
-                $updateData['is_on_time'] = $delayMinutes <= 0;
-                // Only store positive delays (after window_end)
-                $updateData['delay_minutes'] = max(0, -$delayMinutes);
+                // diffInMinutes()'s signed mode is relative to the argument, not
+                // $this, so a plain "<= 0" check on it gets the direction backwards
+                // (late completions read as on-time and vice versa). greaterThan()
+                // for direction + an explicit absolute diff for magnitude avoids
+                // that footgun (and Carbon 3 defaults diffInMinutes() to signed,
+                // unlike Carbon 2, so the second argument must be passed explicitly).
+                $isLate = $actualDateTime->greaterThan($windowEnd);
+                $updateData['is_on_time'] = !$isLate;
+                $updateData['delay_minutes'] = $isLate ? $actualDateTime->diffInMinutes($windowEnd, true) : 0;
             }
         } else {
             $updateData['completed_at'] = now();
@@ -1148,7 +1199,20 @@ class LmsController extends Controller
             'status' => 'required|in:pending,dispatched,in-progress,completed,cancelled',
         ]);
 
-        $job = JobOperation::findOrFail($jobId);
+        // The frontend passes the job's display id (the job_id string, e.g.
+        // "JOB-20260726-0005"), not the numeric primary key — look up by
+        // that first, falling back to the "J-{id}" placeholder format used
+        // when a job has no job_id, and finally the raw numeric id itself.
+        $job = JobOperation::where('job_id', $jobId)->first();
+        if (!$job && str_starts_with($jobId, 'J-')) {
+            $job = JobOperation::find(substr($jobId, 2));
+        }
+        if (!$job) {
+            $job = JobOperation::find($jobId);
+        }
+        if (!$job) {
+            abort(404, 'Job not found');
+        }
 
         $job->update([
             'status' => $validated['status'],

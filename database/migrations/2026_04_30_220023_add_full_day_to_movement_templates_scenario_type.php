@@ -2,7 +2,6 @@
 
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
@@ -12,8 +11,16 @@ return new class extends Migration
      */
     public function up(): void
     {
-        // Modify the scenario_type enum to add 'full_day'
-        DB::statement("ALTER TABLE movement_templates MODIFY COLUMN scenario_type ENUM('match_day', 'training_day', 'arrival_day', 'departure_day', 'full_day', 'custom') DEFAULT 'custom'");
+        // Was a raw MySQL-only "MODIFY COLUMN ... ENUM" statement, which broke
+        // the whole test suite's RefreshDatabase on sqlite (no such syntax).
+        // The schema-builder ->change() form is portable across drivers and
+        // is already used for this exact table/pattern in the sibling
+        // functional_area migration, so this is a drop-in replacement.
+        Schema::table('movement_templates', function (Blueprint $table) {
+            $table->enum('scenario_type', ['match_day', 'training_day', 'arrival_day', 'departure_day', 'full_day', 'custom'])
+                ->default('custom')
+                ->change();
+        });
     }
 
     /**
@@ -21,7 +28,10 @@ return new class extends Migration
      */
     public function down(): void
     {
-        // Revert back to original enum values
-        DB::statement("ALTER TABLE movement_templates MODIFY COLUMN scenario_type ENUM('match_day', 'training_day', 'arrival_day', 'departure_day', 'custom') DEFAULT 'custom'");
+        Schema::table('movement_templates', function (Blueprint $table) {
+            $table->enum('scenario_type', ['match_day', 'training_day', 'arrival_day', 'departure_day', 'custom'])
+                ->default('custom')
+                ->change();
+        });
     }
 };

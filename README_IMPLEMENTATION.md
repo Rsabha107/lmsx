@@ -335,4 +335,64 @@ See `DUPLICATE_PREVENTION_SYSTEM.md` for complete documentation and frontend int
 
 ---
 
+## 🤖 AI Operations Copilot
+
+### Overview
+
+A read-only, natural-language query layer over movement/job data (`laravel/ai` + Anthropic Claude). Answers questions like "which teams are delayed?" or "explain the delay on job 42" by having the LLM call a small set of pre-approved, permission-scoped PHP methods — never raw SQL or Eloquent models. Built alongside it: the app's first real authorization layer (roles, permissions, functional-area scoping, Policies).
+
+### Files Created
+
+**Access control (Phase 0):**
+- ✅ `database/migrations/2026_08_19_000001_create_user_functional_areas_table.php`
+- ✅ `app/Models/UserFunctionalArea.php`
+- ✅ `app/Policies/MovementPolicy.php`, `app/Policies/JobOperationPolicy.php`
+- ✅ `database/seeders/RolePermissionSeeder.php` — 5 roles, 5 permissions
+
+**AI foundation (Phase 1):**
+- ✅ `app/Services/OperationsQueryService.php` — deterministic, Policy-checked data access
+- ✅ `app/Services/AiCopilotService.php` — orchestration, graceful degradation, audit logging
+- ✅ `app/Ai/Agents/OperationsCopilotAgent.php`
+- ✅ `app/Ai/Tools/GetActiveMovementsTool.php`, `GetDelayedMovementsTool.php`, `GetUpcomingMovementsTool.php`, `GetJobStatusSummaryTool.php`, `GetMovementDetailsTool.php`
+- ✅ `database/migrations/2026_08_19_000002_create_ai_interactions_table.php` + `app/Models/AiInteraction.php`
+- ✅ `routes/web/ai.php`, `app/Http/Controllers/AiCopilotController.php`
+- ✅ `resources/js/Pages/Ai.vue` — dedicated chat page
+
+**Operational intelligence (Phase 2):**
+- ✅ `OperationsQueryService::getMissingUpdates()`, `explainDelay()`, `getCheckpointPerformance()`
+- ✅ `app/Ai/Tools/GetMissingUpdatesTool.php`, `ExplainDelayTool.php`, `GetCheckpointPerformanceTool.php`
+- ✅ "Explain delay" contextual button on `resources/js/Pages/JobDetail.vue`
+
+**Documentation:**
+- ✅ `AI_COPILOT_SYSTEM.md` — full technical documentation
+
+### Quick Start
+
+```bash
+# .env
+ANTHROPIC_API_KEY=sk-ant-...
+
+php artisan migrate
+php artisan db:seed --class=RolePermissionSeeder
+
+# Assign a role + functional area to a user (not done automatically)
+php artisan tinker
+>>> $user->assignRole('admin'); // or transport/team_services/venue_ops + a functionalAreas() row
+```
+
+Visit `/ai` (permission `ai.use` required) or click **Explain delay** on any Job Detail page.
+
+### Key Features
+
+✅ **Read-only** — no tool can modify a movement, checkpoint, or user
+✅ **Policy-scoped** — every tool call is authorized by event + functional area, same as the app's Policies would enforce anywhere else
+✅ **Graceful degradation** — a provider outage returns a clean error, never a 500; the rest of the app is unaffected
+✅ **Rate limited** — 10 requests/minute/user (`RateLimiter::for('ai', ...)`)
+✅ **Audited** — every call logged to `ai_interactions` (tool names + arguments, never the output payload or raw LLM traffic)
+✅ **Deterministic math, AI narration** — delay/variance figures come from existing model logic (`JobCheckpoint` scopes/accessors); the LLM only explains what a tool already computed
+
+See `AI_COPILOT_SYSTEM.md` for the full architecture, tool reference, and how to add a new tool.
+
+---
+
 **Status**: ✅ Complete and ready to use!

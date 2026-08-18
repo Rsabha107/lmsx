@@ -13,12 +13,16 @@
         <div class="route-header-content">
           <div class="team-badge-md">{{ job.code }}</div>
           <div class="route-header-info">
-            <div class="team-name">{{ job.team }}</div>
+            <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 2px;">
+              <div class="team-name" style="margin-bottom: 0;">{{ job.team }}</div>
+              <span
+                v-if="job.kind"
+                class="mobile-kind-badge"
+                :class="`mobile-kind-badge--${job.kind}`"
+              >{{ job.kind }}</span>
+            </div>
             <div class="job-id">
               {{ job.id }}
-              <span v-if="job.source" :class="['source-badge', `source-badge--${job.source}`]">
-                {{ job.source === 'database' ? 'DB' : 'DEMO' }}
-              </span>
               <span v-if="job.functional_area" class="mobile-fa-badge">
                 {{ job.functional_area }}
               </span>
@@ -871,24 +875,21 @@ function formatJobToLocation(job) {
   gap: 6px;
 }
 
-.source-badge {
-  font-size: 8px;
+.mobile-kind-badge {
+  font-size: 9px;
   font-weight: 700;
-  padding: 2px 6px;
+  padding: 1px 6px;
   border-radius: 4px;
-  letter-spacing: 0.5px;
-  font-family: var(--font-sans, sans-serif);
+  text-transform: capitalize;
+  letter-spacing: 0.3px;
+  flex-shrink: 0;
 }
-
-.source-badge--database {
-  background: #dcfce7;
-  color: #166534;
-}
-
-.source-badge--mock {
-  background: #fef3c7;
-  color: #92400e;
-}
+.mobile-kind-badge--arrival { background: var(--ok-soft); color: var(--ok); }
+.mobile-kind-badge--departure { background: var(--danger-soft); color: var(--danger); }
+.mobile-kind-badge--transfer { background: var(--accent-soft); color: var(--accent-fg); }
+.mobile-kind-badge--match { background: #fef3c7; color: #92400e; }
+.mobile-kind-badge--training { background: #ede9fe; color: #6d28d9; }
+.mobile-kind-badge--daily_ops { background: var(--panel); color: var(--ink3); }
 
 .mobile-fa-badge {
   font-size: 8px;

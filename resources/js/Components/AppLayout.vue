@@ -217,6 +217,7 @@ onUnmounted(() => {
 
 const navItems = [
   { label: 'Dashboard',     route: 'dashboard',        icon: 'dashboard' },
+  { label: 'AI Copilot',    route: 'ai',                icon: 'ai' },
   { label: 'Schedule',      route: 'schedule',          icon: 'schedule' },
   { label: 'Planning',      route: 'plans',             icon: 'plans' },
   { label: 'Jobs Queue',    route: 'jobs',              icon: 'jobs' },

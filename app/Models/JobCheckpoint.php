@@ -162,15 +162,18 @@ class JobCheckpoint extends Model
             $actualDuration = abs($completedAt->diffInSeconds($this->scheduled_at));
         }
 
-        // Check if on time based on movement's window_end (not individual checkpoint scheduled_at)
+        // Check if on time based on movement's window_end (not individual checkpoint scheduled_at).
+        // diffInMinutes()'s signed mode is relative to the argument, not $this, so a
+        // plain "<= 0" check on it gets the direction backwards (late completions
+        // read as on-time and vice versa). greaterThan() for direction + an explicit
+        // absolute diff for magnitude avoids that footgun (Carbon 3 also defaults
+        // diffInMinutes() to signed, unlike Carbon 2, so the flag must be explicit).
         $movement = $this->job->movement;
         if ($movement && $movement->window_end) {
             $windowEnd = \Carbon\Carbon::parse($movement->window_end);
-            $delayMinutes = $completedAt->diffInMinutes($windowEnd, false);
-            // On-time if completed before or at window_end
-            $isOnTime = $delayMinutes <= 0;
-            // Only store positive delays (after window_end)
-            $delayMinutes = max(0, -$delayMinutes);
+            $isLate = $completedAt->greaterThan($windowEnd);
+            $isOnTime = !$isLate;
+            $delayMinutes = $isLate ? $completedAt->diffInMinutes($windowEnd, true) : 0;
         }
 
         $this->update([
@@ -306,6 +309,13 @@ class JobCheckpoint extends Model
 
     /**
      * Get the delay in minutes (negative if early, positive if late).
+     *
+     * diffInMinutes()'s signed mode is relative to the argument, not $this, so
+     * "completed_at->diffInMinutes(scheduled_at, false)" gives the OPPOSITE of
+     * what this method's docblock promises (Carbon 3 also defaults diffInMinutes()
+     * to signed, unlike Carbon 2 — a bare diffInMinutes() call silently changed
+     * behavior on upgrade). Deriving the sign from an explicit comparison avoids
+     * the footgun entirely.
      */
     public function getDelayMinutesAttribute(): ?int
     {
@@ -313,7 +323,9 @@ class JobCheckpoint extends Model
             return null;
         }
 
-        return $this->completed_at->diffInMinutes($this->scheduled_at, false);
+        $minutes = $this->completed_at->diffInMinutes($this->scheduled_at, true);
+
+        return $this->completed_at->greaterThan($this->scheduled_at) ? $minutes : -$minutes;
     }
 
     /**

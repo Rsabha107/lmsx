@@ -41,7 +41,12 @@ class AnalyticsController extends Controller
     {
         return [
             'active_jobs' => JobOperation::where('status', 'in-progress')->count(),
-            'delayed_jobs' => JobOperation::where('status', 'delayed')->count(),
+            // 'delayed' was never a valid jobs_operations.status value (see the
+            // enum in the create-table migration), so this always returned 0.
+            // Delay is tracked on the movement, not the job status.
+            'delayed_jobs' => JobOperation::join('movements', 'jobs_operations.movement_id', '=', 'movements.id')
+                ->where('movements.delay_minutes', '>', 0)
+                ->count(),
             'completed_today' => JobOperation::where('status', 'completed')
                 ->whereDate('updated_at', today())
                 ->count(),

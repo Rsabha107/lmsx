@@ -3,10 +3,11 @@
     <div class="page-header">
       <div>
         <h1 class="page-title">Movement Schedule</h1>
-        <p class="page-sub">{{ schedule.length }} movements today · {{ $page.props.today }}</p>
+        <p class="page-sub">{{ schedule.length }} movement{{ schedule.length === 1 ? '' : 's' }} {{ isToday ? 'today' : '' }} · {{ dateLabel }}</p>
       </div>
       <div class="page-header-actions">
-        <RefreshButton :only="['schedule']" />
+        <DatePicker :model-value="selectedDate" @update:model-value="onDateChange" />
+        <RefreshButton :only="['schedule', 'scheduleDate']" />
         <div class="filter-tabs">
           <button v-for="f in filters" :key="f.value"
             :class="['filter-tab', activeFilter === f.value ? 'filter-tab--active' : '']"
@@ -89,14 +90,46 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue';
+import { ref, computed, watch } from 'vue';
+import { router } from '@inertiajs/vue3';
 import AppLayout from '../Components/AppLayout.vue';
 import StatusPill from '../Components/StatusPill.vue';
 import RefreshButton from '../Components/RefreshButton.vue';
+import DatePicker from '../Components/DatePicker.vue';
 
 const props = defineProps({
   schedule: { type: Array, default: () => [] },
+  scheduleDate: { type: String, default: null },
 });
+
+function todayIso() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+const selectedDate = ref(props.scheduleDate || todayIso());
+
+// Keep the date picker in sync when navigation happens elsewhere (browser
+// back/forward, or another component reloading the page with a new date).
+watch(() => props.scheduleDate, (v) => {
+  if (v) selectedDate.value = v;
+});
+
+const isToday = computed(() => selectedDate.value === todayIso());
+
+const dateLabel = computed(() => {
+  const d = new Date(`${selectedDate.value}T00:00:00`);
+  return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+});
+
+function onDateChange(dateStr) {
+  selectedDate.value = dateStr;
+  router.get('/schedule', { date: dateStr }, {
+    preserveState: true,
+    preserveScroll: true,
+    only: ['schedule', 'scheduleDate'],
+  });
+}
 
 const filters = [
   { value: 'all',         label: 'All' },

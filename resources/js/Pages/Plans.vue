@@ -1255,7 +1255,7 @@
             <div
               style="
                 display: grid;
-                grid-template-columns: 28px 5fr 6fr 7fr 5.5fr 14fr 9fr 7fr 4fr 4.5fr 7fr 7fr;
+                grid-template-columns: 28px 5fr 7fr 6fr 5.5fr 14fr 9fr 7fr 4fr 4.5fr 7fr 7fr;
                 gap: 10px;
                 padding: 10px 14px;
                 border-bottom: 1px solid var(--border);
@@ -1280,8 +1280,8 @@
                 />
               </div>
               <div>ID</div>
-              <div>Phase</div>
               <div>Date</div>
+              <div>Phase</div>
               <div style="display: flex; align-items: center; gap: 4px;">
                 Ref Time
                 <InfoIcon :size="12" @click="showRefTimeInfoModal = true" />
@@ -1306,7 +1306,7 @@
                 :style="{
                   display: 'grid',
                   gridTemplateColumns:
-                    '28px 5fr 6fr 7fr 5.5fr 14fr 9fr 7fr 4fr 4.5fr 7fr 7fr',
+                    '28px 5fr 7fr 6fr 5.5fr 14fr 9fr 7fr 4fr 4.5fr 7fr 7fr',
                   gap: '10px',
                   padding: '12px 14px',
                   borderBottom:
@@ -1370,6 +1370,9 @@
                     {{ mv.plan_code }}
                   </div>
                 </div>
+                <div style="font-size: 11px; color: var(--ink3);">
+                  {{ mv.window_start ? formatDate(mv.window_start) : '—' }}
+                </div>
                 <Badge
                   v-if="mv.match_id"
                   type="kind"
@@ -1391,9 +1394,6 @@
                   "
                   >-</span
                 >
-                <div style="font-size: 11px; color: var(--ink3);">
-                  {{ mv.window_start ? formatDate(mv.window_start) : '—' }}
-                </div>
                 <div style="font-size: 11px; color: var(--ink3);">
                   <span v-if="isBusMovement(mv)" style="font-weight: 700; color: var(--ink2);">
                     BUS
@@ -1461,10 +1461,8 @@
                     font-family: var(--mono);
                   "
                 >
-                  <template v-if="mv.checkpoint_template?.checkpoints?.length">
-                    {{ getCompletedCheckpointsCount(mv) }}/{{
-                      mv.checkpoint_template.checkpoints.length
-                    }}
+                  <template v-if="mv.checkpoints_total">
+                    {{ mv.checkpoints_completed || 0 }}/{{ mv.checkpoints_total }}
                   </template>
                   <template v-else>-</template>
                 </div>
@@ -1616,11 +1614,12 @@
 
             <!-- Checkpoints -->
             <div class="detail-card-content">
+              <div v-if="checkpointsLoading" style="padding: 24px; text-align: center; font-size: 12px; color: var(--ink3);">
+                Loading checkpoints…
+              </div>
               <CheckpointTimeline
-                :checkpoints="
-                  selectedMovement.checkpoints ||
-                  selectedMovement.checkpoint_template?.checkpoints
-                "
+                v-else
+                :checkpoints="selectedMovement.checkpoints || []"
                 title="Checkpoints"
                 empty-message="No checkpoints defined"
               />
@@ -2198,6 +2197,21 @@
     <!-- By Team view -->
     <template v-else>
       <div
+        v-if="movementsByTeamLoading"
+        style="
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          height: calc(100vh - 280px);
+          min-height: 500px;
+          color: var(--ink3);
+          font-size: 13px;
+        "
+      >
+        Loading team movements…
+      </div>
+      <div
+        v-else
         style="
           display: grid;
           grid-template-columns: 260px 1fr;
@@ -2972,11 +2986,12 @@
 
               <!-- Checkpoints -->
               <div class="detail-card-content">
+                <div v-if="checkpointsLoading" style="padding: 24px; text-align: center; font-size: 12px; color: var(--ink3);">
+                  Loading checkpoints…
+                </div>
                 <CheckpointTimeline
-                  :checkpoints="
-                    selectedMovement.checkpoints ||
-                    selectedMovement.checkpoint_template?.checkpoints
-                  "
+                  v-else
+                  :checkpoints="selectedMovement.checkpoints || []"
                   title="Checkpoints"
                   empty-message="No checkpoints defined"
                 />
@@ -4180,7 +4195,7 @@
                     >
                       <span style="font-weight: 700"
                         >⚠️ {{ bulkPreview.teamsWithoutDates }} teams missing
-                        arrival dates</span
+                        {{ bulkPreview.isDepartureTemplate ? 'departure' : 'arrival' }} dates</span
                       >
                     </div>
                     <div style="display: flex; flex-wrap: wrap; gap: 4px">
@@ -5053,7 +5068,7 @@
                     </div>
                     <div style="font-size: 10.5px; color: var(--ink3)">
                       {{ mv.flight?.party_size_total ?? mv.pax ?? mv.passengers ?? 0 }} pax ·
-                      {{ mv.checkpoint_template?.checkpoints?.length || 0 }} chk
+                      {{ mv.checkpoints_total || 0 }} chk
                     </div>
                   </div>
                   <div
@@ -8730,6 +8745,17 @@ const filteredPlanMovements = computed(() => {
     movements = movements.filter((mv) => movementPhase(mv) === movementsPhaseFilter.value);
   }
 
+  // Sort by date (desc), then phase
+  movements = [...movements].sort((a, b) => {
+    const aTime = a.window_start ? new Date(a.window_start).getTime() : -Infinity;
+    const bTime = b.window_start ? new Date(b.window_start).getTime() : -Infinity;
+    if (aTime !== bTime) return bTime - aTime;
+
+    const aPhase = phaseLabels[movementPhase(a)] || movementPhase(a) || '';
+    const bPhase = phaseLabels[movementPhase(b)] || movementPhase(b) || '';
+    return aPhase.localeCompare(bPhase);
+  });
+
   return movements;
 });
 
@@ -8860,27 +8886,37 @@ const selectedTeamNextMatch = computed(() => {
   return sortedMatches[0];
 });
 
-// Bulk plan preview - group teams by arrival date
+// Bulk plan preview - group teams by arrival date (or departure date when a departure template is selected)
 const bulkPreview = computed(() => {
   const teamsWithDates = [];
   const teamsWithoutDates = [];
   const dateGroups = {};
 
-  // Group teams by arrival date
+  const template = selectedNewPlanTemplate.value;
+  const templateText = `${template?.scenario_type || ''} ${template?.name || ''} ${template?.code || ''}`.toLowerCase();
+  const isMatchTemplate = templateText.includes('match');
+  const isDepartureTemplate = !isMatchTemplate && templateText.includes('departure');
+
+  // Group teams by arrival date, unless the selected template is a departure
+  // movement, in which case teams must be grouped by their departure date
   props.teams.forEach((team) => {
+    const flightPool = isDepartureTemplate ? (team.departure_flights || []) : (team.flights || []);
+
     // Get selected flight or default to first flight
-    const selectedFlightId = teamFlightSelections.value[team.id] || team.selected_flight_id;
-    const selectedFlight = team.flights?.find(f => f.id === selectedFlightId) || team.flights?.[0];
-    
+    const defaultFlightId = isDepartureTemplate ? flightPool[0]?.id : team.selected_flight_id;
+    const selectedFlightId = teamFlightSelections.value[team.id] || defaultFlightId;
+    const selectedFlight = flightPool.find(f => f.id === selectedFlightId) || flightPool[0];
+
     // Ensure team has valid display properties with fallbacks
     const normalizedTeam = {
       ...team,
       code: team.code || team.team || 'TEAM',
       team_name: team.team_name || team.team || 'Unnamed Team',
-      arrival_date_time: selectedFlight?.scheduled_at || team.arrival_date_time,
-      arrival_date: selectedFlight?.scheduled_date || team.arrival_date,
+      flights: flightPool,
+      arrival_date_time: selectedFlight?.scheduled_at || (isDepartureTemplate ? team.departure_date_time : team.arrival_date_time),
+      arrival_date: selectedFlight?.scheduled_date || (isDepartureTemplate ? team.departure_date : team.arrival_date),
       selected_flight: selectedFlight,
-      has_multiple_flights: (team.flights?.length || 0) > 1,
+      has_multiple_flights: flightPool.length > 1,
     };
     
     if (normalizedTeam.arrival_date_time || normalizedTeam.arrival_date) {
@@ -8913,6 +8949,7 @@ const bulkPreview = computed(() => {
     teamsWithoutDatesList: teamsWithoutDates.sort((a, b) =>
       (a.code || "").localeCompare(b.code || "")
     ),
+    isDepartureTemplate,
   };
 });
 
@@ -9282,25 +9319,6 @@ function formatTime(dateString) {
   return `${hours}:${minutes}`;
 }
 
-// Get checkpoint state (pending, started, completed, skipped)
-function getCheckpointState(checkpoint) {
-  if (!checkpoint) return "pending";
-  if (checkpoint.state === "completed" || checkpoint.completed_at)
-    return "done";
-  if (checkpoint.state === "started" || checkpoint.started_at) return "active";
-  if (checkpoint.state === "skipped") return "pending"; // Show as pending for now
-  return "pending";
-}
-
-// Count completed checkpoints for a movement
-function getCompletedCheckpointsCount(movement) {
-  const checkpoints =
-    movement.checkpoints || movement.checkpoint_template?.checkpoints || [];
-  return checkpoints.filter((cp) => {
-    const state = getCheckpointState(cp);
-    return state === "done";
-  }).length;
-}
 
 function selectPlan(planId) {
   activePlan.value = planId;
@@ -10167,34 +10185,61 @@ function cancelDeletePlan() {
   deletingPlan.value = null;
 }
 
+// "By Team" data isn't sent on the initial page load anymore — it's a
+// separate, expensive query+transform over every movement, and "By Plan"
+// is the default view most sessions never leave (see
+// PlanManagementController@index, movementsByTeam wrapped in
+// Inertia::optional()). Fetched live via a partial reload each time the
+// user actually switches to this tab, so it can't go stale either.
+const movementsByTeamLoading = ref(false);
+
 function switchView(newView) {
   view.value = newView;
   selectedMovement.value = null; // Clear selected movement when switching views
+
+  if (newView === "team") {
+    movementsByTeamLoading.value = true;
+    router.reload({
+      only: ["movementsByTeam"],
+      onFinish: () => {
+        movementsByTeamLoading.value = false;
+      },
+    });
+  }
 }
 
-function selectMovement(movement) {
+async function selectMovement(movement) {
   // Toggle: if clicking the same movement, deselect it
   if (selectedMovement.value?.id === movement.id) {
     selectedMovement.value = null;
-  } else {
-    selectedMovement.value = movement;
-    // Debug: log checkpoint data
-    console.log("Selected movement:", movement);
-    console.log(
-      "Checkpoints:",
-      movement.checkpoints || movement.checkpoint_template?.checkpoints
-    );
-    if (movement.checkpoints) {
-      movement.checkpoints.forEach((cp, i) => {
-        console.log(`Checkpoint ${i}:`, {
-          name: cp.name,
-          state: cp.state,
-          completed_at: cp.completed_at,
-          started_at: cp.started_at,
-          completed_by: cp.completed_by,
-        });
-      });
-    }
+    return;
+  }
+
+  selectedMovement.value = movement;
+  await fetchMovementCheckpoints(movement);
+}
+
+// Checkpoint detail (state, times, baggage, live estimate) isn't sent for
+// every movement on page load anymore — only a cheap total/completed count
+// is (see PlanManagementController@index). Fetched fresh from the database
+// each time a movement is selected, so it always reflects the latest state
+// even if it was just completed from the mobile app.
+const checkpointsLoading = ref(false);
+
+async function fetchMovementCheckpoints(movement) {
+  checkpointsLoading.value = true;
+  try {
+    const response = await fetch(`/movements/${movement.id}/checkpoints`, {
+      headers: { Accept: "application/json" },
+    });
+    if (!response.ok) throw new Error("Failed to load checkpoints");
+    const data = await response.json();
+    movement.checkpoints = data.checkpoints;
+    movement.checkpoint_template = data.checkpoint_template;
+  } catch (error) {
+    console.error("Failed to fetch checkpoints:", error);
+  } finally {
+    checkpointsLoading.value = false;
   }
 }
 

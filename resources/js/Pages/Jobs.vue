@@ -1,31 +1,23 @@
 <template>
   <app-layout>
     <div class="page-header">
-      <div>
-        <p class="page-sub">Live execution · {{ schedule.length }} jobs</p>
-        <h1 class="page-title">Jobs</h1>
+      <div style="display: flex; align-items: center; gap: 12px;">
+        <div>
+          <p class="page-sub">Live execution · {{ schedule.length }} jobs</p>
+          <h1 class="page-title">Jobs</h1>
+        </div>
+        <RefreshButton :only="['schedule']" @refresh="handleRefresh" />
       </div>
       <div class="page-header-actions">
-        <RefreshButton :only="['schedule']" @refresh="handleRefresh" />
-        <Button variant="secondary" size="sm">
+        <Button v-if="false" variant="secondary" size="sm">
           <template #icon><svg-icon name="filter" :size="14" /></template>
           Filter
         </Button>
-        <Button variant="primary" size="sm">
+        <Button v-if="false" variant="primary" size="sm">
           <template #icon><svg-icon name="plus" :size="14" style="color: #fff;" /></template>
           New job
         </Button>
       </div>
-    </div>
-
-    <!-- Status filters -->
-    <div class="filter-bar">
-      <button v-for="f in filters" :key="f.value"
-        :class="['filter-pill', activeFilter === f.value ? 'filter-pill--active' : '']"
-        @click="activeFilter = f.value">
-        {{ f.label }}
-        <span class="filter-count">{{ f.count }}</span>
-      </button>
     </div>
 
     <!-- Quick filters -->
@@ -60,15 +52,15 @@
           v-model="selectedResource" 
           class="resource-select-mini"
           @change="applyResourceFilter">
-          <option value="">All {{ resourceFilter }}s</option>
+          <option value="">{{ resourceFilter === 'status' ? 'All Statuses' : resourceFilter === 'kind' ? 'All Kinds' : `All ${resourceFilter}s` }}</option>
           <option v-for="resource in resourceOptions" :key="resource" :value="resource">
-            {{ resource }}
+            {{ resourceFilter === 'status' ? statusLabel(resource) : resourceFilter === 'kind' ? kindLabel(resource) : resource }}
           </option>
         </select>
       </div>
     </div>
 
-    <div class="jobs-layout">
+    <div class="jobs-layout" :class="{ 'jobs-layout--full': !selectedJob }">
       <!-- Job list -->
       <div class="jobs-list-card">
         <div class="job-list-header">
@@ -90,7 +82,7 @@
             </div>
             <h3 class="empty-state-title">No jobs found</h3>
             <p class="empty-state-message">
-              {{ activeFilter === 'all' ? 'There are no jobs scheduled yet.' : `No ${filters.find(f => f.value === activeFilter)?.label.toLowerCase()} jobs.` }}
+              {{ schedule.length === 0 ? 'There are no jobs scheduled yet.' : 'No jobs match the current filters.' }}
             </p>
           </div>
 
@@ -101,9 +93,8 @@
             :class="['job-item', selectedJob?.id === job.id ? 'job-item--active' : '']"
           >
             <div class="jl-col-job">
-              <span class="jl-job-id">{{ job.id }}</span>
-              <div style="display: flex; align-items: center; gap: 4px; flex-wrap: wrap;">
-                <span class="jl-job-phase">{{ job.kind || '—' }}</span>
+              <span class="jl-job-id" :title="job.id">{{ job.id }}</span>
+              <div style="display: flex; align-items: center; gap: 4px; flex-wrap: nowrap;">
                 <span v-if="job.date" class="jl-job-date">{{ formatDate(job.date) }}</span>
               </div>
             </div>
@@ -114,11 +105,16 @@
             </div>
             <div class="jl-col-route">
               <div style="display: flex; align-items: center; gap: 4px; flex-wrap: wrap;">
+                <flag-icon :code="job.country_code" :fallback="job.flag" />
                 <span class="jl-team">{{ job.team }}</span>
-                <span v-if="job.event_name" class="jl-event-badge">{{ job.event_code || job.event_name }}</span>
+                <span
+                  v-if="job.kind"
+                  class="jl-job-phase"
+                  :class="`jl-job-phase--${job.kind}`"
+                >{{ job.kind }}</span>
                 <span v-if="job.functional_area" class="jl-fa-badge">{{ job.functional_area }}</span>
               </div>
-              <span class="jl-route">{{ formatJobFromLocation(job) }} → {{ formatJobToLocation(job) }}</span>
+              <span class="jl-route" :title="`${formatJobFromLocation(job)} → ${formatJobToLocation(job)}`">{{ formatJobFromLocation(job) }} → {{ formatJobToLocation(job) }}</span>
             </div>
             <div class="jl-col-progress">
               <div class="jl-progress-bar">
@@ -154,6 +150,7 @@
         <div class="detail-card">
           <div class="detail-header-top">
             <span class="team-badge">{{ selectedJob.code }}</span>
+            <flag-icon :code="selectedJob.country_code" :fallback="selectedJob.flag" />
             <div>
               <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 2px;">
                 <div class="detail-id">{{ selectedJob.id }} · {{ selectedJob.team }}</div>
@@ -175,8 +172,11 @@
               <Button variant="primary" size="sm" @click="openOverrideModal">Override</Button>
             </div>
           </div>
-          <div class="detail-subtitle">
-            {{ formatJobFromLocation(selectedJob) }} → {{ formatJobToLocation(selectedJob) }} · {{ selectedJob.vehicle }} · {{ selectedJob.pax }} pax
+          <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 14px;">
+            <span v-if="selectedJob.kind" class="detail-kind-badge" :class="`detail-kind-badge--${selectedJob.kind}`">{{ selectedJob.kind }}</span>
+            <div class="detail-subtitle" style="margin: 0;">
+              {{ formatJobFromLocation(selectedJob) }} → {{ formatJobToLocation(selectedJob) }} · {{ selectedJob.vehicle }} · {{ selectedJob.pax }} pax
+            </div>
           </div>
 
           <div :class="['detail-stats', (selectedJob.status === 'completed' && timeVariance) || selectedJob.updated_at ? 'detail-stats--five' : '']">
@@ -469,13 +469,13 @@ import RefreshButton from '../Components/RefreshButton.vue';
 import Modal from '../Components/Modal.vue';
 import Button from '../Components/Button.vue';
 import CheckpointTimeline from '../Components/CheckpointTimeline.vue';
+import FlagIcon from '../Components/FlagIcon.vue';
 
 const props = defineProps({
   schedule: { type: Array, default: () => [] },
 });
 
 const selectedJob = ref(null);
-const activeFilter = ref('all');
 
 // Filter refs
 const dateFilter = ref('all');
@@ -492,7 +492,14 @@ const resourceTypes = [
   { value: 'driver', label: 'Driver' },
   { value: 'vehicle', label: 'Vehicle' },
   { value: 'supervisor', label: 'Supervisor' },
+  { value: 'status', label: 'Status' },
+  { value: 'kind', label: 'Kind' },
 ];
+
+function kindLabel(k) {
+  if (!k) return k;
+  return k === 'daily_ops' ? 'Daily Ops' : k.charAt(0).toUpperCase() + k.slice(1);
+}
 
 function applyResourceFilter() {
   // Trigger reactivity
@@ -500,7 +507,7 @@ function applyResourceFilter() {
 
 const statusMap = {
   'in-progress': { tone: 'live',    label: 'In Progress' },
-  'live':        { tone: 'live',    label: 'Live' },
+  'live':        { tone: 'live',    label: 'In Progress' },
   'pending':     { tone: 'primary', label: 'Scheduled' },
   'dispatched':  { tone: 'primary', label: 'Dispatched' },
   'delayed':     { tone: 'warn',    label: 'Delayed' },
@@ -513,8 +520,8 @@ function statusTone(s) { return statusMap[s]?.tone ?? 'neutral'; }
 function statusLabel(s) { return statusMap[s]?.label ?? s; }
 
 const stageLabelMap = {
-  'in-progress': 'live',
-  'live':        'live',
+  'in-progress': 'in progress',
+  'live':        'in progress',
   'pending':     'scheduled',
   'dispatched':  'dispatched',
   'delayed':     'delayed',
@@ -534,7 +541,8 @@ function jobStepsText(job) {
 }
 
 function selectJob(job) {
-  selectedJob.value = job;
+  // Toggle: clicking the already-selected row closes the detail panel
+  selectedJob.value = selectedJob.value?.id === job.id ? null : job;
 }
 
 function handleRefresh() {
@@ -845,12 +853,7 @@ function formatJobToLocation(job) {
 
 const filtered = computed(() => {
   let jobs = props.schedule;
-  
-  // Status filter
-  if (activeFilter.value !== 'all') {
-    jobs = jobs.filter(j => j.status === activeFilter.value);
-  }
-  
+
   // Date filter
   if (dateFilter.value !== 'all') {
     const now = new Date();
@@ -886,19 +889,22 @@ const filtered = computed(() => {
       jobs = jobs.filter(j => j.vehicle === selectedResource.value);
     } else if (resourceFilter.value === 'supervisor') {
       jobs = jobs.filter(j => j.supervisor === selectedResource.value);
+    } else if (resourceFilter.value === 'status') {
+      jobs = jobs.filter(j => j.status === selectedResource.value);
+    } else if (resourceFilter.value === 'kind') {
+      jobs = jobs.filter(j => j.kind === selectedResource.value);
     }
   }
   
+  // Sort by date desc
+  jobs = [...jobs].sort((a, b) => {
+    const aTime = a.date ? new Date(a.date).getTime() : -Infinity;
+    const bTime = b.date ? new Date(b.date).getTime() : -Infinity;
+    return bTime - aTime;
+  });
+
   return jobs;
 });
-
-const filters = computed(() => [
-  { value: 'all',         label: 'All',         count: props.schedule.length },
-  { value: 'in-progress', label: 'In Progress', count: props.schedule.filter(j => j.status === 'in-progress').length },
-  { value: 'delayed',     label: 'Delayed',     count: props.schedule.filter(j => j.status === 'delayed').length },
-  { value: 'pending',     label: 'Scheduled',   count: props.schedule.filter(j => j.status === 'pending').length },
-  { value: 'completed',   label: 'Completed',   count: props.schedule.filter(j => j.status === 'completed').length },
-]);
 
 const resourceOptions = computed(() => {
   if (resourceFilter.value === 'driver') {
@@ -909,6 +915,12 @@ const resourceOptions = computed(() => {
   }
   if (resourceFilter.value === 'supervisor') {
     return [...new Set(props.schedule.map(j => j.supervisor).filter(Boolean))].sort();
+  }
+  if (resourceFilter.value === 'status') {
+    return [...new Set(props.schedule.map(j => j.status).filter(Boolean))];
+  }
+  if (resourceFilter.value === 'kind') {
+    return [...new Set(props.schedule.map(j => j.kind).filter(Boolean))].sort();
   }
   return [];
 });
@@ -1145,7 +1157,7 @@ function clearSignature() {
 function startJob() {
   if (!selectedJob.value) return;
 
-  const csrfToken = document.querySelector('meta[name="csrf-token")')?.content;
+  const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content;
 
   fetch(`/jobs/${selectedJob.value.id}/status`, {
     method: 'POST',
@@ -1346,51 +1358,15 @@ function submitOverride() {
 .btn--secondary { background: #fff; border-color: var(--border); color: var(--ink3); }
 .btn--secondary:hover { background: var(--panel); color: var(--ink); }
 
-.filter-bar { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; }
-@media (max-width: 640px) {
-  .filter-bar {
-    overflow-x: auto;
-    flex-wrap: nowrap;
-    -webkit-overflow-scrolling: touch;
-    scrollbar-width: none;
-    -ms-overflow-style: none;
-  }
-  .filter-bar::-webkit-scrollbar {
-    display: none;
-  }
-}
-.filter-pill {
-  display: flex; align-items: center; gap: 6px;
-  padding: 5px 12px; border-radius: 999px;
-  border: none; background: var(--panel);
-  font-size: 12px; font-weight: 600; color: var(--ink2); cursor: pointer;
-  outline: 1px solid var(--border); font-family: inherit;
-}
-.filter-pill:hover { 
-  background: var(--border); 
-  color: var(--ink);
-}
-.filter-pill--active {
-  background: var(--accent); color: #fff;
-  outline: none;
-}
-.filter-pill--active:hover {
-  background: var(--accent);
-  color: #fff;
-  opacity: 0.9;
-}
-.filter-count {
-  background: rgba(0,0,0,0.1); border-radius: 10px;
-  padding: 0 5px; font-size: 10px; font-weight: 700; opacity: 0.75;
-}
-.filter-pill--active .filter-count { background: rgba(255,255,255,0.25); }
-
 .jobs-layout {
   display: grid; grid-template-columns: 580px 1fr; gap: 12px;
   min-height: 0; flex: 1;
   height: calc(100vh - 240px);
   max-height: 800px;
   margin-top: 24px;
+}
+.jobs-layout--full {
+  grid-template-columns: 1fr;
 }
 @media (max-width: 1024px) {
   .jobs-layout {
@@ -1455,7 +1431,7 @@ function submitOverride() {
 
 .job-list-header {
   display: grid;
-  grid-template-columns: 70px 88px 1fr 108px 62px 52px;
+  grid-template-columns: minmax(78px, 1fr) minmax(88px, 0.8fr) minmax(100px, 3fr) minmax(108px, 1.2fr) minmax(62px, 0.7fr) minmax(52px, 0.6fr);
   gap: 0 8px;
   padding: 8px 12px 8px 17px;
   border-bottom: 1px solid var(--border);
@@ -1474,7 +1450,7 @@ function submitOverride() {
 
 .job-item {
   display: grid;
-  grid-template-columns: 70px 88px 1fr 108px 62px 52px;
+  grid-template-columns: minmax(78px, 1fr) minmax(88px, 0.8fr) minmax(100px, 3fr) minmax(108px, 1.2fr) minmax(62px, 0.7fr) minmax(52px, 0.6fr);
   gap: 0 8px;
   padding: 10px 12px 10px 14px;
   cursor: pointer;
@@ -1496,14 +1472,31 @@ function submitOverride() {
 .jl-job-id {
   font-size: 10px; font-weight: 700; color: var(--ink);
   font-family: var(--font-mono, monospace);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: block;
+  max-width: 100%;
 }
 .jl-job-type {
   font-size: 10px; color: var(--ink3); font-weight: 500;
+  white-space: nowrap;
 }
 .jl-job-phase {
-  font-size: 10px; color: var(--ink3); font-weight: 500;
+  font-size: 9px; color: var(--ink3); font-weight: 700;
   text-transform: capitalize;
+  white-space: nowrap;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--panel);
+  flex-shrink: 0;
 }
+.jl-job-phase--arrival { background: var(--ok-soft); color: var(--ok); }
+.jl-job-phase--departure { background: var(--danger-soft); color: var(--danger); }
+.jl-job-phase--transfer { background: var(--accent-soft); color: var(--accent-fg); }
+.jl-job-phase--match { background: #fef3c7; color: #92400e; }
+.jl-job-phase--training { background: #ede9fe; color: #6d28d9; }
+.jl-job-phase--daily_ops { background: var(--panel); color: var(--ink3); }
 
 .jl-job-date {
   font-size: 9px;
@@ -1528,18 +1521,11 @@ function submitOverride() {
 }
 .jl-route {
   font-size: 10px; color: var(--ink3);
-  word-break: break-word;
-}
-
-.jl-event-badge {
-  font-size: 9px;
-  font-weight: 700;
-  color: var(--accent);
-  background: var(--accent-soft, rgba(99, 102, 241, 0.1));
-  padding: 1px 5px;
-  border-radius: 3px;
-  text-transform: uppercase;
-  letter-spacing: 0.3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: block;
+  max-width: 100%;
 }
 
 .jl-fa-badge {
@@ -1757,6 +1743,22 @@ function submitOverride() {
   letter-spacing: 0.5px;
 }
 
+.detail-kind-badge {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 4px;
+  text-transform: capitalize;
+  letter-spacing: 0.3px;
+  flex-shrink: 0;
+}
+.detail-kind-badge--arrival { background: var(--ok-soft); color: var(--ok); }
+.detail-kind-badge--departure { background: var(--danger-soft); color: var(--danger); }
+.detail-kind-badge--transfer { background: var(--accent-soft); color: var(--accent-fg); }
+.detail-kind-badge--match { background: #fef3c7; color: #92400e; border: 1px solid #fbbf24; }
+.detail-kind-badge--training { background: #ede9fe; color: #6d28d9; }
+.detail-kind-badge--daily_ops { background: var(--panel); color: var(--ink3); }
+
 .detail-date {
   font-size: 11px;
   color: var(--ink3);
@@ -1766,6 +1768,8 @@ function submitOverride() {
 .detail-subtitle {
   font-size: 12px; color: var(--ink3);
   margin-bottom: 14px;
+  min-width: 0;
+  flex: 1;
 }
 .detail-actions {
   display: flex; gap: 6px; margin-left: auto;

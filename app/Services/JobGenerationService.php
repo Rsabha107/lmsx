@@ -337,6 +337,81 @@ class JobGenerationService
     }
 
     /**
+     * Build the full per-checkpoint display payload for one movement — real
+     * job-checkpoint state/times when a job exists, otherwise the template
+     * checkpoint with a live schedule estimate. This is intentionally
+     * per-movement (not batch): it's used by the on-demand checkpoints
+     * endpoint that the Plans page calls when a single movement is
+     * selected, rather than being eagerly computed for every movement on
+     * the list (which is what made that page slow at a few hundred rows —
+     * see PlanManagementController@checkpoints).
+     *
+     * Expects $movement to have `checkpointTemplate.checkpoints`,
+     * `job.checkpoints.completedBy`, and `flight` already loaded.
+     */
+    public function buildCheckpointsPayload(Movement $movement): array
+    {
+        if ($movement->isBusMovement()) {
+            return [];
+        }
+
+        $checkpoints = $movement->checkpointTemplate?->checkpoints;
+        if (!$checkpoints || $checkpoints->isEmpty()) {
+            return [];
+        }
+
+        $jobCheckpoints = $movement->job?->checkpoints ?? collect();
+        $estimatedSchedule = $movement->job ? [] : $this->estimateCheckpointSchedule($movement);
+
+        return $checkpoints->map(function ($checkpoint) use ($jobCheckpoints, $estimatedSchedule, $movement) {
+            $jobCheckpoint = $jobCheckpoints->firstWhere('checkpoint_id', $checkpoint->id);
+
+            if ($jobCheckpoint) {
+                return [
+                    'id' => $checkpoint->id,
+                    'name' => $checkpoint->name,
+                    'type' => $checkpoint->type,
+                    'requires_photo' => $checkpoint->requires_photo,
+                    'requires_signature' => $checkpoint->requires_signature,
+                    'requires_baggage_count' => $checkpoint->requires_baggage_count,
+                    'planned_bags' => $jobCheckpoint->planned_bags,
+                    'bags_loaded' => $jobCheckpoint->bags_loaded,
+                    'food_bags' => $jobCheckpoint->food_bags,
+                    'oversized_pieces' => $jobCheckpoint->oversized_pieces,
+                    'state' => $jobCheckpoint->state ?? 'pending',
+                    'scheduled_at' => $jobCheckpoint->scheduled_at?->format('Y-m-d H:i:s'),
+                    'started_at' => $jobCheckpoint->started_at?->format('Y-m-d H:i:s'),
+                    'completed_at' => $jobCheckpoint->completed_at?->format('Y-m-d H:i:s'),
+                    'completed_by' => $jobCheckpoint->completedBy?->name,
+                    'photo_path' => $jobCheckpoint->photo_path,
+                    'signature_path' => $jobCheckpoint->signature_path,
+                ];
+            }
+
+            return [
+                'id' => $checkpoint->id,
+                'name' => $checkpoint->name,
+                'type' => $checkpoint->type,
+                'requires_photo' => $checkpoint->requires_photo,
+                'requires_signature' => $checkpoint->requires_signature,
+                'requires_baggage_count' => $checkpoint->requires_baggage_count,
+                'planned_bags' => $checkpoint->requires_baggage_count ? $movement->flight?->planned_bags : null,
+                'bags_loaded' => null,
+                'food_bags' => null,
+                'oversized_pieces' => null,
+                'state' => 'pending',
+                'scheduled_at' => null,
+                'estimated_at' => $estimatedSchedule[$checkpoint->id] ?? null,
+                'started_at' => null,
+                'completed_at' => null,
+                'completed_by' => null,
+                'photo_path' => null,
+                'signature_path' => null,
+            ];
+        })->values()->toArray();
+    }
+
+    /**
      * Create a plan from a movement template.
      */
     public function createPlanFromTemplate(

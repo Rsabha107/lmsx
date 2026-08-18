@@ -31,42 +31,77 @@ class PlanManagementController extends Controller
     }
 
     /**
+     * checkpoint_template_id => total checkpoint count, for every template
+     * in the system. One cheap query, reused for every movement's
+     * `checkpoints_total` so the list views don't need to eager-load each
+     * movement's full checkpoint template just to count its rows.
+     */
+    protected function templateCheckpointCounts(): array
+    {
+        return CheckpointTemplate::withCount('checkpoints')
+            ->pluck('checkpoints_count', 'id')
+            ->all();
+    }
+
+    /**
+     * Lightweight checkpoint progress for a movement, without loading any
+     * checkpoint rows: real counts from the job's own maintained
+     * `checkpoints_total`/`checkpoints_completed` columns once a job
+     * exists, otherwise the template's total with 0 completed. BUS
+     * movements never get checkpoints regardless of their template.
+     */
+    protected function checkpointProgress(Movement $movement, array $templateCounts): array
+    {
+        if ($movement->isBusMovement()) {
+            return ['checkpoints_total' => 0, 'checkpoints_completed' => 0];
+        }
+
+        if ($movement->job) {
+            return [
+                'checkpoints_total' => $movement->job->checkpoints_total ?? 0,
+                'checkpoints_completed' => $movement->job->checkpoints_completed ?? 0,
+            ];
+        }
+
+        return [
+            'checkpoints_total' => $templateCounts[$movement->checkpoint_template_id] ?? 0,
+            'checkpoints_completed' => 0,
+        ];
+    }
+
+    /**
      * Display a listing of plans.
      */
     public function index(Request $request)
     {
         $activeEventId = $request->session()->get('active_event_id');
         Log::info('Plans page accessed via PlanManagementController', ['active_event_id' => $activeEventId]);
-        
+
         // Get active event
         $activeEvent = $activeEventId ? Event::with('country')->find($activeEventId) : null;
 
-        // The same movement appears in both the "by plan" ($plans) and "by
-        // team" ($movementsByTeam) views below via two separate queries, so
-        // estimateCheckpointSchedule() would otherwise run twice per
-        // movement. Memoize by movement id since the estimate is a pure
-        // function of the movement's own (already-loaded) data.
-        $estimateCache = [];
-        $getEstimatedSchedule = function ($movement) use (&$estimateCache) {
-            if ($movement->job) {
-                return [];
-            }
-            return $estimateCache[$movement->id] ??= $this->jobService->estimateCheckpointSchedule($movement);
-        };
+        // Per-checkpoint detail (state, times, baggage) is no longer built
+        // here at all — it used to be computed (including a live schedule
+        // estimate) for every movement on every page load, which is what
+        // made this page slow once a plan reached a few hundred movements.
+        // The frontend now fetches it on demand via
+        // GET /movements/{movement}/checkpoints when a movement is
+        // actually selected — see PlanManagementController@checkpoints.
+        // Only a cheap total/completed count ships with the list.
+        $templateCounts = $this->templateCheckpointCounts();
 
         $plans = Plan::with([
-                'movements.team', 
+                'movements.team',
                 'movements.flight.originAirport',
                 'movements.flight.destinationAirport',
                 'movements.accommodation',
-                'movements.vehicle', 
+                'movements.vehicle',
                 'movements.driver',
                 'movements.fieldSupervisor',
                 'movements.match.team1',
                 'movements.match.team2',
                 'movements.match.venue',
-                'movements.checkpointTemplate.checkpoints',
-                'movements.job.checkpoints.completedBy', // Load job checkpoints for status
+                'movements.job:id,movement_id,checkpoints_total,checkpoints_completed,status',
                 'movementTemplate'
             ])
             ->when($activeEventId, function ($query) use ($activeEventId) {
@@ -74,81 +109,15 @@ class PlanManagementController extends Controller
             })
             ->latest()
             ->get()
-            ->map(function ($plan) use ($getEstimatedSchedule) {
-                // Transform each movement to include merged checkpoint data
-                $plan->movements->transform(function ($movement) use ($getEstimatedSchedule) {
-                    // Get actual job checkpoints if job exists
-                    $jobCheckpoints = $movement->job?->checkpoints ?? collect();
-
-                    // Live estimate for checkpoints that don't have a job yet
-                    $estimatedSchedule = $getEstimatedSchedule($movement);
-
-                    // BUS movements (flight_number === 'BUS') have no
-                    // reference time — no checkpoints get generated or shown.
-                    if ($movement->isBusMovement()) {
-                        $movement->checkpoints = [];
-                        return $movement;
+            ->map(function ($plan) use ($templateCounts) {
+                $plan->movements->transform(function ($movement) use ($templateCounts) {
+                    foreach ($this->checkpointProgress($movement, $templateCounts) as $key => $value) {
+                        $movement->{$key} = $value;
                     }
-
-                    // Build checkpoint data with real status from job_checkpoints table
-                    $checkpoints = $movement->checkpointTemplate?->checkpoints->map(function ($checkpoint) use ($jobCheckpoints, $estimatedSchedule, $movement) {
-                        // Find matching job checkpoint by checkpoint_id
-                        $jobCheckpoint = $jobCheckpoints->firstWhere('checkpoint_id', $checkpoint->id);
-
-                        if ($jobCheckpoint) {
-                            // Use actual data from job_checkpoints table
-                            return [
-                                'id' => $checkpoint->id,
-                                'name' => $checkpoint->name,
-                                'type' => $checkpoint->type,
-                                'requires_photo' => $checkpoint->requires_photo,
-                                'requires_signature' => $checkpoint->requires_signature,
-                                'requires_baggage_count' => $checkpoint->requires_baggage_count,
-                                'planned_bags' => $jobCheckpoint->planned_bags,
-                                'bags_loaded' => $jobCheckpoint->bags_loaded,
-                                'food_bags' => $jobCheckpoint->food_bags,
-                                'oversized_pieces' => $jobCheckpoint->oversized_pieces,
-                                'state' => $jobCheckpoint->state ?? 'pending',
-                                'scheduled_at' => $jobCheckpoint->scheduled_at?->format('Y-m-d H:i:s'),
-                                'started_at' => $jobCheckpoint->started_at?->format('Y-m-d H:i:s'),
-                                'completed_at' => $jobCheckpoint->completed_at?->format('Y-m-d H:i:s'),
-                                'completed_by' => $jobCheckpoint->completedBy?->name,
-                                'photo_path' => $jobCheckpoint->photo_path,
-                                'signature_path' => $jobCheckpoint->signature_path,
-                                'pivot' => $checkpoint->pivot,
-                            ];
-                        } else {
-                            // No job yet, show template checkpoint
-                            return [
-                                'id' => $checkpoint->id,
-                                'name' => $checkpoint->name,
-                                'type' => $checkpoint->type,
-                                'requires_photo' => $checkpoint->requires_photo,
-                                'requires_signature' => $checkpoint->requires_signature,
-                                'requires_baggage_count' => $checkpoint->requires_baggage_count,
-                                'planned_bags' => $checkpoint->requires_baggage_count ? $movement->flight?->planned_bags : null,
-                                'bags_loaded' => null,
-                                'food_bags' => null,
-                                'oversized_pieces' => null,
-                                'state' => 'pending',
-                                'scheduled_at' => null,
-                                'estimated_at' => $estimatedSchedule[$checkpoint->id] ?? null,
-                                'started_at' => null,
-                                'completed_at' => null,
-                                'completed_by' => null,
-                                'photo_path' => null,
-                                'signature_path' => null,
-                                'pivot' => $checkpoint->pivot,
-                            ];
-                        }
-                    }) ?? collect();
-                    
-                    // Add the merged checkpoints array to the movement
-                    $movement->checkpoints = $checkpoints->toArray();
-                    
+                    $movement->unsetRelation('job');
                     return $movement;
                 });
-                
+
                 return $plan;
             });
 
@@ -230,186 +199,130 @@ class PlanManagementController extends Controller
             ->orderBy('name')
             ->get();
 
-        // Load all movements grouped by team with their relationships
-        $movementsByTeam = Movement::with([
-                'team.originAirport',
-                'team.destinationAirport',
-                'team.country',
-                'team.flights' => function ($query) use ($activeEventId) {
-                    if ($activeEventId) {
-                        $query->where('event_id', $activeEventId);
-                    }
-                },
-                'flight.originAirport',
-                'flight.destinationAirport',
-                'accommodation',
-                'vehicle',
-                'driver',
-                'fieldSupervisor',
-                'plan',
-                'match.team1',
-                'match.team2',
-                'match.venue',
-                'checkpointTemplate.checkpoints',
-                'job.checkpoints' // Load job checkpoints for status
-            ])
-            ->whereNotNull('team_id')
-            ->when($activeEventId, function ($query) use ($activeEventId) {
-                $query->where('event_id', $activeEventId);
-            })
-            ->orderBy('window_start')
-            ->get()
-            ->groupBy('team_id')
-            ->map(function ($movements, $teamId) use ($activeEventId, $getEstimatedSchedule) {
-                $team = $movements->first()->team;
-                
-                // Get arrival and departure dates from TeamFlight records for this event
-                $arrivalFlight = $team->flights
-                    ->where('direction', 'arrival')
-                    ->where('event_id', $activeEventId)
-                    ->sortBy('scheduled_at')
-                    ->first();
-                    
-                $departureFlight = $team->flights
-                    ->where('direction', 'departure')
-                    ->where('event_id', $activeEventId)
-                    ->sortByDesc('scheduled_at')
-                    ->first();
-                
-                return [
-                    'team_id' => $teamId,
-                    'team' => $team->team_name,
-                    'code' => $team->code,
-                    'country' => $team->country?->country_name,
-                    'flag' => $team->flag,
-                    'party_size_total' => $team->party_size_total ?? 0,
-                    'origin_airport' => $team->originAirport?->code,
-                    'destination_airport' => $team->destinationAirport?->code,
-                    'hotel_name' => $team->hotel_name,
-                    'training_ground' => $team->training_ground,
-                    'liaison' => $team->sc_liaison_name,
-                    'arrival_date_time' => $arrivalFlight?->scheduled_at?->format('Y-m-d H:i:s'),
-                    'departure_date_time' => $departureFlight?->scheduled_at?->format('Y-m-d H:i:s'),
-                    'items' => $movements->map(function ($movement) use ($getEstimatedSchedule) {
-                        // Get actual job checkpoints if job exists
-                        $jobCheckpoints = $movement->job?->checkpoints ?? collect();
+        // Load all movements grouped by team with their relationships.
+        // Wrapped in Inertia::optional() — the "By Plan" view is the
+        // default, so on a normal page load this entire query+transform
+        // never runs at all. It's only evaluated when the frontend asks
+        // for it specifically (a partial reload with only: ['movementsByTeam'],
+        // triggered when the user actually switches to the "By Team" tab).
+        $movementsByTeam = Inertia::optional(function () use ($activeEventId, $templateCounts) {
+            return Movement::with([
+                    'team.originAirport',
+                    'team.destinationAirport',
+                    'team.country',
+                    'team.flights' => function ($query) use ($activeEventId) {
+                        if ($activeEventId) {
+                            $query->where('event_id', $activeEventId);
+                        }
+                    },
+                    'flight.originAirport',
+                    'flight.destinationAirport',
+                    'accommodation',
+                    'vehicle',
+                    'driver',
+                    'fieldSupervisor',
+                    'match.team1',
+                    'match.team2',
+                    'match.venue',
+                    'job:id,movement_id,checkpoints_total,checkpoints_completed',
+                ])
+                ->whereNotNull('team_id')
+                ->when($activeEventId, function ($query) use ($activeEventId) {
+                    $query->where('event_id', $activeEventId);
+                })
+                ->orderBy('window_start')
+                ->get()
+                ->groupBy('team_id')
+                ->map(function ($movements, $teamId) use ($activeEventId, $templateCounts) {
+                    $team = $movements->first()->team;
 
-                        // Live estimate for checkpoints that don't have a job yet
-                        $estimatedSchedule = $getEstimatedSchedule($movement);
+                    // Get arrival and departure dates from TeamFlight records for this event
+                    $arrivalFlight = $team->flights
+                        ->where('direction', 'arrival')
+                        ->where('event_id', $activeEventId)
+                        ->sortBy('scheduled_at')
+                        ->first();
 
-                        // BUS movements (flight_number === 'BUS') have no
-                        // reference time — no checkpoints get generated or shown.
-                        $checkpoints = $movement->isBusMovement()
-                            ? collect()
-                            : ($movement->checkpointTemplate?->checkpoints->map(function ($checkpoint) use ($jobCheckpoints, $estimatedSchedule, $movement) {
-                            // Find matching job checkpoint by checkpoint_id
-                            $jobCheckpoint = $jobCheckpoints->firstWhere('checkpoint_id', $checkpoint->id);
+                    $departureFlight = $team->flights
+                        ->where('direction', 'departure')
+                        ->where('event_id', $activeEventId)
+                        ->sortByDesc('scheduled_at')
+                        ->first();
 
-                            if ($jobCheckpoint) {
-                                // Use actual data from job_checkpoints table
-                                return [
-                                    'id' => $checkpoint->id,
-                                    'name' => $checkpoint->name,
-                                    'type' => $checkpoint->type,
-                                    'requires_photo' => $checkpoint->requires_photo,
-                                    'requires_signature' => $checkpoint->requires_signature,
-                                    'requires_baggage_count' => $checkpoint->requires_baggage_count,
-                                    'planned_bags' => $jobCheckpoint->planned_bags,
-                                    'bags_loaded' => $jobCheckpoint->bags_loaded,
-                                    'food_bags' => $jobCheckpoint->food_bags,
-                                    'oversized_pieces' => $jobCheckpoint->oversized_pieces,
-                                    'state' => $jobCheckpoint->state ?? 'pending',
-                                    'scheduled_at' => $jobCheckpoint->scheduled_at?->format('Y-m-d H:i:s'),
-                                    'started_at' => $jobCheckpoint->started_at?->format('Y-m-d H:i:s'),
-                                    'completed_at' => $jobCheckpoint->completed_at?->format('Y-m-d H:i:s'),
-                                    'completed_by' => $jobCheckpoint->completedBy?->name,
-                                    'photo_path' => $jobCheckpoint->photo_path,
-                                    'signature_path' => $jobCheckpoint->signature_path,
-                                ];
-                            } else {
-                                // No job yet, show template checkpoint
-                                return [
-                                    'id' => $checkpoint->id,
-                                    'name' => $checkpoint->name,
-                                    'type' => $checkpoint->type,
-                                    'requires_photo' => $checkpoint->requires_photo,
-                                    'requires_signature' => $checkpoint->requires_signature,
-                                    'requires_baggage_count' => $checkpoint->requires_baggage_count,
-                                    'planned_bags' => $checkpoint->requires_baggage_count ? $movement->flight?->planned_bags : null,
-                                    'bags_loaded' => null,
-                                    'food_bags' => null,
-                                    'oversized_pieces' => null,
-                                    'state' => 'pending',
-                                    'scheduled_at' => null,
-                                    'estimated_at' => $estimatedSchedule[$checkpoint->id] ?? null,
-                                    'started_at' => null,
-                                    'completed_at' => null,
-                                    'completed_by' => null,
-                                    'photo_path' => null,
-                                    'signature_path' => null,
-                                ];
-                            }
-                        }) ?? collect());
-                        
-                        return [
-                            'id' => $movement->id,
-                            'code' => $movement->code,
-                            'plan_id' => $movement->plan_id,
-                            'team' => $movement->team->team_name,
-                            'team_code' => $movement->team->code,
-                            'team_id' => $movement->team_id,
-                            'kind' => $movement->kind,
-                            'from' => $movement->from_location,
-                            'to' => $movement->to_location,
-                            'dep' => $movement->window_start?->format('H:i'),
-                            'arr' => $movement->flight?->scheduled_at?->format('H:i') ?? $movement->window_end?->format('H:i'),
-                            'window_start' => $movement->window_start?->format('Y-m-d H:i:s'),
-                            'window_end' => $movement->window_end?->format('Y-m-d H:i:s'),
-                            'actual' => $movement->actual_departure?->format('H:i'),
-                            'actual_arr' => $movement->actual_arrival?->format('H:i'),
-                            'pax' => $movement->passengers ?? 0,
-                            'vehicle' => $movement->vehicle?->code ?? $movement->vehicle?->plate_number ?? $movement->vehicle?->vehicle_type,
-                            'vehicle_id' => $movement->vehicle_id,
-                            'status' => $movement->status,
-                            'delay' => $movement->delay_minutes,
-                            'jobId' => $movement->job_id,
-                            'source' => $movement->source,
-                            'driver' => $movement->driver?->name,
-                            'driver_id' => $movement->driver_id,
-                            'field_supervisor' => $movement->fieldSupervisor?->name,
-                            'field_supervisor_id' => $movement->field_supervisor_id,
-                            'flight_number' => $movement->flight_number,
-                            'notes' => $movement->notes,
-                            'match_id' => $movement->match_id,
-                            'match' => $movement->match ? [
-                                'id' => $movement->match->id,
-                                'match_number' => $movement->match->match_number,
-                                'team1' => $movement->match->team1,
-                                'team2' => $movement->match->team2,
-                                'venue' => $movement->match->venue,
-                                'kick_off' => $movement->match->kick_off?->format('Y-m-d H:i:s'),
-                            ] : null,
-                            'flight_id' => $movement->flight_id,
-                            'flight' => $movement->flight ? [
-                                'id' => $movement->flight->id,
-                                'flight_number' => $movement->flight->flight_number,
-                                'origin_airport' => $movement->flight->originAirport?->code ?? $movement->flight->origin_airport_id,
-                                'destination_airport' => $movement->flight->destinationAirport?->code ?? $movement->flight->destination_airport_id,
-                                'scheduled_at' => $movement->flight->scheduled_at?->format('Y-m-d H:i:s'),
-                                'planned_bags' => $movement->flight->planned_bags,
-                            ] : null,
-                            'accommodation_id' => $movement->accommodation_id,
-                            'accommodation' => $movement->accommodation ? [
-                                'id' => $movement->accommodation->id,
-                                'hotel_name' => $movement->accommodation->hotel_name,
-                            ] : null,
-                            'checkpoints' => $checkpoints->toArray(),
-                        ];
-                    })->values()->all()
-                ];
-            })
-            ->values()
-            ->all();
+                    return [
+                        'team_id' => $teamId,
+                        'team' => $team->team_name,
+                        'code' => $team->code,
+                        'country' => $team->country?->country_name,
+                        'flag' => $team->flag,
+                        'party_size_total' => $team->party_size_total ?? 0,
+                        'origin_airport' => $team->originAirport?->code,
+                        'destination_airport' => $team->destinationAirport?->code,
+                        'hotel_name' => $team->hotel_name,
+                        'training_ground' => $team->training_ground,
+                        'liaison' => $team->sc_liaison_name,
+                        'arrival_date_time' => $arrivalFlight?->scheduled_at?->format('Y-m-d H:i:s'),
+                        'departure_date_time' => $departureFlight?->scheduled_at?->format('Y-m-d H:i:s'),
+                        'items' => $movements->map(function ($movement) use ($templateCounts) {
+                            return array_merge([
+                                'id' => $movement->id,
+                                'code' => $movement->code,
+                                'plan_id' => $movement->plan_id,
+                                'team' => $movement->team->team_name,
+                                'team_code' => $movement->team->code,
+                                'team_id' => $movement->team_id,
+                                'kind' => $movement->kind,
+                                'from' => $movement->from_location,
+                                'to' => $movement->to_location,
+                                'dep' => $movement->window_start?->format('H:i'),
+                                'arr' => $movement->flight?->scheduled_at?->format('H:i') ?? $movement->window_end?->format('H:i'),
+                                'window_start' => $movement->window_start?->format('Y-m-d H:i:s'),
+                                'window_end' => $movement->window_end?->format('Y-m-d H:i:s'),
+                                'actual' => $movement->actual_departure?->format('H:i'),
+                                'actual_arr' => $movement->actual_arrival?->format('H:i'),
+                                'pax' => $movement->passengers ?? 0,
+                                'vehicle' => $movement->vehicle?->code ?? $movement->vehicle?->plate_number ?? $movement->vehicle?->vehicle_type,
+                                'vehicle_id' => $movement->vehicle_id,
+                                'status' => $movement->status,
+                                'delay' => $movement->delay_minutes,
+                                'jobId' => $movement->job_id,
+                                'source' => $movement->source,
+                                'driver' => $movement->driver?->name,
+                                'driver_id' => $movement->driver_id,
+                                'field_supervisor' => $movement->fieldSupervisor?->name,
+                                'field_supervisor_id' => $movement->field_supervisor_id,
+                                'flight_number' => $movement->flight_number,
+                                'notes' => $movement->notes,
+                                'match_id' => $movement->match_id,
+                                'match' => $movement->match ? [
+                                    'id' => $movement->match->id,
+                                    'match_number' => $movement->match->match_number,
+                                    'team1' => $movement->match->team1,
+                                    'team2' => $movement->match->team2,
+                                    'venue' => $movement->match->venue,
+                                    'kick_off' => $movement->match->kick_off?->format('Y-m-d H:i:s'),
+                                ] : null,
+                                'flight_id' => $movement->flight_id,
+                                'flight' => $movement->flight ? [
+                                    'id' => $movement->flight->id,
+                                    'flight_number' => $movement->flight->flight_number,
+                                    'origin_airport' => $movement->flight->originAirport?->code ?? $movement->flight->origin_airport_id,
+                                    'destination_airport' => $movement->flight->destinationAirport?->code ?? $movement->flight->destination_airport_id,
+                                    'scheduled_at' => $movement->flight->scheduled_at?->format('Y-m-d H:i:s'),
+                                    'planned_bags' => $movement->flight->planned_bags,
+                                ] : null,
+                                'accommodation_id' => $movement->accommodation_id,
+                                'accommodation' => $movement->accommodation ? [
+                                    'id' => $movement->accommodation->id,
+                                    'hotel_name' => $movement->accommodation->hotel_name,
+                                ] : null,
+                            ], $this->checkpointProgress($movement, $templateCounts));
+                        })->values()->all()
+                    ];
+                })
+                ->values()
+                ->all();
+        });
 
         // Load matches for the active event
         $matches = \App\Models\GameMatch::with(['team1', 'team2', 'venue', 'event'])
@@ -1250,6 +1163,31 @@ class PlanManagementController extends Controller
         $movement->delete();
 
         return redirect()->back()->with('success', 'Movement deleted successfully.');
+    }
+
+    /**
+     * On-demand checkpoint detail for a single movement. The Plans index
+     * page no longer eagerly builds full checkpoint payloads for every
+     * movement it lists (that's what made it slow once plans reached a
+     * few hundred movements) — the frontend calls this when a movement is
+     * actually selected instead.
+     */
+    public function checkpoints(Movement $movement)
+    {
+        $movement->load([
+            'checkpointTemplate.checkpoints',
+            'job.checkpoints.completedBy',
+            'flight',
+        ]);
+
+        return response()->json([
+            'checkpoints' => $this->jobService->buildCheckpointsPayload($movement),
+            'checkpoint_template' => $movement->checkpointTemplate ? [
+                'id' => $movement->checkpointTemplate->id,
+                'code' => $movement->checkpointTemplate->code,
+                'name' => $movement->checkpointTemplate->name,
+            ] : null,
+        ]);
     }
 
     /**

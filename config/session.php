@@ -38,6 +38,20 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Inactivity Timeout
+    |--------------------------------------------------------------------------
+    |
+    | This option specifies the number of minutes of TRUE inactivity before
+    | the user is automatically logged out. Unlike 'lifetime' which resets
+    | on every request, this tracks actual idle time without any requests.
+    | Set to 30 minutes for security. Set to 0 to disable.
+    |
+    */
+
+    'inactivity_timeout' => (int) env('SESSION_INACTIVITY_TIMEOUT', 30),
+
+    /*
+    |--------------------------------------------------------------------------
     | Session Encryption
     |--------------------------------------------------------------------------
     |

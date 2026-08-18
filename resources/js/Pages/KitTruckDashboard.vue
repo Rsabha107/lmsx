@@ -16,12 +16,19 @@
       </div>
     </div>
 
-    <!-- ── Summary Stats ───────────────────────────────────────────── -->
-    <div class="stats-grid">
-      <mini-stat label="Total Jobs"       :value="rows.length" />
-      <mini-stat label="Active"           :value="withJobCount"  tone="primary" />
-      <mini-stat label="On Time"          :value="onTimeCount"   tone="ok" />
-      <mini-stat label="Late Checkpoints" :value="lateCount"     tone="warn" />
+    <!-- ── KPI Strip (phase-aware) ──────────────────────────────────── -->
+    <div class="kpi-strip">
+      <div v-for="(group, gi) in kpiGroups" :key="group.title" class="kpi-group" :class="{ 'kpi-group--divider': gi > 0 }">
+        <div class="kpi-group-title">{{ group.title }}</div>
+        <div class="kpi-tiles">
+          <div v-for="tile in group.tiles" :key="tile.label" class="kpi-tile">
+            <svg-icon v-if="tile.icon" :name="tile.icon" :size="22" class="kpi-tile-icon" />
+            <div class="kpi-tile-value">{{ tile.value }}</div>
+            <div class="kpi-tile-label">{{ tile.label }}</div>
+            <div v-if="tile.sub" class="kpi-tile-sub">{{ tile.sub }}</div>
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- ── Table Controls (outside card, like Teams) ───────────────── -->
@@ -279,7 +286,6 @@
 import { computed, ref } from 'vue';
 import { router } from '@inertiajs/vue3';
 import AppLayout   from '../Components/AppLayout.vue';
-import MiniStat    from '../Components/MiniStat.vue';
 import SvgIcon     from '../Components/SvgIcon.vue';
 import Button      from '../Components/Button.vue';
 import StatusPill  from '../Components/StatusPill.vue';
@@ -384,17 +390,172 @@ const groupedRows = computed(() => {
   return Object.values(groups).sort((a, b) => a.date.localeCompare(b.date));
 });
 
-// ── Stats ─────────────────────────────────────────────────────────────────
-const withJobCount = computed(() => props.rows.filter(r => ['in-progress', 'dispatched'].includes(r.job_status)).length);
-const onTimeCount  = computed(() => {
+// ── KPI strip ────────────────────────────────────────────────────────────
+// Phase 1: KPI tiles matched to checkpoints by NAME (case-insensitive), since
+// checkpoint templates are the source of truth for what stages exist per
+// movement kind. This is a best-effort mapping against the checkpoint names
+// currently configured in this event's templates — phase 2 will make the
+// tile-to-checkpoint mapping and target thresholds configurable per event
+// instead of hardcoded here.
+function findCheckpointOrder(name) {
+  const target = name.trim().toUpperCase();
+  const col = props.columns.find(c => c.name?.trim().toUpperCase() === target);
+  return col ? col.order : null;
+}
+function checkpointAt(row, order) {
+  if (order == null) return null;
+  return row.checkpoints?.find(c => c.order === order) ?? null;
+}
+function avgDeltaMinutes(rows, name) {
+  const order = findCheckpointOrder(name);
+  const vals = [];
+  for (const r of rows) {
+    const cp = checkpointAt(r, order);
+    if (cp?.scheduled_ts && cp?.completed_ts) vals.push((cp.completed_ts - cp.scheduled_ts) / 60);
+  }
+  return vals.length ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : null;
+}
+function avgDurationMinutes(rows, nameA, nameB) {
+  const orderA = findCheckpointOrder(nameA);
+  const orderB = findCheckpointOrder(nameB);
+  const vals = [];
+  for (const r of rows) {
+    const a = checkpointAt(r, orderA);
+    const b = checkpointAt(r, orderB);
+    if (a?.completed_ts && b?.completed_ts) vals.push((b.completed_ts - a.completed_ts) / 60);
+  }
+  return vals.length ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : null;
+}
+function countOnTime(rows, name, onTime) {
+  const order = findCheckpointOrder(name);
   let n = 0;
-  for (const r of props.rows) for (const cp of r.checkpoints ?? []) if (cp.is_on_time === true) n++;
+  for (const r of rows) {
+    const cp = checkpointAt(r, order);
+    if (cp && cp.is_on_time === onTime) n++;
+  }
   return n;
-});
-const lateCount = computed(() => {
-  let n = 0;
-  for (const r of props.rows) for (const cp of r.checkpoints ?? []) if (cp.is_on_time === false) n++;
-  return n;
+}
+function sumField(rows, name, field) {
+  const order = findCheckpointOrder(name);
+  let sum = 0, any = false;
+  for (const r of rows) {
+    const cp = checkpointAt(r, order);
+    if (cp && cp[field] != null) { sum += cp[field]; any = true; }
+  }
+  return any ? sum : null;
+}
+function fmtMinutes(v) {
+  if (v === null || v === undefined) return '—';
+  return `${v} min${Math.abs(v) === 1 ? '' : 's'}`;
+}
+function fmtCount(v) {
+  return v === null || v === undefined ? '—' : v;
+}
+
+const kpiGroups = computed(() => {
+  const rows = props.rows;
+  const kind = props.filters.kind;
+
+  const teams = new Set(rows.map(r => r.team_code).filter(Boolean)).size;
+  const planned = rows.length;
+  const maxOrder = props.columns.reduce((max, c) => Math.max(max, c.order), 0);
+  const completed = rows.filter(r => checkpointAt(r, maxOrder)?.completed_at).length;
+
+  const overview = {
+    title: kind === 'match' ? 'Operations Overview' : `${kindLabel.value} Overview`,
+    tiles: [
+      { icon: 'team', label: 'Teams', value: teams },
+      kind === 'arrival'
+        ? { icon: 'plane', label: 'Teams Arrived to Date', value: planned }
+        : { icon: 'fleet', label: 'Movements Planned', value: planned },
+      { icon: 'fleet', label: 'Movements Completed', value: completed },
+    ],
+  };
+
+  if (kind === 'arrival') {
+    overview.tiles.push({ icon: 'bus', label: 'Arrival by Bus', value: rows.filter(r => r.flight_number === 'BUS').length });
+    return [
+      overview,
+      {
+        title: 'GWC Performance',
+        tiles: [
+          { icon: 'check', label: 'On-time to Staging', value: countOnTime(rows, 'ARRIVAL TIME AT POA STAGING', true) },
+          { icon: 'warn', label: 'Early/Late to Staging', value: countOnTime(rows, 'ARRIVAL TIME AT POA STAGING', false) },
+          { icon: 'clock', label: 'Avg Planned v Actual (Staging)', value: fmtMinutes(avgDeltaMinutes(rows, 'ARRIVAL TIME AT POA STAGING')), sub: 'Negative = early' },
+          { icon: 'clock', label: 'Avg Duration Airport → Hotel', value: fmtMinutes(avgDurationMinutes(rows, 'CONVOY ARRIVAL AT AIRPORT', 'LUGGAGE ARRIVAL TO HOTEL')) },
+          { icon: 'clock', label: 'Avg Hotel Arrival → Offload', value: fmtMinutes(avgDurationMinutes(rows, 'LUGGAGE ARRIVAL TO HOTEL', 'OFFLOAD END TIME')) },
+        ],
+      },
+      {
+        title: 'External Performance',
+        tiles: [
+          { icon: 'clock', label: 'Avg Staging → Convoy Depart', value: fmtMinutes(avgDurationMinutes(rows, 'ARRIVAL TIME AT POA STAGING', 'POA STAGING CONVY DEPART')) },
+          { icon: 'clock', label: 'Avg Convoy Depart → QAS Handover', value: fmtMinutes(avgDurationMinutes(rows, 'POA STAGING CONVY DEPART', 'QAS HANDOVER TIME')) },
+          { icon: 'bag', label: 'Total Bags Received', value: fmtCount(sumField(rows, 'LUGGAGE PIECES', 'bags_loaded')) },
+          { icon: 'clock', label: 'Avg Bag Loading Duration', value: fmtMinutes(avgDurationMinutes(rows, 'QAS HANDOVER TIME', 'KIT LOAD END')) },
+        ],
+      },
+    ];
+  }
+
+  if (kind === 'departure') {
+    return [
+      overview,
+      {
+        title: 'GWC Performance',
+        tiles: [
+          { icon: 'clock', label: 'Avg Planned v Actual (Hotel Arrival)', value: fmtMinutes(avgDeltaMinutes(rows, 'ARRIVAL TIME AT HOTEL')) },
+          { icon: 'clock', label: 'Avg Hotel Arrival → Loading Start', value: fmtMinutes(avgDurationMinutes(rows, 'ARRIVAL TIME AT HOTEL', 'BAG LOAD START')) },
+          { icon: 'clock', label: 'Avg Bag Loading Duration', value: fmtMinutes(avgDurationMinutes(rows, 'BAG LOAD START', 'BAG LOAD END')) },
+          { icon: 'clock', label: 'Avg Loading End → Departure', value: fmtMinutes(avgDurationMinutes(rows, 'BAG LOAD END', 'DEPARTURE FROM HOTEL')) },
+          { icon: 'clock', label: 'Avg Departure → Airport Arrival', value: fmtMinutes(avgDurationMinutes(rows, 'DEPARTURE FROM HOTEL', 'LUGGAGE ARRIVAL AT AIRPORT')) },
+        ],
+      },
+      {
+        title: 'Baggage',
+        tiles: [
+          { icon: 'bag', label: 'Planned Bags', value: fmtCount(sumField(rows, 'LUGGAGE PIECES', 'planned_bags')) },
+          { icon: 'bag', label: 'Actual Bags', value: fmtCount(sumField(rows, 'LUGGAGE PIECES', 'bags_loaded')) },
+          { icon: 'bag', label: 'Food Bags', value: fmtCount(sumField(rows, 'LUGGAGE PIECES', 'food_bags')) },
+          { icon: 'bag', label: 'Oversized Pieces', value: fmtCount(sumField(rows, 'LUGGAGE PIECES', 'oversized_pieces')) },
+        ],
+      },
+    ];
+  }
+
+  if (kind === 'match') {
+    overview.tiles.push({ icon: 'warn', label: 'Early/Late Arrivals', value: countOnTime(rows, 'GWC ARRIVAL TIME AT HOTEL', false) });
+    return [
+      overview,
+      {
+        title: 'GWC Performance',
+        tiles: [
+          { icon: 'clock', label: 'Avg Planned v Actual (Hotel Arrival)', value: fmtMinutes(avgDeltaMinutes(rows, 'GWC ARRIVAL TIME AT HOTEL')) },
+          { icon: 'clock', label: 'Avg Duration Hotel → VSA', value: fmtMinutes(avgDurationMinutes(rows, 'DEPARTURE TIME FROM HOTEL TO FOP', 'GWC ARRIVAL AT VSA')) },
+          { icon: 'clock', label: 'Avg Planned v Actual (VSA Arrival)', value: fmtMinutes(avgDeltaMinutes(rows, 'GWC ARRIVAL AT VSA')) },
+          { icon: 'clock', label: 'Avg Duration VSA → Hotel', value: fmtMinutes(avgDurationMinutes(rows, 'GWC DEPARTURE FROM VSA/STADIUM TO HOTEL', 'ARRIVAL TO HOTEL')) },
+        ],
+      },
+      {
+        title: 'PMA Kit-Manager Performance',
+        tiles: [
+          { icon: 'clock', label: 'Avg Hotel Arrival → Loading Start', value: fmtMinutes(avgDurationMinutes(rows, 'GWC ARRIVAL TIME AT HOTEL', 'BAG LOAD START')) },
+          { icon: 'bag', label: 'Avg Kit Loading Time (Hotel)', value: fmtMinutes(avgDurationMinutes(rows, 'BAG LOAD START', 'BAG LOAD END')) },
+          { icon: 'clock', label: 'Avg Loading End → Hotel Departure', value: fmtMinutes(avgDurationMinutes(rows, 'BAG LOAD END', 'DEPARTURE TIME FROM HOTEL TO FOP')) },
+          { icon: 'clock', label: 'Avg Final Whistle → Loading Start (Stadium)', value: fmtMinutes(avgDurationMinutes(rows, 'FINAL WHISTLE', 'LOADING AT STADIUM')) },
+        ],
+      },
+      {
+        title: 'SSOC',
+        tiles: [
+          { icon: 'clock', label: 'Avg VSA Departure → Hotel Unload Complete', value: fmtMinutes(avgDurationMinutes(rows, 'ARRIVAL TO HOTEL', 'HOTEL UNLOADING END TIME')) },
+        ],
+      },
+    ];
+  }
+
+  // training / transfer / anything else: generic overview only
+  return [overview];
 });
 
 // ── Navigation ────────────────────────────────────────────────────────────
@@ -438,15 +599,79 @@ function setFunctionalArea(functionalArea) {
 .page-sub   { font-size: 13px; color: var(--ink3); margin: 0; }
 .header-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 
-/* ── Stats grid — identical to Teams.vue ─────────────────────────── */
-.stats-grid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 10px;
+/* ── KPI strip ────────────────────────────────────────────────────── */
+.kpi-strip {
+  display: flex;
+  align-items: stretch;
+  flex-wrap: wrap;
+  gap: 0;
   margin-bottom: 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
 }
-@media (max-width: 1024px) { .stats-grid { grid-template-columns: repeat(2, 1fr); } }
-@media (max-width: 640px)  { .stats-grid { grid-template-columns: 1fr; } }
+.kpi-group {
+  flex: 1 1 auto;
+  padding: 10px 12px;
+  min-width: 0;
+}
+.kpi-group--divider {
+  border-left: 1px solid var(--border);
+}
+.kpi-group-title {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-bottom: 8px;
+  white-space: nowrap;
+}
+.kpi-tiles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.kpi-tile {
+  flex: 1 1 64px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+.kpi-tile-icon {
+  color: var(--accent);
+  margin-bottom: 5px;
+  flex-shrink: 0;
+}
+.kpi-tile-value {
+  font-size: 16px;
+  font-weight: 700;
+  font-family: var(--mono);
+  color: var(--ink);
+  letter-spacing: -0.3px;
+  line-height: 1.15;
+}
+.kpi-tile-label {
+  font-size: 9px;
+  color: var(--ink3);
+  margin-top: 2px;
+  line-height: 1.25;
+  width: 100%;
+  white-space: normal;
+  overflow-wrap: break-word;
+}
+.kpi-tile-sub {
+  font-size: 8px;
+  color: var(--ink4);
+  font-style: italic;
+  margin-top: 1px;
+}
+@media (max-width: 900px) {
+  .kpi-group--divider { border-left: none; border-top: 1px solid var(--border); }
+}
 
 /* ── Table header — identical to Teams.vue ───────────────────────── */
 .table-header {

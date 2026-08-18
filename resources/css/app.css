@@ -25,8 +25,8 @@
     --accent: #6366F1;
     --accent-soft: #EEF0FE;
     --accent-fg: #4338CA;
-    --live: #22D3EE;
-    --live-soft: #E6FBFE;
+    --live: #2563EB;
+    --live-soft: #EFF6FF;
     --warn: #F59E0B;
     --warn-soft: #FEF4E2;
     --danger: #EF4444;
@@ -52,7 +52,7 @@
     --ok-soft: rgba(22, 163, 74, 0.18);
     --warn-soft: rgba(245, 158, 11, 0.18);
     --danger-soft: rgba(239, 68, 68, 0.18);
-    --live-soft: rgba(34, 211, 238, 0.14);
+    --live-soft: rgba(37, 99, 235, 0.18);
 }
 
 * { box-sizing: border-box; }

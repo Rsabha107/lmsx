@@ -10,6 +10,7 @@
       <div>
         <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 6px;">
           <div class="team-badge-lg">{{ job.code }}</div>
+          <flag-icon :code="job.country_code" :fallback="job.flag" />
           <h1 style="font-size: 24px; font-weight: 700; color: var(--ink); letter-spacing: -0.4px; margin: 0;">{{ job.team }}</h1>
           <status-pill :tone="statusTone(job.status)" :dot="true" size="sm">
             {{ job.delay ? `+${job.delay}m delayed` : statusLabel(job.status) }}
@@ -22,6 +23,10 @@
         <Button variant="secondary" size="sm">
           <template #icon><svg-icon name="bell" :size="14" /></template>
           Notify team
+        </Button>
+        <Button variant="secondary" size="sm" :processing="explaining" @click="explainDelay">
+          <template #icon><svg-icon name="ai" :size="14" /></template>
+          Explain delay
         </Button>
         <Button variant="primary" size="sm" @click="openOverride">Override checkpoint</Button>
       </div>
@@ -342,6 +347,34 @@
         </div>
       </transition>
     </teleport>
+
+    <!-- AI Explain Delay Modal -->
+    <teleport to="body">
+      <transition name="fade-modal">
+        <div v-if="showExplainModal" class="modal-backdrop" @click.self="showExplainModal = false">
+          <div class="modal">
+            <div class="modal-header">
+              <div>
+                <div class="modal-eyebrow">AI COPILOT · {{ job.id }}</div>
+                <div class="modal-title">Explain delay</div>
+              </div>
+              <button class="modal-close-btn" @click="showExplainModal = false">
+                <svg-icon name="x" :size="16" />
+              </button>
+            </div>
+            <div class="modal-body">
+              <div v-if="explaining" style="color: var(--ink3); font-size: 13.5px; font-style: italic;">Thinking…</div>
+              <div v-else style="font-size: 13.5px; color: var(--ink); white-space: pre-wrap; line-height: 1.5;" :class="{ 'explain-degraded': !explainOk }">
+                {{ explainAnswer }}
+              </div>
+            </div>
+            <div class="modal-footer" style="justify-content: flex-end;">
+              <Button variant="secondary" size="sm" @click="showExplainModal = false">Close</Button>
+            </div>
+          </div>
+        </div>
+      </transition>
+    </teleport>
   </app-layout>
 </template>
 
@@ -352,6 +385,7 @@ import AppLayout from '../Components/AppLayout.vue';
 import StatusPill from '../Components/StatusPill.vue';
 import SvgIcon from '../Components/SvgIcon.vue';
 import Button from '../Components/Button.vue';
+import FlagIcon from '../Components/FlagIcon.vue';
 
 const props = defineProps({
   job: { type: Object, default: () => ({}) },
@@ -431,6 +465,41 @@ function statusTone(s) {
 
 function statusLabel(s) {
   return statusMap[s]?.label ?? s;
+}
+
+const showExplainModal = ref(false);
+const explaining = ref(false);
+const explainOk = ref(true);
+const explainAnswer = ref('');
+
+async function explainDelay() {
+  showExplainModal.value = true;
+  explaining.value = true;
+  explainOk.value = true;
+  explainAnswer.value = '';
+
+  const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content;
+
+  try {
+    const response = await fetch('/ai/query', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+        'X-CSRF-TOKEN': csrfToken || '',
+      },
+      body: JSON.stringify({ question: `Explain the delay for job ${props.job.id}.` }),
+    });
+
+    const data = await response.json();
+    explainOk.value = data.ok !== false;
+    explainAnswer.value = data.ok ? data.answer : (data.message || 'Something went wrong.');
+  } catch (e) {
+    explainOk.value = false;
+    explainAnswer.value = 'Could not reach the AI Copilot. Please try again.';
+  } finally {
+    explaining.value = false;
+  }
 }
 
 function openOverride() {
@@ -645,6 +714,10 @@ function saveOverride() {
 
 .modal-signed strong {
   color: var(--ink2);
+}
+
+.explain-degraded {
+  color: var(--warn);
 }
 
 .form-field {

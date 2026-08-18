@@ -11,6 +11,7 @@
  * - web/fleet.php     - Fleet, teams, contacts management
  * - web/analytics.php - Analytics and reporting
  * - web/admin.php     - User, role, permission management
+ * - web/ai.php        - AI Operations Copilot
  * - EXAMPLE_ROUTES.php - Plan and template management (legacy)
  */
 
@@ -49,6 +50,7 @@ require __DIR__.'/web/venues.php';
 require __DIR__.'/web/analytics.php';
 require __DIR__.'/web/admin.php';
 require __DIR__.'/web/plans.php';
+require __DIR__.'/web/ai.php';
 
 // Legacy routes (templates and admin - to be refactored)
 require __DIR__.'/EXAMPLE_ROUTES.php';

@@ -4,8 +4,10 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\CheckpointTemplate;
+use App\Models\Event;
 use App\Models\MovementTemplate;
 use App\Models\MovementTemplateLeg;
+use App\Services\TemplateCopyService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -21,7 +23,10 @@ class MovementTemplateController extends Controller
      */
     public function index(Request $request)
     {
-        $query = MovementTemplate::withCount('legs');
+        $activeEventId = $request->session()->get('active_event_id');
+
+        $query = MovementTemplate::withCount('legs')
+            ->when($activeEventId, fn($q) => $q->where('event_id', $activeEventId));
 
         // Search
         if ($request->has('search')) {
@@ -55,9 +60,12 @@ class MovementTemplateController extends Controller
     /**
      * Show the form for creating a new movement template.
      */
-    public function create()
+    public function create(Request $request)
     {
+        $activeEventId = $request->session()->get('active_event_id');
+
         $checkpointTemplates = CheckpointTemplate::active()
+            ->when($activeEventId, fn($q) => $q->where('event_id', $activeEventId))
             ->select('id', 'code', 'name', 'movement_type', 'estimated_duration_minutes')
             ->orderBy('name')
             ->get();
@@ -101,6 +109,7 @@ class MovementTemplateController extends Controller
             DB::beginTransaction();
 
             $template = MovementTemplate::create([
+                'event_id' => $request->session()->get('active_event_id'),
                 'code' => $validated['code'],
                 'name' => $validated['name'],
                 'description' => $validated['description'] ?? null,
@@ -188,8 +197,9 @@ class MovementTemplateController extends Controller
     public function edit(MovementTemplate $movementTemplate)
     {
         $movementTemplate->load('legs.checkpointTemplate');
-        
+
         $checkpointTemplates = CheckpointTemplate::active()
+            ->when($movementTemplate->event_id, fn($q) => $q->where('event_id', $movementTemplate->event_id))
             ->select('id', 'code', 'name', 'movement_type', 'estimated_duration_minutes')
             ->orderBy('name')
             ->get();
@@ -291,6 +301,48 @@ class MovementTemplateController extends Controller
                 ->withInput()
                 ->withErrors(['error' => 'Failed to update movement template: ' . $e->getMessage()]);
         }
+    }
+
+    /**
+     * List movement templates that belong to another event, for the "copy from event" picker.
+     */
+    public function byEvent(Event $event)
+    {
+        return response()->json([
+            'templates' => MovementTemplate::where('event_id', $event->id)
+                ->withCount('legs')
+                ->orderBy('code')
+                ->get(['id', 'code', 'name', 'scenario_type', 'total_legs', 'estimated_duration_minutes']),
+        ]);
+    }
+
+    /**
+     * Copy selected movement templates (and their legs / checkpoint templates) from another event into the active event.
+     */
+    public function copyFromEvent(Request $request, TemplateCopyService $copyService)
+    {
+        $validated = $request->validate([
+            'source_event_id' => 'required|exists:events,id',
+            'template_ids' => 'required|array|min:1',
+            'template_ids.*' => 'exists:movement_templates,id',
+        ]);
+
+        $targetEventId = $request->session()->get('active_event_id');
+        if (!$targetEventId) {
+            return back()->with('error', 'Select an active event before copying templates.');
+        }
+
+        $templates = MovementTemplate::with('legs.checkpointTemplate.checkpoints')
+            ->whereIn('id', $validated['template_ids'])
+            ->where('event_id', $validated['source_event_id'])
+            ->get();
+
+        foreach ($templates as $source) {
+            $copyService->copyMovementTemplate($source, $targetEventId);
+        }
+
+        return redirect()->route('library')
+            ->with('success', $templates->count() . ' movement template(s) copied to the active event');
     }
 
     /**

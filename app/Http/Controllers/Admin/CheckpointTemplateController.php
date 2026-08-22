@@ -5,6 +5,8 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\Checkpoint;
 use App\Models\CheckpointTemplate;
+use App\Models\Event;
+use App\Services\TemplateCopyService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
@@ -19,7 +21,10 @@ class CheckpointTemplateController extends Controller
      */
     public function index(Request $request)
     {
-        $query = CheckpointTemplate::withCount('checkpoints');
+        $activeEventId = $request->session()->get('active_event_id');
+
+        $query = CheckpointTemplate::withCount('checkpoints')
+            ->when($activeEventId, fn($q) => $q->where('event_id', $activeEventId));
 
         // Search
         if ($request->has('search')) {
@@ -85,6 +90,7 @@ class CheckpointTemplateController extends Controller
         ]);
 
         $template = CheckpointTemplate::create([
+            'event_id' => $request->session()->get('active_event_id'),
             'code' => $validated['code'],
             'name' => $validated['name'],
             'movement_type' => $validated['movement_type'],
@@ -207,6 +213,48 @@ class CheckpointTemplateController extends Controller
 
         return redirect()->route('library')
             ->with('success', "Checkpoint template '{$checkpointTemplate->name}' updated successfully");
+    }
+
+    /**
+     * List checkpoint templates that belong to another event, for the "copy from event" picker.
+     */
+    public function byEvent(Event $event)
+    {
+        return response()->json([
+            'templates' => CheckpointTemplate::where('event_id', $event->id)
+                ->withCount('checkpoints')
+                ->orderBy('code')
+                ->get(['id', 'code', 'name', 'movement_type', 'estimated_duration_minutes']),
+        ]);
+    }
+
+    /**
+     * Copy selected checkpoint templates from another event into the active event.
+     */
+    public function copyFromEvent(Request $request, TemplateCopyService $copyService)
+    {
+        $validated = $request->validate([
+            'source_event_id' => 'required|exists:events,id',
+            'template_ids' => 'required|array|min:1',
+            'template_ids.*' => 'exists:checkpoint_templates,id',
+        ]);
+
+        $targetEventId = $request->session()->get('active_event_id');
+        if (!$targetEventId) {
+            return back()->with('error', 'Select an active event before copying templates.');
+        }
+
+        $templates = CheckpointTemplate::with('checkpoints')
+            ->whereIn('id', $validated['template_ids'])
+            ->where('event_id', $validated['source_event_id'])
+            ->get();
+
+        foreach ($templates as $source) {
+            $copyService->copyCheckpointTemplate($source, $targetEventId);
+        }
+
+        return redirect()->route('library')
+            ->with('success', $templates->count() . ' checkpoint template(s) copied to the active event');
     }
 
     /**

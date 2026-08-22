@@ -122,7 +122,8 @@ class PlanManagementController extends Controller
             });
 
         $movementTemplates = \App\Models\MovementTemplate::with(['legs.checkpointTemplate'])
-            ->select('id', 'code', 'name', 'description', 'scenario_type', 'estimated_duration_minutes', 'total_legs')
+            ->select('id', 'code', 'name', 'description', 'scenario_type', 'estimated_duration_minutes', 'total_legs', 'event_id')
+            ->when($activeEventId, fn ($q) => $q->where('event_id', $activeEventId))
             ->orderBy('name')
             ->get();
 
@@ -366,9 +367,12 @@ class PlanManagementController extends Controller
     /**
      * Show plan creation page with available movement templates.
      */
-    public function create()
+    public function create(Request $request)
     {
+        $activeEventId = $request->session()->get('active_event_id');
+
         $movementTemplates = MovementTemplate::active()
+            ->when($activeEventId, fn ($q) => $q->where('event_id', $activeEventId))
             ->with('legs.checkpointTemplate')
             ->get();
 

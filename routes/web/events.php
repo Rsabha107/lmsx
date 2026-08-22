@@ -2,7 +2,9 @@
 
 use App\Http\Controllers\EventsController;
 use App\Http\Controllers\EventTeamsController;
+use App\Http\Controllers\MatchImportController;
 use App\Http\Controllers\TeamFlightsController;
+use App\Http\Controllers\TeamImportController;
 use App\Http\Controllers\TeamStaysController;
 use App\Http\Controllers\TeamTrainingsController;
 use Illuminate\Support\Facades\Route;
@@ -17,6 +19,10 @@ Route::middleware('auth')->prefix('events')->name('events.')->group(function () 
     Route::post('/{id}/teams',                   [EventTeamsController::class, 'store'])->name('teams.store');
     Route::put('/{id}/teams/{teamCode}',         [EventTeamsController::class, 'update'])->name('teams.update');
     Route::delete('/{id}/teams/{teamCode}',      [EventTeamsController::class, 'destroy'])->name('teams.destroy');
+    Route::post('/{id}/teams/import',            [TeamImportController::class, 'import'])->name('teams.import');
+
+    // Matches (event-owned)
+    Route::post('/{id}/matches/import',          [MatchImportController::class, 'import'])->name('matches.import');
 
     // Event venues
     Route::post('/{id}/venues',                  [EventsController::class, 'assignVenue'])->name('assign-venue');

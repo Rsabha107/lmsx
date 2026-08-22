@@ -3228,7 +3228,7 @@
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                       <path d="M17.8 19.2L16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"/>
                     </svg>
-                    Bulk by Arrival
+                    Bulk by Flights
                   </div>
                   <div
                     style="
@@ -3796,7 +3796,7 @@
                   >
                     <option value="">Select a template...</option>
                     <option
-                      v-for="template in props.movementTemplates"
+                      v-for="template in bulkArrivalMovementTemplates"
                       :key="template.id"
                       :value="template.id"
                     >
@@ -3817,6 +3817,7 @@
 
                 <!-- Bulk Preview -->
                 <div
+                  v-if="newPlanTemplate"
                   style="
                     margin-top: 16px;
                     border: 1px solid var(--border);
@@ -4257,7 +4258,7 @@
                   >
                     <option value="">Select a template...</option>
                     <option
-                      v-for="template in props.movementTemplates"
+                      v-for="template in matchDayMovementTemplates"
                       :key="template.id"
                       :value="template.id"
                     >
@@ -4278,6 +4279,7 @@
 
                 <!-- Matches Preview -->
                 <div
+                  v-if="newPlanTemplate"
                   style="
                     margin-top: 16px;
                     border: 1px solid var(--border);
@@ -7535,9 +7537,21 @@ watch(activePlan, (newValue) => {
   });
 });
 
-// Reset flight selections when modal is closed
+// Reset all New Plan form state when the modal is closed, so reopening it
+// never shows a stale value from a previous attempt.
 watch(showNewPlan, (isOpen) => {
   if (!isOpen) {
+    newPlanMode.value = "single";
+    newPlanDate.value = "";
+    newPlanStartTime.value = "09:00";
+    newPlanName.value = "";
+    newPlanTeamId.value = null;
+    newPlanFlightId.value = null;
+    newPlanAccommodationId.value = null;
+    newPlanTemplate.value = "";
+    newPlanMovementPosition.value = null;
+    newPlanProcessing.value = false;
+    newPlanErrors.value = {};
     expandedTeams.value.clear();
     teamFlightSelections.value = {};
   }
@@ -8845,6 +8859,18 @@ const selectedNewPlanTemplate = computed(() => {
   if (!newPlanTemplate.value) return null;
   return props.movementTemplates.find((t) => t.id === newPlanTemplate.value);
 });
+
+// "Bulk by Arrival" groups teams by arrival/departure date, so only templates
+// meant for those movements make sense to offer there.
+const bulkArrivalMovementTemplates = computed(() =>
+  props.movementTemplates.filter((t) => ["arrival_day", "departure_day"].includes(t.scenario_type))
+);
+
+// "Bulk by Matches" schedules a movement ahead of each match, so only
+// match-day templates make sense to offer there.
+const matchDayMovementTemplates = computed(() =>
+  props.movementTemplates.filter((t) => t.scenario_type === "match_day")
+);
 
 const selectedNewPlanTeam = computed(() => {
   if (!newPlanTeamId.value) return null;

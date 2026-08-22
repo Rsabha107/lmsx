@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class MovementTemplate extends Model
 {
     protected $fillable = [
+        'event_id',
         'code',
         'name',
         'description',
@@ -24,6 +25,14 @@ class MovementTemplate extends Model
         'total_legs' => 'integer',
         'estimated_duration_minutes' => 'integer',
     ];
+
+    /**
+     * The event this template belongs to.
+     */
+    public function event(): BelongsTo
+    {
+        return $this->belongsTo(Event::class);
+    }
 
     /**
      * The legs (movements) in this template.

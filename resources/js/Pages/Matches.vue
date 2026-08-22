@@ -13,6 +13,12 @@
           </template>
           Filter
         </Button>
+        <Button variant="secondary" size="sm" @click="openImportModal">
+          <template #icon>
+            <svg-icon name="upload" :size="14" />
+          </template>
+          Import Matches
+        </Button>
         <Button variant="primary" size="sm" @click="openAddModal">
           <template #icon>
             <svg-icon name="plus" :size="14" style="color: #fff;" />
@@ -92,13 +98,13 @@
             </div>
             <div class="mc-teams">
               <div class="mc-team">
-                <flag-icon :code="match.team1?.country_id" />
+                <flag-icon :code="match.team1?.country_id" :fallback="match.team1?.country?.flag" />
                 <span class="mc-team-badge">{{ match.team1?.code || '—' }}</span>
                 <span class="mc-team-name">{{ match.team1?.team_name || 'TBD' }}</span>
               </div>
               <div class="mc-vs">vs</div>
               <div class="mc-team">
-                <flag-icon :code="match.team2?.country_id" />
+                <flag-icon :code="match.team2?.country_id" :fallback="match.team2?.country?.flag" />
                 <span class="mc-team-badge">{{ match.team2?.code || '—' }}</span>
                 <span class="mc-team-name">{{ match.team2?.team_name || 'TBD' }}</span>
               </div>
@@ -166,12 +172,12 @@
               <td class="team-cell">
                 <div class="teams-vs-display">
                   <span class="team-display">
-                    <flag-icon :code="match.team1?.country_id" />
+                    <flag-icon :code="match.team1?.country_id" :fallback="match.team1?.country?.flag" />
                     <span class="team-code">{{ match.team1?.code || '—' }}</span>
                   </span>
                   <span class="vs-separator">vs</span>
                   <span class="team-display">
-                    <flag-icon :code="match.team2?.country_id" />
+                    <flag-icon :code="match.team2?.country_id" :fallback="match.team2?.country?.flag" />
                     <span class="team-code">{{ match.team2?.code || '—' }}</span>
                   </span>
                 </div>
@@ -244,7 +250,7 @@
               <div class="detail-row">
                 <span class="detail-label">Team 1</span>
                 <div class="team-detail">
-                  <flag-icon :code="selectedMatch.team1?.country_id" />
+                  <flag-icon :code="selectedMatch.team1?.country_id" :fallback="selectedMatch.team1?.country?.flag" />
                   <span class="team-code-badge">{{ selectedMatch.team1?.code || '—' }}</span>
                   <span class="detail-value">{{ selectedMatch.team1?.team_name || 'TBD' }}</span>
                 </div>
@@ -252,7 +258,7 @@
               <div class="detail-row">
                 <span class="detail-label">Team 2</span>
                 <div class="team-detail">
-                  <flag-icon :code="selectedMatch.team2?.country_id" />
+                  <flag-icon :code="selectedMatch.team2?.country_id" :fallback="selectedMatch.team2?.country?.flag" />
                   <span class="team-code-badge">{{ selectedMatch.team2?.code || '—' }}</span>
                   <span class="detail-value">{{ selectedMatch.team2?.team_name || 'TBD' }}</span>
                 </div>
@@ -506,12 +512,116 @@
       @close="closeDeleteModal"
       @confirm="deleteMatch"
     />
+
+    <!-- Import Matches Modal -->
+    <Modal :show="showImportModal" @close="closeImportModal" max-width="560px">
+      <template #title>Import Matches</template>
+      <div style="display: flex; flex-direction: column; gap: 14px;">
+        <div style="font-size: 13px; color: var(--ink2); line-height: 1.5;">
+          Upload an Excel (.xlsx/.xls) or CSV file to create or update matches for
+          <strong>{{ activeEventName }}</strong>. Rows are matched by Match Number -
+          existing matches are updated, never duplicated, and blank cells never
+          erase existing data.
+        </div>
+
+        <a :href="matchImportTemplateUrl" style="display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: var(--accent); text-decoration: none; width: fit-content;">
+          <svg-icon name="download" :size="13" />
+          Download import template
+        </a>
+
+        <div
+          style="border: 1px dashed var(--border); border-radius: 8px; padding: 20px; text-align: center; cursor: pointer;"
+          @click="$refs.matchImportFileInput.click()"
+          @dragover.prevent
+          @drop.prevent="onMatchFileDrop"
+        >
+          <input ref="matchImportFileInput" type="file" accept=".xlsx,.xls,.csv,.txt" style="display: none;" @change="onMatchFileSelected" />
+          <div v-if="!matchImportFile" style="font-size: 12px; color: var(--ink3);">
+            Click to choose a file, or drag one here
+          </div>
+          <div v-else style="font-size: 13px; font-weight: 600; color: var(--ink);">
+            {{ matchImportFile.name }}
+          </div>
+        </div>
+
+        <div v-if="matchImportError" style="padding: 8px 12px; background: #FEE2E2; border: 1px solid #FCA5A5; border-radius: 6px; color: #991B1B; font-size: 12px;">
+          {{ matchImportError }}
+        </div>
+      </div>
+      <template #footer>
+        <div style="display: flex; gap: 8px; justify-content: flex-end;">
+          <Button variant="secondary" size="sm" @click="closeImportModal" :disabled="matchImporting">Cancel</Button>
+          <Button variant="primary" size="sm" @click="submitMatchImport" :disabled="matchImporting || !matchImportFile">
+            {{ matchImporting ? "Importing..." : "Import" }}
+          </Button>
+        </div>
+      </template>
+    </Modal>
+
+    <!-- Import Results Modal -->
+    <Modal :show="showMatchImportResultsModal" @close="showMatchImportResultsModal = false" max-width="640px">
+      <template #title>Import Results</template>
+      <div style="display: flex; flex-direction: column; gap: 14px;">
+        <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px;">
+          <div style="padding: 10px; background: var(--panel); border-radius: 6px; text-align: center;">
+            <div style="font-size: 18px; font-weight: 700; color: var(--ink);">{{ matchImportResult?.created ?? 0 }}</div>
+            <div style="font-size: 10px; font-weight: 700; color: var(--ink3); text-transform: uppercase; letter-spacing: 0.5px;">Created</div>
+          </div>
+          <div style="padding: 10px; background: var(--panel); border-radius: 6px; text-align: center;">
+            <div style="font-size: 18px; font-weight: 700; color: var(--ink);">{{ matchImportResult?.updated ?? 0 }}</div>
+            <div style="font-size: 10px; font-weight: 700; color: var(--ink3); text-transform: uppercase; letter-spacing: 0.5px;">Updated</div>
+          </div>
+          <div style="padding: 10px; background: var(--panel); border-radius: 6px; text-align: center;">
+            <div style="font-size: 18px; font-weight: 700; color: var(--ink);">{{ matchImportResult?.unchanged ?? 0 }}</div>
+            <div style="font-size: 10px; font-weight: 700; color: var(--ink3); text-transform: uppercase; letter-spacing: 0.5px;">Unchanged</div>
+          </div>
+          <div style="padding: 10px; background: #FEE2E2; border-radius: 6px; text-align: center;">
+            <div style="font-size: 18px; font-weight: 700; color: #991B1B;">{{ matchImportResult?.failed?.length ?? 0 }}</div>
+            <div style="font-size: 10px; font-weight: 700; color: #991B1B; text-transform: uppercase; letter-spacing: 0.5px;">Failed</div>
+          </div>
+        </div>
+
+        <div v-if="matchImportResult?.incomplete?.length" style="border: 1px solid var(--border); border-radius: 6px; overflow: hidden;">
+          <div style="background: #FEF3C7; padding: 8px 12px; font-size: 11px; font-weight: 700; color: #92400E; text-transform: uppercase; letter-spacing: 0.5px;">
+            Missing Info ({{ matchImportResult.incomplete.length }})
+          </div>
+          <div style="max-height: 160px; overflow-y: auto;">
+            <div v-for="item in matchImportResult.incomplete" :key="item.row" style="padding: 8px 12px; border-bottom: 1px solid var(--border); font-size: 12px; display: flex; justify-content: space-between; gap: 10px;">
+              <span style="font-weight: 600; color: var(--ink);">{{ item.code }}</span>
+              <span style="color: var(--ink3);">missing {{ item.missing.join(", ") }}</span>
+            </div>
+          </div>
+        </div>
+
+        <div v-if="matchImportResult?.failed?.length" style="border: 1px solid #FCA5A5; border-radius: 6px; overflow: hidden;">
+          <div style="background: #FEE2E2; padding: 8px 12px; display: flex; align-items: center; justify-content: space-between;">
+            <span style="font-size: 11px; font-weight: 700; color: #991B1B; text-transform: uppercase; letter-spacing: 0.5px;">
+              Failed Rows ({{ matchImportResult.failed.length }})
+            </span>
+            <button @click="downloadFailedMatchRows" style="font-size: 11px; font-weight: 700; color: #991B1B; background: none; border: none; cursor: pointer; text-decoration: underline;">
+              Download failed rows
+            </button>
+          </div>
+          <div style="max-height: 160px; overflow-y: auto;">
+            <div v-for="item in matchImportResult.failed" :key="item.row" style="padding: 8px 12px; border-bottom: 1px solid var(--border); font-size: 12px;">
+              <span style="font-weight: 600; color: var(--ink);">Row {{ item.row }}</span>
+              <span style="color: #991B1B;"> — {{ item.error }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <template #footer>
+        <div style="display: flex; justify-content: flex-end;">
+          <Button variant="primary" size="sm" @click="showMatchImportResultsModal = false">Done</Button>
+        </div>
+      </template>
+    </Modal>
   </app-layout>
 </template>
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue';
-import { router } from '@inertiajs/vue3';
+import { router, usePage } from '@inertiajs/vue3';
 import flatpickr from 'flatpickr';
 import 'flatpickr/dist/flatpickr.min.css';
 import AppLayout from '../Components/AppLayout.vue';
@@ -543,6 +653,8 @@ const props = defineProps({
     default: () => [],
   },
 });
+
+const page = usePage();
 
 const selectedMatch = ref(null);
 const searchQuery = ref('');
@@ -960,6 +1072,121 @@ onUnmounted(() => {
   destroyFlatpickr();
   window.removeEventListener('resize', onResize);
 });
+
+// ── Import Matches ──────────────────────────────────────────────────────
+const showImportModal = ref(false);
+const matchImportFile = ref(null);
+const matchImporting = ref(false);
+const matchImportError = ref("");
+const showMatchImportResultsModal = ref(false);
+const matchImportResult = ref(null);
+
+const matchImportTemplateUrl = "/matches/import-template";
+
+const activeEventName = computed(() => {
+  const activeEventId = page.props.activeEventId;
+  return props.events.find((e) => e.id === activeEventId)?.name || "the active event";
+});
+
+function openImportModal() {
+  matchImportFile.value = null;
+  matchImportError.value = "";
+  showImportModal.value = true;
+}
+
+function closeImportModal() {
+  showImportModal.value = false;
+}
+
+function onMatchFileSelected(event) {
+  matchImportFile.value = event.target.files?.[0] || null;
+  matchImportError.value = "";
+}
+
+function onMatchFileDrop(event) {
+  const file = event.dataTransfer?.files?.[0];
+  if (file) {
+    matchImportFile.value = file;
+    matchImportError.value = "";
+  }
+}
+
+async function submitMatchImport() {
+  const activeEventId = page.props.activeEventId;
+  if (!matchImportFile.value || !activeEventId) {
+    matchImportError.value = "Select an active event before importing matches.";
+    return;
+  }
+
+  matchImporting.value = true;
+  matchImportError.value = "";
+
+  try {
+    const csrf = document.querySelector('meta[name="csrf-token"]')?.content ?? "";
+    const formData = new FormData();
+    formData.append("file", matchImportFile.value);
+
+    const response = await fetch(`/events/${activeEventId}/matches/import`, {
+      method: "POST",
+      headers: {
+        "X-CSRF-TOKEN": csrf,
+        Accept: "application/json",
+      },
+      body: formData,
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      matchImportError.value = data.message || "Import failed. Please check the file and try again.";
+      return;
+    }
+
+    matchImportResult.value = data;
+    showImportModal.value = false;
+    showMatchImportResultsModal.value = true;
+    router.reload({ only: ["matches"] });
+  } catch (error) {
+    console.error("Match import error:", error);
+    matchImportError.value = "Import failed. Please check the file and try again.";
+  } finally {
+    matchImporting.value = false;
+  }
+}
+
+const MATCH_IMPORT_HEADERS = ["Match Number", "Match Date", "Kick Off", "Team1 Code", "Team2 Code", "Venue", "Stage"];
+
+function downloadFailedMatchRows() {
+  const failed = matchImportResult.value?.failed;
+  if (!failed?.length) return;
+
+  const headers = [...MATCH_IMPORT_HEADERS, "Error"];
+  const lines = [headers.map(csvEscapeMatch).join(",")];
+
+  for (const item of failed) {
+    const original = item.original || {};
+    const values = MATCH_IMPORT_HEADERS.map((header) => original[matchHeaderKey(header)] ?? "");
+    values.push(item.error);
+    lines.push(values.map(csvEscapeMatch).join(","));
+  }
+
+  const blob = new Blob([lines.join("\r\n")], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "matches-import-failed-rows.csv";
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function matchHeaderKey(header) {
+  return header.toLowerCase().replace(/ /g, "_");
+}
+
+function csvEscapeMatch(value) {
+  const str = String(value ?? "");
+  return /[",\n]/.test(str) ? `"${str.replace(/"/g, '""')}"` : str;
+}
 </script>
 
 <style scoped>

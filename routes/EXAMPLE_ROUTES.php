@@ -45,11 +45,15 @@ Route::prefix('admin')->name('admin.')->group(function () {
     Route::resource('checkpoints', CheckpointController::class);
 
     // Checkpoint Templates
+    Route::get('checkpoint-templates/by-event/{event}', [CheckpointTemplateController::class, 'byEvent'])->name('checkpoint-templates.by-event');
+    Route::post('checkpoint-templates/copy-from-event', [CheckpointTemplateController::class, 'copyFromEvent'])->name('checkpoint-templates.copy-from-event');
     Route::resource('checkpoint-templates', CheckpointTemplateController::class);
     Route::post('checkpoint-templates/{template}/checkpoints', [CheckpointTemplateController::class, 'attachCheckpoint'])->name('checkpoint-templates.attach-checkpoint');
     Route::delete('checkpoint-templates/{template}/checkpoints/{checkpoint}', [CheckpointTemplateController::class, 'detachCheckpoint'])->name('checkpoint-templates.detach-checkpoint');
-    
+
     // Movement Templates
+    Route::get('movement-templates/by-event/{event}', [MovementTemplateController::class, 'byEvent'])->name('movement-templates.by-event');
+    Route::post('movement-templates/copy-from-event', [MovementTemplateController::class, 'copyFromEvent'])->name('movement-templates.copy-from-event');
     Route::resource('movement-templates', MovementTemplateController::class);
     Route::post('movement-templates/{template}/legs', [MovementTemplateController::class, 'addLeg'])->name('movement-templates.add-leg');
     Route::put('movement-templates/{template}/legs/{leg}', [MovementTemplateController::class, 'updateLeg'])->name('movement-templates.update-leg');

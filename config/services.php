@@ -39,6 +39,10 @@ return [
         'key' => env('AVIATIONSTACK_API_KEY'),
     ],
 
+    'oag' => [
+        'key' => env('OAG_SUBSCRIPTION_KEY'),
+    ],
+
     // The API key itself lives in config('ai.providers.anthropic.key') via
     // laravel/ai's own auto-merged config — this block only holds the
     // AI Copilot's model/timeout knobs, kept in services.php to match this

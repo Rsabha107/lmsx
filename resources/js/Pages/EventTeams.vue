@@ -23,6 +23,12 @@
         </div>
         <div class="header-actions">
           <RefreshButton :only="['eventTeams', 'activeEvent']" />
+          <Button variant="secondary" size="sm" @click="openImportModal">
+            <template #icon>
+              <svg-icon name="upload" :size="14" />
+            </template>
+            Import Teams
+          </Button>
           <Button variant="primary" size="sm" @click="openTeamForm(null)">
             <template #icon>
               <svg-icon name="plus" :size="14" style="color:#fff;" />
@@ -795,18 +801,42 @@
             <path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"/>
           </svg>
           <span>{{ syncResult?.flight_number }}</span>
-          <span v-if="syncResult?.airline" style="font-size:12px;color:var(--ink3);font-weight:400">{{ syncResult.airline }}</span>
-          <span v-if="syncResult?.flight_status" :class="['sync-status-badge', `sync-status--${syncResult.flight_status}`]">{{ syncResult.flight_status }}</span>
+          <span v-if="syncResult?.airline && !syncResult?.date_mismatch" style="font-size:12px;color:var(--ink3);font-weight:400">{{ syncResult.airline }}</span>
+          <span v-if="syncResult?.flight_status && !syncResult?.date_mismatch" :class="['sync-status-badge', `sync-status--${syncResult.flight_status}`]">{{ syncResult.flight_status }}</span>
         </div>
       </template>
 
       <div class="sync-modal-body">
         <div v-if="syncResult?.date_mismatch" class="sync-mismatch-warn">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0;margin-top:1px"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-          Data is for <strong>{{ syncResult.flight_date }}</strong> — your planned date is <strong>{{ syncResult.planned_date }}</strong>. Flight record was <strong>not</strong> updated.
+          <span>
+            No AviationStack data is available yet for your planned date of <strong>{{ syncResult.planned_date }}</strong>
+            (the closest data it has is from <strong>{{ syncResult.flight_date }}</strong>, a different day for this flight number — details below are not shown since they don't belong to your flight).
+            Live tracking data is only available close to the actual travel date; the flight record was <strong>not</strong> updated.
+          </span>
         </div>
 
-        <div class="sync-card">
+        <div v-if="syncResult?.source === 'ai' && syncResult?.ai_found" class="sync-mismatch-warn" style="background:var(--accent-soft);border-color:var(--accent);color:var(--ink);">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0;margin-top:1px"><path d="M12 3a1 1 0 01.949.684l1.05 3.15a3 3 0 001.917 1.917l3.15 1.05a1 1 0 010 1.898l-3.15 1.05a3 3 0 00-1.917 1.917l-1.05 3.15a1 1 0 01-1.898 0l-1.05-3.15a3 3 0 00-1.917-1.917l-3.15-1.05a1 1 0 010-1.898l3.15-1.05a3 3 0 001.917-1.917l1.05-3.15A1 1 0 0112 3z"/></svg>
+          <span>
+            AviationStack has no live tracking data this far ahead, so this was found via AI web search instead
+            <span v-if="syncResult.ai_confidence">({{ syncResult.ai_confidence }} confidence)</span>.
+            This is <strong>not saved</strong> — review it and enter it manually if it looks right.
+            <template v-if="syncResult.ai_notes"><br /><span style="opacity:.85">{{ syncResult.ai_notes }}</span></template>
+          </span>
+        </div>
+
+        <div v-else-if="syncResult?.source === 'ai' && !syncResult?.ai_found" class="sync-mismatch-warn" style="background:var(--accent-soft);border-color:var(--accent);color:var(--ink);">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0;margin-top:1px"><path d="M12 3a1 1 0 01.949.684l1.05 3.15a3 3 0 001.917 1.917l3.15 1.05a1 1 0 010 1.898l-3.15 1.05a3 3 0 00-1.917 1.917l-1.05 3.15a1 1 0 01-1.898 0l-1.05-3.15a3 3 0 00-1.917-1.917l-3.15-1.05a1 1 0 010-1.898l3.15-1.05a3 3 0 001.917-1.917l1.05-3.15A1 1 0 0112 3z"/></svg>
+          <span>
+            AviationStack has no live tracking data this far ahead. AI web search couldn't confirm an exact schedule
+            for this date either, but found some relevant context — nothing has been saved.
+            <template v-if="syncResult.airline || syncResult?.departure?.iata"><br />{{ syncResult.airline }}<template v-if="syncResult?.departure?.iata"> · {{ syncResult.departure.iata }} → {{ syncResult?.arrival?.iata }}</template></template>
+            <template v-if="syncResult.ai_notes"><br /><span style="opacity:.85">{{ syncResult.ai_notes }}</span></template>
+          </span>
+        </div>
+
+        <div v-if="!syncResult?.date_mismatch && (syncResult?.departure?.scheduled || syncResult?.arrival?.scheduled)" class="sync-card">
           <!-- Route bar -->
           <div class="sync-route-bar">
             <span class="sync-iata-big">{{ syncResult?.departure?.iata || '?' }}</span>
@@ -867,7 +897,15 @@
             </div>
           </div>
 
-          <div class="sync-card-footer">Updated just now · Source: AviationStack</div>
+          <div class="sync-card-footer">
+            <template v-if="syncResult?.source === 'ai'">
+              Not saved · Source:
+              <a v-if="syncResult.ai_source_url" :href="syncResult.ai_source_url" target="_blank" rel="noopener noreferrer">AI web search</a>
+              <template v-else>AI web search</template>
+            </template>
+            <template v-else-if="syncResult?.source === 'oag'">Updated just now · Source: OAG</template>
+            <template v-else>Updated just now · Source: AviationStack</template>
+          </div>
         </div>
       </div>
     </Modal>
@@ -881,6 +919,110 @@
       @close="closeDeleteModal"
       @confirm="confirmDelete"
     />
+
+    <!-- Import Teams Modal -->
+    <Modal :show="showImportModal" @close="closeImportModal" max-width="560px">
+      <template #title>Import Teams</template>
+      <div style="display: flex; flex-direction: column; gap: 14px;">
+        <div style="font-size: 13px; color: var(--ink2); line-height: 1.5;">
+          Upload an Excel (.xlsx/.xls) or CSV file to create or update teams for
+          <strong>{{ activeEvent?.name }}</strong>, along with their arrival/departure
+          flight and accommodation details. Rows are matched by team code — existing
+          teams are updated, never duplicated, and blank cells never erase existing data.
+        </div>
+
+        <a :href="importTemplateUrl" style="display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: var(--accent); text-decoration: none; width: fit-content;">
+          <svg-icon name="download" :size="13" />
+          Download import template
+        </a>
+
+        <div
+          style="border: 1px dashed var(--border); border-radius: 8px; padding: 20px; text-align: center; cursor: pointer;"
+          @click="$refs.importFileInput.click()"
+          @dragover.prevent
+          @drop.prevent="onFileDrop"
+        >
+          <input ref="importFileInput" type="file" accept=".xlsx,.xls,.csv,.txt" style="display: none;" @change="onFileSelected" />
+          <div v-if="!importFile" style="font-size: 12px; color: var(--ink3);">
+            Click to choose a file, or drag one here
+          </div>
+          <div v-else style="font-size: 13px; font-weight: 600; color: var(--ink);">
+            {{ importFile.name }}
+          </div>
+        </div>
+
+        <div v-if="importError" style="padding: 8px 12px; background: #FEE2E2; border: 1px solid #FCA5A5; border-radius: 6px; color: #991B1B; font-size: 12px;">
+          {{ importError }}
+        </div>
+      </div>
+      <template #footer>
+        <div style="display: flex; gap: 8px; justify-content: flex-end;">
+          <Button variant="secondary" size="sm" @click="closeImportModal" :disabled="importing">Cancel</Button>
+          <Button variant="primary" size="sm" @click="submitImport" :disabled="importing || !importFile">
+            {{ importing ? "Importing..." : "Import" }}
+          </Button>
+        </div>
+      </template>
+    </Modal>
+
+    <!-- Import Results Modal -->
+    <Modal :show="showImportResultsModal" @close="showImportResultsModal = false" max-width="640px">
+      <template #title>Import Results</template>
+      <div style="display: flex; flex-direction: column; gap: 14px;">
+        <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px;">
+          <div style="padding: 10px; background: var(--panel); border-radius: 6px; text-align: center;">
+            <div style="font-size: 18px; font-weight: 700; color: var(--ink);">{{ importResult?.created ?? 0 }}</div>
+            <div style="font-size: 10px; font-weight: 700; color: var(--ink3); text-transform: uppercase; letter-spacing: 0.5px;">Created</div>
+          </div>
+          <div style="padding: 10px; background: var(--panel); border-radius: 6px; text-align: center;">
+            <div style="font-size: 18px; font-weight: 700; color: var(--ink);">{{ importResult?.updated ?? 0 }}</div>
+            <div style="font-size: 10px; font-weight: 700; color: var(--ink3); text-transform: uppercase; letter-spacing: 0.5px;">Updated</div>
+          </div>
+          <div style="padding: 10px; background: var(--panel); border-radius: 6px; text-align: center;">
+            <div style="font-size: 18px; font-weight: 700; color: var(--ink);">{{ importResult?.unchanged ?? 0 }}</div>
+            <div style="font-size: 10px; font-weight: 700; color: var(--ink3); text-transform: uppercase; letter-spacing: 0.5px;">Unchanged</div>
+          </div>
+          <div style="padding: 10px; background: #FEE2E2; border-radius: 6px; text-align: center;">
+            <div style="font-size: 18px; font-weight: 700; color: #991B1B;">{{ importResult?.failed?.length ?? 0 }}</div>
+            <div style="font-size: 10px; font-weight: 700; color: #991B1B; text-transform: uppercase; letter-spacing: 0.5px;">Failed</div>
+          </div>
+        </div>
+
+        <div v-if="importResult?.incomplete?.length" style="border: 1px solid var(--border); border-radius: 6px; overflow: hidden;">
+          <div style="background: #FEF3C7; padding: 8px 12px; font-size: 11px; font-weight: 700; color: #92400E; text-transform: uppercase; letter-spacing: 0.5px;">
+            Missing Info ({{ importResult.incomplete.length }})
+          </div>
+          <div style="max-height: 160px; overflow-y: auto;">
+            <div v-for="item in importResult.incomplete" :key="item.row" style="padding: 8px 12px; border-bottom: 1px solid var(--border); font-size: 12px; display: flex; justify-content: space-between; gap: 10px;">
+              <span style="font-weight: 600; color: var(--ink);">{{ item.code }}</span>
+              <span style="color: var(--ink3);">missing {{ item.missing.join(", ") }}</span>
+            </div>
+          </div>
+        </div>
+
+        <div v-if="importResult?.failed?.length" style="border: 1px solid #FCA5A5; border-radius: 6px; overflow: hidden;">
+          <div style="background: #FEE2E2; padding: 8px 12px; display: flex; align-items: center; justify-content: space-between;">
+            <span style="font-size: 11px; font-weight: 700; color: #991B1B; text-transform: uppercase; letter-spacing: 0.5px;">
+              Failed Rows ({{ importResult.failed.length }})
+            </span>
+            <button @click="downloadFailedRows" style="font-size: 11px; font-weight: 700; color: #991B1B; background: none; border: none; cursor: pointer; text-decoration: underline;">
+              Download failed rows
+            </button>
+          </div>
+          <div style="max-height: 160px; overflow-y: auto;">
+            <div v-for="item in importResult.failed" :key="item.row" style="padding: 8px 12px; border-bottom: 1px solid var(--border); font-size: 12px;">
+              <span style="font-weight: 600; color: var(--ink);">Row {{ item.row }}</span>
+              <span style="color: #991B1B;"> — {{ item.error }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <template #footer>
+        <div style="display: flex; justify-content: flex-end;">
+          <Button variant="primary" size="sm" @click="showImportResultsModal = false">Done</Button>
+        </div>
+      </template>
+    </Modal>
   </app-layout>
 </template>
 
@@ -1195,10 +1337,14 @@ const flightForm = ref(emptyFlightForm());
 const scheduledAtInput = ref(null);
 let scheduledAtPicker = null;
 
-// Auto-calculate total party size
+// Auto-calculate total party size from Players/Staff - suppressed while the form
+// is being populated from an existing record, so an imported total-only party
+// size (no players/staff breakdown) isn't immediately zeroed back out.
+const suppressPartySizeWatch = ref(false);
 watch(
   () => [flightForm.value.party_size_players, flightForm.value.party_size_staff],
   ([players, staff]) => {
+    if (suppressPartySizeWatch.value) return;
     const playersNum = parseInt(players) || 0;
     const staffNum = parseInt(staff) || 0;
     flightForm.value.party_size_total = playersNum + staffNum || '';
@@ -1257,6 +1403,7 @@ function emptyFlightForm() {
 function openFlightForm(fl) {
   processing.value = false;
   editingFlight.value = fl;
+  suppressPartySizeWatch.value = true;
   flightForm.value = fl
     ? {
         direction: fl.direction,
@@ -1273,6 +1420,9 @@ function openFlightForm(fl) {
       }
     : emptyFlightForm();
   showFlightForm.value = true;
+  nextTick(() => {
+    suppressPartySizeWatch.value = false;
+  });
 }
 
 function submitFlight() {
@@ -1461,6 +1611,116 @@ function deleteTraining(training) {
     }?`,
     { type: "training", id: training.id }
   );
+}
+
+// ── Import Teams ─────────────────────────────────────────────────────────
+const showImportModal = ref(false);
+const importFile = ref(null);
+const importing = ref(false);
+const importError = ref("");
+const showImportResultsModal = ref(false);
+const importResult = ref(null);
+
+const importTemplateUrl = "/event-teams/import-template";
+
+function openImportModal() {
+  importFile.value = null;
+  importError.value = "";
+  showImportModal.value = true;
+}
+
+function closeImportModal() {
+  showImportModal.value = false;
+}
+
+function onFileSelected(event) {
+  importFile.value = event.target.files?.[0] || null;
+  importError.value = "";
+}
+
+function onFileDrop(event) {
+  const file = event.dataTransfer?.files?.[0];
+  if (file) {
+    importFile.value = file;
+    importError.value = "";
+  }
+}
+
+async function submitImport() {
+  if (!importFile.value || !props.activeEvent) return;
+
+  importing.value = true;
+  importError.value = "";
+
+  try {
+    const csrf = document.querySelector('meta[name="csrf-token"]')?.content ?? "";
+    const formData = new FormData();
+    formData.append("file", importFile.value);
+
+    const response = await fetch(`/events/${props.activeEvent.id}/teams/import`, {
+      method: "POST",
+      headers: {
+        "X-CSRF-TOKEN": csrf,
+        Accept: "application/json",
+      },
+      body: formData,
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      importError.value = data.message || "Import failed. Please check the file and try again.";
+      return;
+    }
+
+    importResult.value = data;
+    showImportModal.value = false;
+    showImportResultsModal.value = true;
+    router.reload({ only: ["eventTeams"] });
+  } catch (error) {
+    console.error("Team import error:", error);
+    importError.value = "Import failed. Please check the file and try again.";
+  } finally {
+    importing.value = false;
+  }
+}
+
+function downloadFailedRows() {
+  const failed = importResult.value?.failed;
+  if (!failed?.length) return;
+
+  const headers = [...TEAM_IMPORT_HEADERS, "Error"];
+  const lines = [headers.map(csvEscape).join(",")];
+
+  for (const item of failed) {
+    const original = item.original || {};
+    const values = TEAM_IMPORT_HEADERS.map((header) => original[headerKey(header)] ?? "");
+    values.push(item.error);
+    lines.push(values.map(csvEscape).join(","));
+  }
+
+  const blob = new Blob([lines.join("\r\n")], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "event-teams-import-failed-rows.csv";
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+const TEAM_IMPORT_HEADERS = [
+  "Trigram", "Team Name", "Country Code", "Group", "Hotel Name", "Room Count",
+  "Airport Code", "Arrival Flight Number", "Arrival Date", "Arrival Time", "Arrival Passengers",
+  "Departure Flight Number", "Departure Date", "Departure Time", "Departure Passengers", "Notes",
+];
+
+function headerKey(header) {
+  return header.toLowerCase().replace(/ /g, "_");
+}
+
+function csvEscape(value) {
+  const str = String(value ?? "");
+  return /[",\n]/.test(str) ? `"${str.replace(/"/g, '""')}"` : str;
 }
 </script>
 

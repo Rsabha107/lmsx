@@ -152,8 +152,10 @@ class LmsController extends Controller
         ]);
     }
 
-    public function library(): Response
+    public function library(Request $request): Response
     {
+        $activeEventId = $request->session()->get('active_event_id');
+
         return Inertia::render('Library', [
             'checkpoints' => Checkpoint::withCount('checkpointTemplates as usage_count')
                 ->orderBy('code')
@@ -162,11 +164,13 @@ class LmsController extends Controller
                 $query->orderBy('checkpoint_checkpoint_template.order');
             }])
                 ->withCount('checkpoints as checkpoint_count')
+                ->when($activeEventId, fn($q) => $q->where('event_id', $activeEventId))
                 ->orderBy('code')
                 ->get(),
             'movementTemplates' => MovementTemplate::with(['legs' => function ($query) {
                 $query->orderBy('order');
             }])
+                ->when($activeEventId, fn($q) => $q->where('event_id', $activeEventId))
                 ->orderBy('code')
                 ->get()
                 ->map(function ($template) {
@@ -189,7 +193,9 @@ class LmsController extends Controller
 
     public function jobs(Request $request): Response
     {
-        // Build job query - show all jobs across all plans
+        $activeEventId = $request->session()->get('active_event_id');
+
+        // Build job query - scoped to the active event, if one is selected
         $jobsQuery = JobOperation::with([
             'event',
             'movement.team',
@@ -202,7 +208,8 @@ class LmsController extends Controller
             'supervisor',
             'checkpoints.completedBy',
             'checkpoints.checkpoint'
-        ]);
+        ])
+            ->when($activeEventId, fn ($q) => $q->where('event_id', $activeEventId));
 
         $jobs = $jobsQuery->orderBy('created_at', 'desc')
             ->get()
@@ -308,8 +315,10 @@ class LmsController extends Controller
         ]);
     }
 
-    public function jobsMobile(): Response
+    public function jobsMobile(Request $request): Response
     {
+        $activeEventId = $request->session()->get('active_event_id');
+
         // "My Jobs" is a field supervisor's active worklist — only jobs
         // currently underway, real data only (no mock/demo rows).
         $dbJobs = JobOperation::with([
@@ -326,6 +335,7 @@ class LmsController extends Controller
         ])
             ->join('movements', 'jobs_operations.movement_id', '=', 'movements.id')
             ->where('jobs_operations.status', 'in-progress')
+            ->when($activeEventId, fn ($q) => $q->where('jobs_operations.event_id', $activeEventId))
             ->orderBy('movements.window_start', 'asc')
             ->select('jobs_operations.*')
             ->get()

@@ -11,9 +11,17 @@
           <template #icon><svg-icon name="plus" :size="14" style="color: #fff;" /></template>
           New Checkpoint
         </Button>
+        <Button v-if="activeTab === 'checkpoint-templates'" variant="secondary" size="sm" @click="openCopyFromEvent('checkpoint-template')">
+          <template #icon><svg-icon name="copy" :size="14" /></template>
+          Copy from Event
+        </Button>
         <Button v-if="activeTab === 'checkpoint-templates'" variant="primary" size="sm" @click="showNewCheckpointTemplate = true">
           <template #icon><svg-icon name="plus" :size="14" style="color: #fff;" /></template>
           New Checkpoint Template
+        </Button>
+        <Button v-if="activeTab === 'movement-templates'" variant="secondary" size="sm" @click="openCopyFromEvent('movement-template')">
+          <template #icon><svg-icon name="copy" :size="14" /></template>
+          Copy from Event
         </Button>
         <Button v-if="activeTab === 'movement-templates'" variant="primary" size="sm" @click="showNewMovementTemplate = true">
           <template #icon><svg-icon name="plus" :size="14" style="color: #fff;" /></template>
@@ -1138,12 +1146,75 @@
       </template>
     </Modal>
 
+    <!-- Copy Templates from Event Modal -->
+    <Modal :show="showCopyFromEvent" @close="closeCopyFromEvent" maxWidth="600px">
+      <template #title>Copy {{ copyType === 'checkpoint-template' ? 'Checkpoint Templates' : 'Movement Templates' }} from Event</template>
+      <div style="display: flex; flex-direction: column; gap: 12px;">
+        <div>
+          <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px; color: var(--ink);">Source Event</label>
+          <select v-model="copySourceEventId" style="width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px;">
+            <option :value="null">Select an event...</option>
+            <option v-for="event in otherEvents" :key="event.id" :value="event.id">
+              {{ event.name }}
+            </option>
+          </select>
+          <div v-if="otherEvents.length === 0" style="font-size: 12px; color: var(--ink3); margin-top: 6px;">
+            No other events available to copy from.
+          </div>
+        </div>
+
+        <div v-if="copySourceEventId">
+          <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 8px; color: var(--ink);">
+            Templates
+            <span v-if="copySelectedIds.size > 0" style="font-weight: 400; color: var(--ink3);">({{ copySelectedIds.size }} selected)</span>
+          </label>
+
+          <div v-if="loadingCopySourceTemplates" style="padding: 20px; text-align: center; color: var(--ink3); font-size: 12px;">
+            Loading templates...
+          </div>
+
+          <div v-else-if="copySourceTemplates.length === 0" style="padding: 20px; text-align: center; color: var(--ink3); background: var(--panel); border: 1px dashed var(--border); border-radius: 6px; font-size: 12px;">
+            This event has no {{ copyType === 'checkpoint-template' ? 'checkpoint' : 'movement' }} templates to copy.
+          </div>
+
+          <div v-else style="border: 1px solid var(--border); border-radius: 6px; overflow: hidden; max-height: 320px; overflow-y: auto;">
+            <div
+              v-for="(template, i) in copySourceTemplates"
+              :key="template.id"
+              style="display: flex; align-items: center; gap: 10px; padding: 10px 12px; cursor: pointer;"
+              :style="{ borderBottom: i === copySourceTemplates.length - 1 ? 'none' : '1px solid var(--border)', background: copySelectedIds.has(template.id) ? 'var(--accent-soft)' : 'transparent' }"
+              @click="toggleCopySelection(template.id)"
+            >
+              <input type="checkbox" :checked="copySelectedIds.has(template.id)" @click.stop @change="toggleCopySelection(template.id)" />
+              <div style="flex: 1;">
+                <div style="font-size: 13px; font-weight: 600; color: var(--ink);">{{ template.name }}</div>
+                <div style="font-size: 11px; color: var(--ink3); font-family: var(--mono);">{{ template.code }}</div>
+              </div>
+              <div style="font-size: 11px; color: var(--ink2);">
+                <template v-if="copyType === 'checkpoint-template'">{{ template.checkpoints_count || 0 }} checkpoint(s)</template>
+                <template v-else>{{ template.legs_count || template.total_legs || 0 }} leg(s)</template>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <template #footer>
+        <div style="display: flex; gap: 8px; justify-content: flex-end;">
+          <Button variant="secondary" size="sm" @click="closeCopyFromEvent" :disabled="copyingTemplates">Cancel</Button>
+          <Button variant="primary" size="sm" @click="submitCopyFromEvent" :disabled="copyingTemplates || copySelectedIds.size === 0">
+            {{ copyingTemplates ? 'Copying...' : `Copy Selected (${copySelectedIds.size})` }}
+          </Button>
+        </div>
+      </template>
+    </Modal>
+
   </app-layout>
 </template>
 
 <script setup>
-import { ref, computed } from 'vue';
+import { ref, computed, watch } from 'vue';
 import { router, usePage } from '@inertiajs/vue3';
+import axios from 'axios';
 import AppLayout from '../Components/AppLayout.vue';
 import Button from '../Components/Button.vue';
 import Modal from '../Components/Modal.vue';
@@ -1368,6 +1439,90 @@ const newLegEdit = ref({
 
 // Selected movement template for detail view
 const selectedMovementTemplate = ref(null);
+
+// Copy templates from another event
+const showCopyFromEvent = ref(false);
+const copyType = ref('checkpoint-template'); // 'checkpoint-template' | 'movement-template'
+const copySourceEventId = ref(null);
+const copySourceTemplates = ref([]);
+const copySelectedIds = ref(new Set());
+const loadingCopySourceTemplates = ref(false);
+const copyingTemplates = ref(false);
+
+const otherEvents = computed(() =>
+  (page.props.eventList || []).filter(event => event.id !== page.props.activeEventId)
+);
+
+function openCopyFromEvent(type) {
+  copyType.value = type;
+  copySourceEventId.value = null;
+  copySourceTemplates.value = [];
+  copySelectedIds.value = new Set();
+  showCopyFromEvent.value = true;
+}
+
+function closeCopyFromEvent() {
+  showCopyFromEvent.value = false;
+}
+
+function toggleCopySelection(id) {
+  const next = new Set(copySelectedIds.value);
+  next.has(id) ? next.delete(id) : next.add(id);
+  copySelectedIds.value = next;
+}
+
+watch(copySourceEventId, async (eventId) => {
+  copySelectedIds.value = new Set();
+  copySourceTemplates.value = [];
+  if (!eventId) return;
+
+  loadingCopySourceTemplates.value = true;
+  const endpoint = copyType.value === 'checkpoint-template'
+    ? `/admin/checkpoint-templates/by-event/${eventId}`
+    : `/admin/movement-templates/by-event/${eventId}`;
+
+  try {
+    const { data } = await axios.get(endpoint);
+    copySourceTemplates.value = data.templates;
+  } catch (e) {
+    showErrorToast('Failed to load templates for that event');
+  } finally {
+    loadingCopySourceTemplates.value = false;
+  }
+});
+
+function submitCopyFromEvent() {
+  if (copySelectedIds.value.size === 0) return;
+
+  copyingTemplates.value = true;
+  const endpoint = copyType.value === 'checkpoint-template'
+    ? '/admin/checkpoint-templates/copy-from-event'
+    : '/admin/movement-templates/copy-from-event';
+
+  router.post(endpoint, {
+    source_event_id: copySourceEventId.value,
+    template_ids: Array.from(copySelectedIds.value),
+  }, {
+    preserveScroll: true,
+    onSuccess: () => {
+      showCopyFromEvent.value = false;
+      const flash = page.props.flash;
+      if (flash?.error) {
+        showErrorToast(flash.error);
+      } else if (flash?.success) {
+        showSuccessToast(flash.success);
+      }
+    },
+    onError: (errors) => {
+      const firstError = Object.values(errors)[0];
+      const message = Array.isArray(firstError) ? firstError[0] : firstError;
+      showErrorToast(message || 'Failed to copy templates');
+    },
+    onFinish: () => {
+      copyingTemplates.value = false;
+    },
+  });
+}
 
 // Clear errors when modals are closed
 function closeNewCheckpointModal() {

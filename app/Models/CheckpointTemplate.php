@@ -3,12 +3,14 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class CheckpointTemplate extends Model
 {
     protected $fillable = [
+        'event_id',
         'code',
         'name',
         'movement_type',
@@ -21,6 +23,14 @@ class CheckpointTemplate extends Model
         'is_active' => 'boolean',
         'estimated_duration_minutes' => 'integer',
     ];
+
+    /**
+     * The event this template belongs to.
+     */
+    public function event(): BelongsTo
+    {
+        return $this->belongsTo(Event::class);
+    }
 
     /**
      * The checkpoints in this template (ordered sequence).

@@ -523,7 +523,7 @@ MobileNavItem.props = ['item'];
   border-radius: 8px; padding: 5px 10px;
   cursor: pointer; color: var(--ink); font-size: 13px; font-weight: 600;
   transition: border-color .15s, background .15s;
-  max-width: 260px;
+  max-width: 480px;
 }
 .event-selector-btn:hover { border-color: var(--accent); background: var(--accent-soft); }
 .event-selector-label { flex: 1; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

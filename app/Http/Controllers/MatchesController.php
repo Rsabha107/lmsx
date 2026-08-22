@@ -7,6 +7,7 @@ use App\Models\GameMatch;
 use App\Models\Team;
 use App\Models\Venue;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 
 class MatchesController extends Controller
@@ -18,7 +19,7 @@ class MatchesController extends Controller
     {
         $activeEventId = $request->session()->get('active_event_id');
         
-        $query = GameMatch::with(['team1', 'team2', 'event', 'venue.country'])
+        $query = GameMatch::with(['team1.country', 'team2.country', 'event', 'venue.country'])
             ->orderBy('match_date', 'asc');
         
         // Filter by active event if one is selected
@@ -48,7 +49,7 @@ class MatchesController extends Controller
     public function store(Request $request)
     {
         $validated = $request->validate([
-            'match_number' => 'required|string|max:50|unique:matches,match_number',
+            'match_number' => ['required', 'string', 'max:50', Rule::unique('matches', 'match_number')->where('event_id', $request->input('event_id'))],
             'event_id' => 'nullable|integer|exists:events,id',
             'venue_id' => 'nullable|integer|exists:venues,id',
             'team1_id' => 'nullable|integer|exists:teams,id',
@@ -85,7 +86,7 @@ class MatchesController extends Controller
         $match = GameMatch::findOrFail($id);
 
         $validated = $request->validate([
-            'match_number' => 'required|string|max:50|unique:matches,match_number,' . $match->id,
+            'match_number' => ['required', 'string', 'max:50', Rule::unique('matches', 'match_number')->where('event_id', $request->input('event_id'))->ignore($match->id)],
             'event_id' => 'nullable|integer|exists:events,id',
             'venue_id' => 'nullable|integer|exists:venues,id',
             'team1_id' => 'nullable|integer|exists:teams,id',

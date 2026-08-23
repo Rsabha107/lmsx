@@ -150,7 +150,14 @@
 
     <!-- Checkpoint Templates Tab -->
     <div v-if="activeTab === 'checkpoint-templates'" style="flex: 1; overflow: auto;">
-      <div class="plan-table-card">
+      <div v-if="!hasActiveEvent" class="empty-state-full">
+        <div class="empty-state-icon">📅</div>
+        <h2 class="empty-state-title">No Active Event</h2>
+        <p class="empty-state-text">
+          Please select an event from the dropdown above to view checkpoint templates.
+        </p>
+      </div>
+      <div v-else class="plan-table-card">
         <div style="padding: 14px 16px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center;">
           <div>
             <div style="font-size: 11px; letter-spacing: 1px; text-transform: uppercase; color: var(--ink3); font-weight: 700;">Checkpoint Templates</div>
@@ -213,8 +220,8 @@
           </div>
           <div style="font-size: 12px; color: var(--ink2);">{{ template.estimated_duration_minutes || 0 }} min</div>
           <div style="display: flex; gap: 4px;">
-            <TableActions 
-              @edit="editCheckpointTemplate(template)" 
+            <TableActions
+              @edit="editCheckpointTemplate(template)"
               @delete="deleteCheckpointTemplate(template.id)"
             />
           </div>
@@ -224,6 +231,14 @@
 
     <!-- Movement Templates Tab -->
     <div v-if="activeTab === 'movement-templates'" style="flex: 1; overflow: hidden; display: flex; gap: 12px;">
+      <div v-if="!hasActiveEvent" class="empty-state-full" style="width: 100%;">
+        <div class="empty-state-icon">📅</div>
+        <h2 class="empty-state-title">No Active Event</h2>
+        <p class="empty-state-text">
+          Please select an event from the dropdown above to view movement templates.
+        </p>
+      </div>
+      <template v-else>
       <!-- Templates List -->
       <div class="plan-table-card" style="flex: 1; display: flex; flex-direction: column; overflow: hidden;">
         <div style="padding: 14px 16px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center;">
@@ -374,6 +389,7 @@
           </div>
         </div>
       </transition>
+      </template>
     </div>
 
     <!-- New Checkpoint Modal -->
@@ -1235,6 +1251,8 @@ const props = defineProps({
 
 // Active tab
 const activeTab = ref('checkpoints');
+
+const hasActiveEvent = computed(() => !!page.props.activeEventId);
 
 // Tabs configuration
 const tabs = computed(() => [
@@ -2239,6 +2257,30 @@ function movementTypePillStyle(type) {
 </script>
 
 <style scoped>
+.empty-state-full {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 60vh;
+  text-align: center;
+}
+.empty-state-icon {
+  font-size: 64px;
+  margin-bottom: 16px;
+}
+.empty-state-title {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--ink);
+  margin-bottom: 8px;
+}
+.empty-state-text {
+  font-size: 14px;
+  color: var(--ink3);
+  max-width: 400px;
+}
+
 .page-header {
   display: flex;
   justify-content: space-between;

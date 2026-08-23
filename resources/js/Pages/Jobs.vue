@@ -1,5 +1,16 @@
 <template>
   <app-layout>
+    <!-- No Active Event State -->
+    <div v-if="!hasActiveEvent" class="empty-state-full">
+      <div class="empty-state-icon">📅</div>
+      <h2 class="empty-state-title">No Active Event</h2>
+      <p class="empty-state-text">
+        Please select an event from the dropdown above to view the jobs queue.
+      </p>
+    </div>
+
+    <!-- Active Event Content -->
+    <div v-else>
     <div class="page-header">
       <div style="display: flex; align-items: center; gap: 12px;">
         <div>
@@ -339,6 +350,10 @@
             <div class="override-variance" :class="overrideVarianceMinutes > 0 ? 'is-late' : overrideVarianceMinutes < 0 ? 'is-early' : ''">
               {{ overrideVarianceText }}
             </div>
+            <label class="override-exclude-date">
+              <input type="checkbox" v-model="overrideExcludeDate" />
+              <span>Exclude date from calculation (compare time of day only)</span>
+            </label>
           </div>
         </div>
 
@@ -455,12 +470,13 @@
         </button>
       </div>
     </div>
+    </div>
   </app-layout>
 </template>
 
 <script setup>
 import { ref, computed, nextTick, watch } from 'vue';
-import { router } from '@inertiajs/vue3';
+import { router, usePage } from '@inertiajs/vue3';
 import AppLayout from '../Components/AppLayout.vue';
 import StatusPill from '../Components/StatusPill.vue';
 import SvgIcon from '../Components/SvgIcon.vue';
@@ -470,6 +486,9 @@ import Modal from '../Components/Modal.vue';
 import Button from '../Components/Button.vue';
 import CheckpointTimeline from '../Components/CheckpointTimeline.vue';
 import FlagIcon from '../Components/FlagIcon.vue';
+
+const page = usePage();
+const hasActiveEvent = computed(() => !!page.props.activeEventId);
 
 const props = defineProps({
   schedule: { type: Array, default: () => [] },
@@ -931,6 +950,7 @@ const overrideProcessing = ref(false);
 const overrideCheckpoint = ref(null);
 const overrideState = ref('done');
 const overrideTime = ref('');
+const overrideExcludeDate = ref(false);
 const overrideReason = ref('');
 const overrideNotes = ref('');
 const overrideNotify = ref(true);
@@ -988,6 +1008,7 @@ function openOverrideModal() {
   
   const now = new Date();
   overrideTime.value = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+  overrideExcludeDate.value = false;
   overrideReason.value = '';
   overrideNotes.value = '';
   overrideNotify.value = true;
@@ -1007,24 +1028,43 @@ function openOverrideModal() {
 
 const overrideVarianceMinutes = computed(() => {
   if (!overrideCheckpoint.value?.scheduled_ts || !overrideTime.value) return null;
-  
+
   // Parse the time input (HH:mm)
   const [ah, am] = overrideTime.value.split(':').map(Number);
   if (isNaN(ah) || isNaN(am)) return null;
-  
+
+  if (overrideExcludeDate.value) {
+    // Compare time-of-day only, using the already-formatted "HH:mm" scheduled
+    // label rather than deriving hours from scheduled_ts: that timestamp is
+    // an absolute instant, and re-deriving its hour via `new Date(ts).getHours()`
+    // reinterprets it in the browser's local timezone, which can differ from
+    // the server timezone the "HH:mm" label was formatted in and silently
+    // shift the result by hours.
+    const schedStr = overrideCheckpoint.value?.scheduled_at || overrideCheckpoint.value?.at;
+    const schedMatch = schedStr?.match(/^(\d{1,2}):(\d{2})/);
+    if (!schedMatch) return null;
+    const scheduledMinutes = Number(schedMatch[1]) * 60 + Number(schedMatch[2]);
+    const actualMinutes = ah * 60 + am;
+    let diff = actualMinutes - scheduledMinutes;
+    // Wrap around midnight to the shortest signed difference
+    if (diff > 720) diff -= 1440;
+    if (diff < -720) diff += 1440;
+    return diff;
+  }
+
   // Get scheduled timestamp and extract scheduled hour
   const scheduledDate = new Date(overrideCheckpoint.value.scheduled_ts * 1000);
   const scheduledHour = scheduledDate.getHours();
-  
+
   // Create actual datetime using TODAY's date (matching backend logic)
   const actualDate = new Date();
   actualDate.setHours(ah, am, 0, 0);
-  
+
   // Midnight crossover detection (scheduled late night, actual early morning = next day)
   if (scheduledHour >= 18 && ah < 6) {
     actualDate.setDate(actualDate.getDate() + 1);
   }
-  
+
   // Calculate variance in minutes using timestamps
   const varianceSeconds = Math.floor(actualDate.getTime() / 1000) - overrideCheckpoint.value.scheduled_ts;
   return Math.round(varianceSeconds / 60);
@@ -1225,7 +1265,8 @@ function submitOverride() {
   // Add actual time only for 'done' state
   if (overrideState.value === 'done') {
     formData.append('actual_time', overrideTime.value);
-    
+    formData.append('exclude_date', overrideExcludeDate.value ? '1' : '0');
+
     // If this is PMA Arrival checkpoint, flag to update team flight actual_at
     const checkpointName = overrideCheckpoint.value?.name || overrideCheckpoint.value?.label || '';
     if (checkpointName.toLowerCase().includes('pma arrival')) {
@@ -1324,6 +1365,20 @@ function submitOverride() {
 </script>
 
 <style scoped>
+.empty-state-full {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 60vh;
+  text-align: center;
+}
+.empty-state-text {
+  font-size: 14px;
+  color: var(--ink3);
+  max-width: 400px;
+}
+
 .page-header {
   display: flex; align-items: flex-start; justify-content: space-between;
   gap: 12px; margin-bottom: 14px; flex-wrap: wrap;
@@ -2019,6 +2074,12 @@ function submitOverride() {
 }
 .override-variance.is-late  { color: #c2410c; }
 .override-variance.is-early { color: #166534; }
+
+.override-exclude-date {
+  display: flex; align-items: flex-start; gap: 6px;
+  font-size: 11px; color: var(--ink3); cursor: pointer;
+}
+.override-exclude-date input { margin-top: 2px; accent-color: var(--accent); flex-shrink: 0; }
 
 .override-textarea {
   width: 100%; padding: 8px 10px; border-radius: 7px;

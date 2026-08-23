@@ -734,6 +734,7 @@ class LmsController extends Controller
             $validated = $request->validate([
                 'state' => 'required|in:done,skipped',
                 'actual_time' => 'nullable|date_format:H:i',
+                'exclude_date' => 'nullable|boolean',
                 'reason' => 'required|string|max:255',
                 'notes' => 'nullable|string',
                 'planned_bags' => 'nullable|integer|min:0',
@@ -760,14 +761,26 @@ class LmsController extends Controller
                 'overridden_at' => now(),
             ];
 
+            $excludeDate = $request->boolean('exclude_date');
+
             // Handle based on state
             if (($validated['state'] === 'done' || $validated['state'] === 'success') && $validated['actual_time']) {
                 $updateData['override_actual_time'] = $validated['actual_time'];
-                
-                // Use TODAY's date as the base, not the scheduled date
+
                 list($hours, $minutes) = explode(':', $validated['actual_time']);
-                $actualDateTime = \Carbon\Carbon::today()->setTime((int)$hours, (int)$minutes, 0);
-                
+
+                if ($excludeDate && $checkpoint->scheduled_at) {
+                    // "Exclude date" means the checkpoint's own scheduled date is
+                    // authoritative, not today — anchoring completed_at on it means
+                    // every later diff against scheduled_at (here and anywhere else
+                    // in the app) sees a pure time-of-day variance, with nothing
+                    // further to special-case.
+                    $actualDateTime = \Carbon\Carbon::parse($checkpoint->scheduled_at)->setTime((int)$hours, (int)$minutes, 0);
+                } else {
+                    // Use TODAY's date as the base, not the scheduled date
+                    $actualDateTime = \Carbon\Carbon::today()->setTime((int)$hours, (int)$minutes, 0);
+                }
+
                 // Handle midnight crossover: if actual time is very early (e.g., 00:39) and scheduled time
                 // was late (e.g., 14:19), assume the completion happened early next day
                 if ($checkpoint->scheduled_at) {
@@ -842,6 +855,9 @@ class LmsController extends Controller
                 $movement = $job->movement;
                 if ($movement && $movement->window_end) {
                     $windowEnd = \Carbon\Carbon::parse($movement->window_end);
+                    if ($excludeDate) {
+                        $windowEnd = $this->alignTimeOfDayTo($windowEnd, $actualDateTime);
+                    }
                     // diffInMinutes()'s signed mode is relative to the argument, not
                     // $this, so a plain "<= 0" check on it gets the direction backwards
                     // (late completions read as on-time and vice versa). greaterThan()
@@ -932,6 +948,26 @@ class LmsController extends Controller
                 'message' => 'Failed to override checkpoint: ' . $e->getMessage()
             ], 500);
         }
+    }
+
+    /**
+     * Re-date $reference onto $anchor's calendar date (keeping $reference's
+     * time-of-day), picking whichever adjacent day keeps it within 12 hours
+     * of $anchor. Used to compare two times "time of day only" when their
+     * underlying dates aren't expected to match (e.g. demo/seed schedules).
+     */
+    private function alignTimeOfDayTo(\Carbon\Carbon $reference, \Carbon\Carbon $anchor): \Carbon\Carbon
+    {
+        $aligned = $anchor->copy()->setTime($reference->hour, $reference->minute, $reference->second);
+
+        $diffSeconds = $aligned->getTimestamp() - $anchor->getTimestamp();
+        if ($diffSeconds > 12 * 3600) {
+            $aligned->subDay();
+        } elseif ($diffSeconds < -12 * 3600) {
+            $aligned->addDay();
+        }
+
+        return $aligned;
     }
 
     /**

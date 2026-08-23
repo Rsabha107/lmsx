@@ -1,6 +1,16 @@
 <template>
   <app-layout>
-    <div class="mobile-container">
+    <!-- No Active Event State -->
+    <div v-if="!hasActiveEvent" class="empty-state-full">
+      <div class="empty-state-icon">📅</div>
+      <h2 class="empty-state-title">No Active Event</h2>
+      <p class="empty-state-text">
+        Please select an event from the dropdown above to view your jobs.
+      </p>
+    </div>
+
+    <!-- Active Event Content -->
+    <div v-else class="mobile-container">
       <!-- Header -->
       <div class="mobile-header">
         <h1 class="mobile-title">My Jobs</h1>
@@ -92,11 +102,14 @@
 </template>
 
 <script setup>
-import { ref } from 'vue';
-import { router } from '@inertiajs/vue3';
+import { ref, computed } from 'vue';
+import { router, usePage } from '@inertiajs/vue3';
 import AppLayout from '../Components/AppLayout.vue';
 import StatusPill from '../Components/StatusPill.vue';
 import SvgIcon from '../Components/SvgIcon.vue';
+
+const page = usePage();
+const hasActiveEvent = computed(() => !!page.props.activeEventId);
 
 const props = defineProps({
   schedule: { type: Array, default: () => [] },
@@ -309,6 +322,31 @@ function formatJobToLocation(job) {
 </script>
 
 <style scoped>
+.empty-state-full {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 60vh;
+  text-align: center;
+  padding: 16px;
+}
+.empty-state-icon {
+  font-size: 64px;
+  margin-bottom: 16px;
+}
+.empty-state-title {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--ink);
+  margin-bottom: 8px;
+}
+.empty-state-text {
+  font-size: 14px;
+  color: var(--ink3);
+  max-width: 400px;
+}
+
 .mobile-container {
   max-width: 480px;
   margin: 0 auto;

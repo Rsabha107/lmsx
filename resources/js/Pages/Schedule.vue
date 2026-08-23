@@ -1,5 +1,16 @@
 <template>
   <app-layout>
+    <!-- No Active Event State -->
+    <div v-if="!hasActiveEvent" class="empty-state-full">
+      <div class="empty-state-icon">📅</div>
+      <h2 class="empty-state-title">No Active Event</h2>
+      <p class="empty-state-text">
+        Please select an event from the dropdown above to view the schedule.
+      </p>
+    </div>
+
+    <!-- Active Event Content -->
+    <div v-else>
     <div class="page-header">
       <div>
         <h1 class="page-title">Movement Schedule</h1>
@@ -86,16 +97,20 @@
         </tbody>
       </table>
     </div>
+    </div>
   </app-layout>
 </template>
 
 <script setup>
 import { ref, computed, watch } from 'vue';
-import { router } from '@inertiajs/vue3';
+import { router, usePage } from '@inertiajs/vue3';
 import AppLayout from '../Components/AppLayout.vue';
 import StatusPill from '../Components/StatusPill.vue';
 import RefreshButton from '../Components/RefreshButton.vue';
 import DatePicker from '../Components/DatePicker.vue';
+
+const page = usePage();
+const hasActiveEvent = computed(() => !!page.props.activeEventId);
 
 const props = defineProps({
   schedule: { type: Array, default: () => [] },
@@ -173,6 +188,30 @@ function statusLabel(s) { return statusMap[s]?.label ?? s; }
 </script>
 
 <style scoped>
+.empty-state-full {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 60vh;
+  text-align: center;
+}
+.empty-state-icon {
+  font-size: 64px;
+  margin-bottom: 16px;
+}
+.empty-state-title {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--ink);
+  margin-bottom: 8px;
+}
+.empty-state-text {
+  font-size: 14px;
+  color: var(--ink3);
+  max-width: 400px;
+}
+
 .page-header {
   display: flex; align-items: flex-start; justify-content: space-between;
   gap: 12px; margin-bottom: 20px; flex-wrap: wrap;

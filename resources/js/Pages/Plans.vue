@@ -1,5 +1,16 @@
 <template>
   <app-layout>
+    <!-- No Active Event State -->
+    <div v-if="!activeEvent" class="empty-state-full">
+      <div class="empty-state-icon">📅</div>
+      <h2 class="empty-state-title">No Active Event</h2>
+      <p class="empty-state-text">
+        Please select an event from the dropdown above to view plans.
+      </p>
+    </div>
+
+    <!-- Active Event Content -->
+    <div v-else>
     <div class="page-header">
       <!-- Plan picker dropdown -->
       <div style="position: relative">
@@ -7385,6 +7396,7 @@
         </div>
       </div>
     </teleport>
+    </div>
   </app-layout>
 </template>
 
@@ -10736,6 +10748,21 @@ function statusLabel(s) {
   background: var(--panel);
   border-radius: 10px;
   margin: 20px;
+}
+
+.empty-state-full {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 60vh;
+  text-align: center;
+}
+
+.empty-state-text {
+  font-size: 14px;
+  color: var(--ink3);
+  max-width: 400px;
 }
 
 .empty-state-icon {

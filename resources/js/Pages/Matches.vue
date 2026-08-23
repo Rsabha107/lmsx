@@ -1,5 +1,16 @@
 <template>
   <app-layout>
+    <!-- No Active Event State -->
+    <div v-if="!hasActiveEvent" class="empty-state-full">
+      <div class="empty-state-icon">📅</div>
+      <h2 class="empty-state-title">No Active Event</h2>
+      <p class="empty-state-text">
+        Please select an event from the dropdown above to view matches.
+      </p>
+    </div>
+
+    <!-- Active Event Content -->
+    <div v-else>
     <div class="page-header">
       <div>
         <h1 class="page-title">Matches</h1>
@@ -616,6 +627,7 @@
         </div>
       </template>
     </Modal>
+    </div>
   </app-layout>
 </template>
 
@@ -655,6 +667,7 @@ const props = defineProps({
 });
 
 const page = usePage();
+const hasActiveEvent = computed(() => !!page.props.activeEventId);
 
 const selectedMatch = ref(null);
 const searchQuery = ref('');
@@ -1190,8 +1203,32 @@ function csvEscapeMatch(value) {
 </script>
 
 <style scoped>
-.page-header { 
-  display: flex; align-items: flex-start; justify-content: space-between; 
+.empty-state-full {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 60vh;
+  text-align: center;
+}
+.empty-state-icon {
+  font-size: 64px;
+  margin-bottom: 16px;
+}
+.empty-state-title {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--ink);
+  margin-bottom: 8px;
+}
+.empty-state-text {
+  font-size: 14px;
+  color: var(--ink3);
+  max-width: 400px;
+}
+
+.page-header {
+  display: flex; align-items: flex-start; justify-content: space-between;
   gap: 16px; margin-bottom: 16px; flex-wrap: wrap;
 }
 .page-title { font-size: 20px; font-weight: 700; color: var(--ink); margin: 0 0 2px; }

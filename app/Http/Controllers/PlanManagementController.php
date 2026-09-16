@@ -8,6 +8,7 @@ use App\Models\MovementTemplate;
 use App\Models\Plan;
 use App\Models\Movement;
 use App\Models\Event;
+use App\Services\ConflictDetectionService;
 use App\Services\JobGenerationService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -360,6 +361,7 @@ class PlanManagementController extends Controller
             'supervisors' => $supervisors,
             'matches' => $matches,
             'nextMovementNumber' => $nextMovementNumber,
+            'conflicts' => app(ConflictDetectionService::class)->forEvent($activeEventId),
             'schedule' => LmsData::schedule(), // For backward compatibility - will be removed
         ]);
     }

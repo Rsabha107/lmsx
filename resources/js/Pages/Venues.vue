@@ -211,9 +211,10 @@
     </Modal>
 
     <!-- Delete Confirm Modal -->
-    <DeleteConfirmModal
+    <ConfirmModal
       :show="showDeleteModal"
-      title="Venue"
+      tone="danger"
+      title="Delete Venue"
       :message="venueToDelete ? `Are you sure you want to delete <strong>${venueToDelete.name}</strong>?` : ''"
       :processing="deleting"
       @close="showDeleteModal = false; venueToDelete = null;"
@@ -230,7 +231,7 @@ import MiniStat        from '../Components/MiniStat.vue';
 import SvgIcon         from '../Components/SvgIcon.vue';
 import Button          from '../Components/Button.vue';
 import Modal           from '../Components/Modal.vue';
-import DeleteConfirmModal from '../Components/DeleteConfirmModal.vue';
+import ConfirmModal from '../Components/ConfirmModal.vue';
 import TableActions    from '../Components/TableActions.vue';
 import RefreshButton   from '../Components/RefreshButton.vue';
 import FlagIcon        from '../Components/FlagIcon.vue';

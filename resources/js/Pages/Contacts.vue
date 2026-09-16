@@ -284,9 +284,10 @@
     </div>
 
     <!-- Delete Confirmation Modal -->
-    <DeleteConfirmModal
+    <ConfirmModal
       :show="showDeleteModal"
-      title="Contact"
+      tone="danger"
+      title="Delete Contact"
       :message="contactToDelete ? `Are you sure you want to delete <strong>${contactToDelete.name}</strong>?` : ''"
       :processing="isSubmitting"
       @close="closeDeleteModal"
@@ -305,7 +306,7 @@ import StatusPill from '../Components/StatusPill.vue';
 import TableActions from '../Components/TableActions.vue';
 import ColumnToggle from '../Components/ColumnToggle.vue';
 import RefreshButton from '../Components/RefreshButton.vue';
-import DeleteConfirmModal from '../Components/DeleteConfirmModal.vue';
+import ConfirmModal from '../Components/ConfirmModal.vue';
 import { router } from '@inertiajs/vue3';
 
 const props = defineProps({
@@ -609,7 +610,7 @@ function deleteContact() {
   border: 1px solid var(--border); background: var(--surface);
   color: var(--ink); font-size: 13px; width: 240px; font-family: inherit;
 }
-.search-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(99,102,241,0.12); }
+.search-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-ring); }
 
 @media (max-width: 768px) {
   .search-input {
@@ -690,7 +691,7 @@ function deleteContact() {
 
 .filter-select:focus {
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.12);
+  box-shadow: 0 0 0 3px var(--accent-ring);
 }
 
 .right-controls {
@@ -989,7 +990,7 @@ function deleteContact() {
 .form-input:focus {
   outline: none;
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.12);
+  box-shadow: 0 0 0 3px var(--accent-ring);
 }
 
 .form-input--error {

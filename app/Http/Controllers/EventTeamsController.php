@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Airport;
+use App\Models\BaseCampHotel;
 use App\Models\Country;
 use App\Models\Event;
 use App\Models\Team;
@@ -28,6 +29,7 @@ class EventTeamsController extends Controller
                 'airports' => Airport::orderBy('name')->get(),
                 'countries' => Country::active()->orderBy('country_name')->get(),
                 'classifications' => TeamClassification::active()->orderBy('name')->get(),
+                'baseCampHotels' => BaseCampHotel::active()->orderBy('name')->get(['id', 'name']),
             ]);
         }
 
@@ -58,6 +60,7 @@ class EventTeamsController extends Controller
             'airports' => Airport::orderBy('name')->get(),
             'countries' => Country::active()->orderBy('country_name')->get(),
             'classifications' => TeamClassification::active()->orderBy('name')->get(),
+            'baseCampHotels' => BaseCampHotel::active()->orderBy('name')->get(['id', 'name']),
         ]);
     }
 

@@ -118,7 +118,7 @@ function initials(name) {
   border: 1px solid var(--border); background: var(--surface);
   color: var(--ink); font-size: 13px; flex: 1; min-width: 180px; font-family: inherit;
 }
-.search-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(99,102,241,0.12); }
+.search-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-ring); }
 .role-select {
   padding: 7px 10px; border-radius: 7px;
   border: 1px solid var(--border); background: var(--surface);

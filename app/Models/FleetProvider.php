@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class FleetProvider extends Model
 {
@@ -12,8 +13,6 @@ class FleetProvider extends Model
         'contact_person',
         'phone',
         'email',
-        'total_vehicles',
-        'total_drivers',
         'rating',
         'status',
         'notes',
@@ -21,11 +20,19 @@ class FleetProvider extends Model
     ];
 
     protected $casts = [
-        'total_vehicles' => 'integer',
-        'total_drivers' => 'integer',
         'rating' => 'decimal:1',
         'is_active' => 'integer',
     ];
+
+    public function vehicles(): HasMany
+    {
+        return $this->hasMany(Vehicle::class, 'provider_id');
+    }
+
+    public function drivers(): HasMany
+    {
+        return $this->hasMany(Driver::class, 'provider_id');
+    }
 
     /**
      * Scope a query to only include active providers.

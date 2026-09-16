@@ -515,9 +515,10 @@
     </Modal>
 
     <!-- Delete Confirmation Modal -->
-    <DeleteConfirmModal
+    <ConfirmModal
       :show="showDeleteModal"
-      title="Match"
+      tone="danger"
+      title="Delete Match"
       :message="matchToDelete ? `Are you sure you want to delete <strong>Match ${matchToDelete.match_number}</strong>?` : ''"
       :processing="deleting"
       @close="closeDeleteModal"
@@ -641,7 +642,7 @@ import MiniStat from '../Components/MiniStat.vue';
 import SvgIcon from '../Components/SvgIcon.vue';
 import Button from '../Components/Button.vue';
 import Modal from '../Components/Modal.vue';
-import DeleteConfirmModal from '../Components/DeleteConfirmModal.vue';
+import ConfirmModal from '../Components/ConfirmModal.vue';
 import ColumnToggle from '../Components/ColumnToggle.vue';
 import TableActions from '../Components/TableActions.vue';
 import RefreshButton from '../Components/RefreshButton.vue';
@@ -1396,7 +1397,7 @@ function csvEscapeMatch(value) {
 .match-card--selected {
   background: var(--accent-soft, #EEF0FE);
   border-color: var(--accent);
-  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.15);
+  box-shadow: 0 2px 8px var(--accent-ring);
 }
 
 .mc-header {

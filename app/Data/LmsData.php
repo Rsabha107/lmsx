@@ -7,7 +7,7 @@ class LmsData
     public static function all(): array
     {
         return [
-            'event'   => 'Atlas Cup 2026',
+            'event'   => 'NAQLA LMS',
             'today'   => 'Sat, 18 Apr 2026',
             'kpis'    => self::kpis(),
             'schedule'=> self::schedule(),
@@ -175,8 +175,8 @@ class LmsData
     public static function contacts(): array
     {
         return [
-            ['name'=>'Irena Volkov',    'role'=>'Logistics Manager',       'org'=>'Atlas Cup HQ',  'phone'=>'+33 6 12 44 00 01','on'=>true],
-            ['name'=>'Marcus Idowu',    'role'=>'Dispatch Lead',           'org'=>'Atlas Cup HQ',  'phone'=>'+33 6 12 44 00 02','on'=>true],
+            ['name'=>'Irena Volkov',    'role'=>'Logistics Manager',       'org'=>'NAQLA HQ',  'phone'=>'+33 6 12 44 00 01','on'=>true],
+            ['name'=>'Marcus Idowu',    'role'=>'Dispatch Lead',           'org'=>'NAQLA HQ',  'phone'=>'+33 6 12 44 00 02','on'=>true],
             ['name'=>'Priya Anand',     'role'=>'Field Supervisor · CDG',  'org'=>'Ops Team A',    'phone'=>'+33 6 12 44 00 03','on'=>true],
             ['name'=>'Jonas Lindqvist', 'role'=>'Field Supervisor · ORY',  'org'=>'Ops Team B',    'phone'=>'+33 6 12 44 00 04','on'=>false],
             ['name'=>'Sofía Reyes',     'role'=>'Transport Partner',       'org'=>'Nord Coaches',  'phone'=>'+33 6 12 44 00 05','on'=>true],

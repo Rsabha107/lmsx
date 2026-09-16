@@ -22,10 +22,10 @@ const toneColors = {
   ok:      '#16A34A',
   warn:    '#F59E0B',
   danger:  '#EF4444',
-  primary: '#6366F1',
+  primary: '#0F1724',
   neutral: '#9AA2B2',
 };
-const sparkColor = computed(() => toneColors[props.kpi.tone] ?? '#6366F1');
+const sparkColor = computed(() => toneColors[props.kpi.tone] ?? '#0F1724');
 </script>
 
 <style scoped>

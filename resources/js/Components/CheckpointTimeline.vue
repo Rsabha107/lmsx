@@ -5,6 +5,7 @@
       <div style="font-size: 10px; font-weight: 700; letter-spacing: 0.6px; text-transform: uppercase; color: var(--ink3);">
         {{ title }}
         <span v-if="checkpoints?.length"> · {{ completedCount }}/{{ checkpoints.length }}</span>
+        <span v-if="skippedCount" style="color: var(--ink3);"> · {{ skippedCount }} skipped</span>
       </div>
       <div v-if="hasMobileUpdates"
            style="display: flex; align-items: center; gap: 4px; font-size: 10px; font-weight: 600; color: var(--accent);">
@@ -57,12 +58,13 @@
         <div style="display: flex; flex-direction: column; align-items: center; flex-shrink: 0;">
           <div :class="['dc-cp-dot', `dc-cp-dot--${getVisualState(cp, idx)}`]">
             <svg v-if="getVisualState(cp, idx) === 'done'" xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="2 6 5 9 10 3"/></svg>
+            <span v-else-if="getVisualState(cp, idx) === 'skipped'" style="font-size: 10px; font-weight: 700; color: #fff; line-height: 1;">↷</span>
             <div v-else-if="getVisualState(cp, idx) === 'active'" style="width: 6px; height: 6px; border-radius: 999px; background: var(--accent);"></div>
           </div>
           <div
             v-if="idx < checkpoints.length - 1"
             class="dc-cp-line"
-            :style="{ background: getVisualState(cp, idx) === 'done' ? 'var(--ok)' : 'var(--borderStrong, #d0d5df)' }"
+            :style="{ background: isSettled(cp) ? (getVisualState(cp, idx) === 'skipped' ? 'var(--border-strong, #d0d5df)' : 'var(--ok)') : 'var(--borderStrong, #d0d5df)' }"
           ></div>
         </div>
 
@@ -72,8 +74,15 @@
             <div>
               <div style="display: flex; align-items: center; gap: 5px; flex-wrap: wrap;">
                 <span style="font-size: 13px; font-weight: 600;"
-                      :style="{ color: getVisualState(cp, idx) === 'pending' ? 'var(--ink3)' : 'var(--ink)' }">
+                      :style="{
+                        color: getVisualState(cp, idx) === 'pending' ? 'var(--ink3)' : 'var(--ink)',
+                        textDecoration: getVisualState(cp, idx) === 'skipped' ? 'line-through' : 'none',
+                      }">
                   {{ cp.name }}
+                </span>
+                <span v-if="getVisualState(cp, idx) === 'skipped'"
+                      style="font-size: 10px; font-weight: 700; padding: 1px 5px; border-radius: 3px; background: var(--panel); color: var(--ink3); border: 1px solid var(--border);">
+                  SKIPPED
                 </span>
                 <!-- Photo badge -->
                 <span v-if="cp.requires_photo"
@@ -118,6 +127,10 @@
               </div>
               <div v-if="completedBy(cp)" style="font-size: 10px; color: var(--ink3); margin-top: 1px;">
                 {{ completedBy(cp) }}{{ cp.completion_method === 'mobile' ? ' (mobile)' : '' }}
+              </div>
+              <div v-if="getVisualState(cp, idx) === 'skipped' && skipDetail(cp)"
+                   style="font-size: 10px; color: var(--ink3); margin-top: 1px;">
+                {{ skipDetail(cp) }}
               </div>
             </div>
 
@@ -193,25 +206,44 @@ function closeSignatureModal() {
 
 function getCheckpointState(cp) {
   if (!cp) return 'pending';
+  if (cp.state === 'skipped' || cp.status === 'skipped') return 'skipped';
   if (cp.state === 'completed' || cp.state === 'done' || cp.completed_at) return 'done';
   if (cp.state === 'started' || cp.started_at) return 'active';
   return 'pending';
+}
+
+/** Done or skipped - either way the step is settled and not outstanding. */
+function isSettled(cp) {
+  return ['done', 'skipped'].includes(getCheckpointState(cp));
 }
 
 const completedCount = computed(() =>
   props.checkpoints.filter(cp => getCheckpointState(cp) === 'done').length
 );
 
+const skippedCount = computed(() =>
+  props.checkpoints.filter(cp => getCheckpointState(cp) === 'skipped').length
+);
+
 const nextCheckpointIdx = computed(() => {
-  const hasProgress = props.checkpoints.some(cp => getCheckpointState(cp) === 'done');
+  const hasProgress = props.checkpoints.some(isSettled);
   if (!hasProgress) return -1;
-  return props.checkpoints.findIndex(cp => getCheckpointState(cp) !== 'done');
+  return props.checkpoints.findIndex(cp => !isSettled(cp));
 });
 
 function getVisualState(cp, idx) {
-  if (getCheckpointState(cp) === 'done') return 'done';
+  const state = getCheckpointState(cp);
+  if (state === 'done' || state === 'skipped') return state;
   if (idx === nextCheckpointIdx.value) return 'active';
   return 'pending';
+}
+
+function skipDetail(cp) {
+  const parts = [];
+  if (cp.skip_reason) parts.push(cp.skip_reason);
+  if (cp.skipped_by) parts.push(`by ${cp.skipped_by}`);
+  if (cp.skipped_at) parts.push(`at ${cp.skipped_at}`);
+  return parts.join(' · ');
 }
 
 function completedBy(cp) {
@@ -276,6 +308,7 @@ const hasMobileUpdates = computed(() =>
 .dc-cp-dot--done    { background: var(--ok, #22a06b); border: 2px solid var(--ok, #22a06b); }
 .dc-cp-dot--active  { background: #fff; border: 2px solid var(--accent, #4f46e5); box-shadow: 0 0 0 4px var(--accent-soft, rgba(79,70,229,0.12)); }
 .dc-cp-dot--pending { background: var(--panel); border: 2px solid var(--borderStrong, #d0d5df); }
+.dc-cp-dot--skipped { background: var(--ink4); border: 2px solid var(--ink4); }
 .dc-cp-line { width: 2px; flex: 1; min-height: 16px; }
 
 /* Evidence badge hover effect */

@@ -3,6 +3,8 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Vehicle extends Model
 {
@@ -24,6 +26,21 @@ class Vehicle extends Model
         'is_active' => 'integer',
         'provider_id' => 'integer',
     ];
+
+    public function provider(): BelongsTo
+    {
+        return $this->belongsTo(FleetProvider::class, 'provider_id');
+    }
+
+    public function movements(): HasMany
+    {
+        return $this->hasMany(Movement::class);
+    }
+
+    public function jobs(): HasMany
+    {
+        return $this->hasMany(JobOperation::class);
+    }
 
     // Scopes for filtering
     public function scopeAvailable($query)

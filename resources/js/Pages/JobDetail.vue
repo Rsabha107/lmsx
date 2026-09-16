@@ -760,7 +760,7 @@ function saveOverride() {
 .form-textarea:focus {
   outline: none;
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+  box-shadow: 0 0 0 3px var(--accent-ring);
 }
 
 .form-select {

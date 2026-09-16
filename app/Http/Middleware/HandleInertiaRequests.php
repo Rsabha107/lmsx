@@ -20,7 +20,7 @@ class HandleInertiaRequests extends Middleware
         $activeEventId = $request->session()->get('active_event_id');
 
         return array_merge(parent::share($request), [
-            'appName'       => 'Atlas Cup LMS',
+            'appName'       => 'NAQLA LMS',
             'matchDay'      => 'Match Day 4',
             'today'         => now()->format('D, d M Y'),
             'auth' => [

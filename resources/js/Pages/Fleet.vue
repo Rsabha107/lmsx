@@ -27,7 +27,7 @@
     <div class="tabs">
       <button v-for="tab in tabs" :key="tab.value"
         :class="['tab', activeTab === tab.value ? 'tab--active' : '']"
-        @click="activeTab = tab.value">
+        @click="selectTab(tab.value)">
         {{ tab.label }}
         <span class="tab-count">{{ tab.count }}</span>
       </button>
@@ -45,6 +45,7 @@
             <div>Category</div>
             <div>Fuel</div>
             <div>Status</div>
+            <div style="text-align: center;">Actions</div>
           </div>
           <div v-for="v in vehicles" :key="v.code" class="table-row" :class="{ 'selected': selected?.code === v.code }" @click="selectVehicle(v)">
             <div class="cell-id">{{ v.code }}</div>
@@ -54,6 +55,9 @@
             <div class="cell-category">{{ v.category || '—' }}</div>
             <div class="fuel-cell" :class="{ 'low': parseInt(v.fuel_level) < 50, 'medium': parseInt(v.fuel_level) >= 50 && parseInt(v.fuel_level) < 70 }">{{ v.fuel_level }}</div>
             <div><status-pill :tone="v.status === 'available' ? 'ok' : v.status === 'on_job' ? 'live' : 'neutral'">{{ v.status }}</status-pill></div>
+            <div class="cell-actions" @click.stop>
+              <TableActions @edit="openEditVehicle(v)" @delete="confirmDelete('vehicle', v)" />
+            </div>
           </div>
         </div>
       </template>
@@ -63,7 +67,7 @@
       <div class="table-card">
         <table class="data-table">
           <thead><tr>
-            <th>Name</th><th>Phone</th><th>License</th><th>Status</th>
+            <th>Name</th><th>Phone</th><th>License</th><th>Provider</th><th>Status</th><th style="text-align: center;">Actions</th>
           </tr></thead>
           <tbody>
             <tr v-for="d in props.drivers" :key="d.id">
@@ -77,7 +81,11 @@
               </td>
               <td class="mono">{{ d.phone || '—' }}</td>
               <td class="mono">{{ d.license_number || '—' }}</td>
+              <td>{{ d.provider?.name || '—' }}</td>
               <td><status-pill :tone="d.status === 'on_shift' ? 'ok' : d.status === 'available' ? 'primary' : 'neutral'">{{ d.status }}</status-pill></td>
+              <td class="cell-actions">
+                <TableActions @edit="openEditDriver(d)" @delete="confirmDelete('driver', d)" />
+              </td>
             </tr>
           </tbody>
         </table>
@@ -89,7 +97,7 @@
       <div class="table-card">
         <table class="data-table">
           <thead><tr>
-            <th>Code</th><th>Provider</th><th>Vehicles</th><th>Drivers</th><th>Contact</th><th>Phone</th><th>Rating</th><th>Status</th>
+            <th>Code</th><th>Provider</th><th>Vehicles</th><th>Drivers</th><th>Contact</th><th>Phone</th><th>Rating</th><th>Status</th><th style="text-align: center;">Actions</th>
           </tr></thead>
           <tbody>
             <tr v-for="p in props.providers" :key="p.id">
@@ -98,12 +106,15 @@
                 <div class="provider-name">{{ p.name }}</div>
                 <div class="provider-type" v-if="p.notes">{{ p.notes }}</div>
               </td>
-              <td>{{ p.total_vehicles }}</td>
-              <td>{{ p.total_drivers }}</td>
+              <td>{{ p.vehicles_count }}</td>
+              <td>{{ p.drivers_count }}</td>
               <td>{{ p.contact_person || '—' }}</td>
               <td class="mono">{{ p.phone || '—' }}</td>
               <td>⭐ {{ p.rating }}</td>
               <td><status-pill :tone="p.status === 'active' ? 'ok' : 'neutral'">{{ p.status }}</status-pill></td>
+              <td class="cell-actions">
+                <TableActions @edit="openEditProvider(p)" @delete="confirmDelete('provider', p)" />
+              </td>
             </tr>
           </tbody>
         </table>
@@ -161,7 +172,7 @@
               <div class="detail-val" :class="{ 'text-danger': parseInt(selected.fuel_level) < 50, 'text-warn': parseInt(selected.fuel_level) >= 50 && parseInt(selected.fuel_level) < 70 }">{{ selected.fuel_level }}</div>
             </div>
           </div>
-          <div class="action-buttons">
+          <div class="panel-actions">
             <Button variant="primary" size="md" @click="showAssign = true">Assign to job</Button>
             <Button variant="secondary" size="md">View history</Button>
             <Button variant="ghost" size="md" @click="selected = null">Close</Button>
@@ -170,38 +181,40 @@
       </div>
     </div>
 
-    <!-- Add Vehicle Modal -->
-    <div v-if="showAddVehicle" class="modal-backdrop" @click.self="showAddVehicle = false">
+    <!-- Vehicle Modal (add + edit) -->
+    <div v-if="showVehicleModal" class="modal-backdrop" @click.self="closeVehicleModal">
       <div class="vehicle-modal">
         <div class="modal-header">
-          <h3 class="modal-title">Add New Vehicle</h3>
-          <button class="modal-close" @click="showAddVehicle = false">✕</button>
+          <h3 class="modal-title">{{ vehicleForm.id ? 'Edit Vehicle' : 'Add New Vehicle' }}</h3>
+          <button class="modal-close" @click="closeVehicleModal">✕</button>
         </div>
         <div class="modal-body">
           <div class="form-row">
             <div class="form-group">
-              <label class="form-label">Vehicle Code</label>
-              <input v-model="newVehicle.code" type="text" class="form-input" placeholder="e.g., Coach 01" />
+              <label class="form-label">Vehicle Code <span class="required">*</span></label>
+              <input v-model="vehicleForm.code" type="text" class="form-input" :class="{ 'form-input--error': errors.code }" placeholder="e.g., Coach 01" />
+              <span v-if="errors.code" class="form-error">{{ errors.code }}</span>
             </div>
             <div class="form-group">
-              <label class="form-label">Vehicle Type</label>
-              <input v-model="newVehicle.vehicle_type" type="text" class="form-input" placeholder="e.g., Coach, Minivan" />
+              <label class="form-label">Vehicle Type <span class="required">*</span></label>
+              <input v-model="vehicleForm.vehicle_type" type="text" class="form-input" :class="{ 'form-input--error': errors.vehicle_type }" placeholder="e.g., Coach, Minivan" />
+              <span v-if="errors.vehicle_type" class="form-error">{{ errors.vehicle_type }}</span>
             </div>
           </div>
           <div class="form-row">
             <div class="form-group">
               <label class="form-label">Capacity</label>
-              <input v-model="newVehicle.capacity" type="number" class="form-input" placeholder="Number of seats" />
+              <input v-model="vehicleForm.capacity" type="number" class="form-input" placeholder="Number of seats" />
             </div>
             <div class="form-group">
               <label class="form-label">Plate Number</label>
-              <input v-model="newVehicle.plate_number" type="text" class="form-input" placeholder="e.g., ABC-1234" />
+              <input v-model="vehicleForm.plate_number" type="text" class="form-input" placeholder="e.g., ABC-1234" />
             </div>
           </div>
           <div class="form-row">
             <div class="form-group">
               <label class="form-label">Category</label>
-              <select v-model="newVehicle.category" class="form-input">
+              <select v-model="vehicleForm.category" class="form-input">
                 <option value="">Select category</option>
                 <option value="Team">Team</option>
                 <option value="Official">Official</option>
@@ -211,13 +224,13 @@
             </div>
             <div class="form-group">
               <label class="form-label">Fuel Level</label>
-              <input v-model="newVehicle.fuel_level" type="text" class="form-input" placeholder="e.g., 75%" />
+              <input v-model="vehicleForm.fuel_level" type="text" class="form-input" placeholder="e.g., 75%" />
             </div>
           </div>
           <div class="form-row">
             <div class="form-group">
               <label class="form-label">Status</label>
-              <select v-model="newVehicle.status" class="form-input">
+              <select v-model="vehicleForm.status" class="form-input">
                 <option value="available">Available</option>
                 <option value="on_job">On Job</option>
                 <option value="maintenance">Maintenance</option>
@@ -226,23 +239,159 @@
             </div>
             <div class="form-group">
               <label class="form-label">Provider</label>
-              <select v-model="newVehicle.provider_id" class="form-input">
-                <option value="">Select provider</option>
+              <select v-model="vehicleForm.provider_id" class="form-input">
+                <option :value="null">Select provider</option>
                 <option v-for="p in props.providers" :key="p.id" :value="p.id">{{ p.name }}</option>
               </select>
             </div>
           </div>
           <div class="form-group">
             <label class="form-label">Notes</label>
-            <textarea v-model="newVehicle.notes" class="form-input" rows="3" placeholder="Additional notes (optional)"></textarea>
+            <textarea v-model="vehicleForm.notes" class="form-input" rows="3" placeholder="Additional notes (optional)"></textarea>
           </div>
         </div>
         <div class="modal-footer">
-          <Button variant="ghost" size="sm" @click="showAddVehicle = false">Cancel</Button>
-          <Button variant="primary" size="sm" @click="addVehicle">Add Vehicle</Button>
+          <Button variant="ghost" size="sm" @click="closeVehicleModal" :disabled="isSubmitting">Cancel</Button>
+          <Button variant="primary" size="sm" @click="saveVehicle" :disabled="isSubmitting">
+            {{ isSubmitting ? 'Saving…' : vehicleForm.id ? 'Update Vehicle' : 'Add Vehicle' }}
+          </Button>
         </div>
       </div>
     </div>
+
+    <!-- Driver Modal (add + edit) -->
+    <div v-if="showDriverModal" class="modal-backdrop" @click.self="closeDriverModal">
+      <div class="vehicle-modal">
+        <div class="modal-header">
+          <h3 class="modal-title">{{ driverForm.id ? 'Edit Driver' : 'Add New Driver' }}</h3>
+          <button class="modal-close" @click="closeDriverModal">✕</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label class="form-label">Name <span class="required">*</span></label>
+            <input v-model="driverForm.name" type="text" class="form-input" :class="{ 'form-input--error': errors.name }" placeholder="Full name" />
+            <span v-if="errors.name" class="form-error">{{ errors.name }}</span>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Phone</label>
+              <input v-model="driverForm.phone" type="tel" class="form-input" placeholder="+974 …" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">License Number</label>
+              <input v-model="driverForm.license_number" type="text" class="form-input" placeholder="e.g., DL-88213" />
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Status</label>
+              <select v-model="driverForm.status" class="form-input">
+                <option value="available">Available</option>
+                <option value="on_shift">On Shift</option>
+                <option value="off">Off</option>
+                <option value="rest">Rest</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Provider</label>
+              <select v-model="driverForm.provider_id" class="form-input">
+                <option :value="null">Select provider</option>
+                <option v-for="p in props.providers" :key="p.id" :value="p.id">{{ p.name }}</option>
+              </select>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <Button variant="ghost" size="sm" @click="closeDriverModal" :disabled="isSubmitting">Cancel</Button>
+          <Button variant="primary" size="sm" @click="saveDriver" :disabled="isSubmitting">
+            {{ isSubmitting ? 'Saving…' : driverForm.id ? 'Update Driver' : 'Add Driver' }}
+          </Button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Provider Modal (add + edit) -->
+    <div v-if="showProviderModal" class="modal-backdrop" @click.self="closeProviderModal">
+      <div class="vehicle-modal">
+        <div class="modal-header">
+          <h3 class="modal-title">{{ providerForm.id ? 'Edit Provider' : 'Add New Provider' }}</h3>
+          <button class="modal-close" @click="closeProviderModal">✕</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Code <span class="required">*</span></label>
+              <input v-model="providerForm.code" type="text" class="form-input" :class="{ 'form-input--error': errors.code }" placeholder="e.g., TRX" />
+              <span v-if="errors.code" class="form-error">{{ errors.code }}</span>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Name <span class="required">*</span></label>
+              <input v-model="providerForm.name" type="text" class="form-input" :class="{ 'form-input--error': errors.name }" placeholder="Company name" />
+              <span v-if="errors.name" class="form-error">{{ errors.name }}</span>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Contact Person</label>
+              <input v-model="providerForm.contact_person" type="text" class="form-input" placeholder="Primary contact" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">Phone</label>
+              <input v-model="providerForm.phone" type="tel" class="form-input" placeholder="+974 …" />
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Email</label>
+              <input v-model="providerForm.email" type="email" class="form-input" :class="{ 'form-input--error': errors.email }" placeholder="ops@provider.com" />
+              <span v-if="errors.email" class="form-error">{{ errors.email }}</span>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Rating</label>
+              <input v-model="providerForm.rating" type="number" step="0.1" min="0" max="9.9" class="form-input" placeholder="e.g., 4.5" />
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Status</label>
+            <select v-model="providerForm.status" class="form-input">
+              <option value="active">Active</option>
+              <option value="standby">Standby</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Notes</label>
+            <textarea v-model="providerForm.notes" class="form-input" rows="3" placeholder="Additional notes (optional)"></textarea>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <Button variant="ghost" size="sm" @click="closeProviderModal" :disabled="isSubmitting">Cancel</Button>
+          <Button variant="primary" size="sm" @click="saveProvider" :disabled="isSubmitting">
+            {{ isSubmitting ? 'Saving…' : providerForm.id ? 'Update Provider' : 'Add Provider' }}
+          </Button>
+        </div>
+      </div>
+    </div>
+
+    <ConfirmModal
+      :show="deleteTarget !== null"
+      tone="danger"
+      :title="`Delete ${deleteTarget?.type ?? ''}`"
+      :message="deleteTarget ? `Are you sure you want to delete <strong>${deleteTarget.label}</strong>?` : ''"
+      :processing="isSubmitting"
+      @close="deleteTarget = null"
+      @confirm="performDelete"
+    />
+
+    <ConfirmModal
+      :show="blockedMessage !== ''"
+      title="Cannot Delete"
+      :message="blockedMessage"
+      confirm-label="Got it"
+      hide-cancel
+      @close="blockedMessage = ''"
+      @confirm="blockedMessage = ''"
+    />
+
 
     <!-- Assign to job modal -->
     <div v-if="showAssign" class="modal-backdrop" @click.self="showAssign = false">
@@ -272,13 +421,15 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue';
+import { ref, computed, watch } from 'vue';
 import { router } from '@inertiajs/vue3';
 import AppLayout from '../Components/AppLayout.vue';
 import StatusPill from '../Components/StatusPill.vue';
 import MiniStat from '../Components/MiniStat.vue';
 import Button from '../Components/Button.vue';
 import RefreshButton from '../Components/RefreshButton.vue';
+import TableActions from '../Components/TableActions.vue';
+import ConfirmModal from '../Components/ConfirmModal.vue';
 
 const props = defineProps({
   vehicles: {
@@ -295,12 +446,38 @@ const props = defineProps({
   }
 });
 
-const activeTab = ref('vehicles');
+const validTabs = ['vehicles', 'drivers', 'providers', 'history'];
+
+// Kept in the query string so a save (which redirects) or a browser refresh
+// comes back to the tab the user was on.
+function tabFromUrl() {
+  const tab = new URLSearchParams(window.location.search).get('tab');
+  return validTabs.includes(tab) ? tab : 'vehicles';
+}
+
+const activeTab = ref(tabFromUrl());
+
+function selectTab(tab) {
+  activeTab.value = tab;
+}
+
+watch(activeTab, (tab) => {
+  const url = new URL(window.location.href);
+  url.searchParams.set('tab', tab);
+  window.history.replaceState(window.history.state, '', url);
+});
 const selected = ref(null);
 const showAssign = ref(false);
 const assignedJob = ref(null);
-const showAddVehicle = ref(false);
-const newVehicle = ref({
+
+const isSubmitting = ref(false);
+const errors = ref({});
+// Server-side guard messages (e.g. "still assigned to 3 jobs").
+const blockedMessage = ref('');
+const deleteTarget = ref(null);
+
+const emptyVehicle = () => ({
+  id: null,
   code: '',
   vehicle_type: '',
   capacity: null,
@@ -310,10 +487,35 @@ const newVehicle = ref({
   status: 'available',
   provider_id: null,
   notes: '',
-  is_active: 1
 });
 
+const emptyDriver = () => ({
+  id: null,
+  name: '',
+  phone: '',
+  license_number: '',
+  status: 'available',
+  provider_id: null,
+});
 
+const emptyProvider = () => ({
+  id: null,
+  code: '',
+  name: '',
+  contact_person: '',
+  phone: '',
+  email: '',
+  rating: null,
+  status: 'active',
+  notes: '',
+});
+
+const showVehicleModal = ref(false);
+const showDriverModal = ref(false);
+const showProviderModal = ref(false);
+const vehicleForm = ref(emptyVehicle());
+const driverForm = ref(emptyDriver());
+const providerForm = ref(emptyProvider());
 
 
 
@@ -355,29 +557,175 @@ function selectVehicle(v) {
 }
 
 function openAddModal() {
+  errors.value = {};
   if (activeTab.value === 'vehicles') {
-    showAddVehicle.value = true;
+    vehicleForm.value = emptyVehicle();
+    showVehicleModal.value = true;
+  } else if (activeTab.value === 'drivers') {
+    driverForm.value = emptyDriver();
+    showDriverModal.value = true;
+  } else if (activeTab.value === 'providers') {
+    providerForm.value = emptyProvider();
+    showProviderModal.value = true;
   }
-  // TODO: Add modals for drivers and providers
 }
 
-function addVehicle() {
-  // TODO: Send to backend API
-  console.log('Adding vehicle:', newVehicle.value);
-  showAddVehicle.value = false;
-  // Reset form
-  newVehicle.value = {
-    code: '',
-    vehicle_type: '',
-    capacity: null,
-    plate_number: '',
-    category: '',
-    fuel_level: '100%',
-    status: 'available',
-    provider_id: null,
-    notes: '',
-    is_active: 1
+/* --------------------------------- Vehicles -------------------------------- */
+
+function openEditVehicle(v) {
+  errors.value = {};
+  vehicleForm.value = {
+    id: v.id,
+    code: v.code ?? '',
+    vehicle_type: v.vehicle_type ?? '',
+    capacity: v.capacity,
+    plate_number: v.plate_number ?? '',
+    category: v.category ?? '',
+    fuel_level: v.fuel_level ?? '',
+    status: v.status ?? 'available',
+    provider_id: v.provider_id ?? null,
+    notes: v.notes ?? '',
   };
+  showVehicleModal.value = true;
+}
+
+function closeVehicleModal() {
+  showVehicleModal.value = false;
+  errors.value = {};
+}
+
+function saveVehicle() {
+  submit(
+    vehicleForm.value.id ? 'put' : 'post',
+    vehicleForm.value.id ? `/fleet/vehicles/${vehicleForm.value.id}` : '/fleet/vehicles',
+    vehicleForm.value,
+    () => closeVehicleModal(),
+  );
+}
+
+/* --------------------------------- Drivers --------------------------------- */
+
+function openEditDriver(d) {
+  errors.value = {};
+  driverForm.value = {
+    id: d.id,
+    name: d.name ?? '',
+    phone: d.phone ?? '',
+    license_number: d.license_number ?? '',
+    status: d.status ?? 'available',
+    provider_id: d.provider_id ?? null,
+  };
+  showDriverModal.value = true;
+}
+
+function closeDriverModal() {
+  showDriverModal.value = false;
+  errors.value = {};
+}
+
+function saveDriver() {
+  submit(
+    driverForm.value.id ? 'put' : 'post',
+    driverForm.value.id ? `/fleet/drivers/${driverForm.value.id}` : '/fleet/drivers',
+    driverForm.value,
+    () => closeDriverModal(),
+  );
+}
+
+/* -------------------------------- Providers -------------------------------- */
+
+function openEditProvider(p) {
+  errors.value = {};
+  providerForm.value = {
+    id: p.id,
+    code: p.code ?? '',
+    name: p.name ?? '',
+    contact_person: p.contact_person ?? '',
+    phone: p.phone ?? '',
+    email: p.email ?? '',
+    rating: p.rating,
+    status: p.status ?? 'active',
+    notes: p.notes ?? '',
+  };
+  showProviderModal.value = true;
+}
+
+function closeProviderModal() {
+  showProviderModal.value = false;
+  errors.value = {};
+}
+
+function saveProvider() {
+  submit(
+    providerForm.value.id ? 'put' : 'post',
+    providerForm.value.id ? `/fleet/providers/${providerForm.value.id}` : '/fleet/providers',
+    providerForm.value,
+    () => closeProviderModal(),
+  );
+}
+
+/* --------------------------------- Deleting -------------------------------- */
+
+const deleteEndpoints = {
+  vehicle: 'vehicles',
+  driver: 'drivers',
+  provider: 'providers',
+};
+
+function confirmDelete(type, row) {
+  deleteTarget.value = {
+    type,
+    id: row.id,
+    label: row.code || row.name || `#${row.id}`,
+  };
+}
+
+function performDelete() {
+  const target = deleteTarget.value;
+  if (!target) return;
+
+  isSubmitting.value = true;
+
+  router.delete(`/fleet/${deleteEndpoints[target.type]}/${target.id}`, {
+    preserveScroll: true,
+    preserveState: true,
+    onSuccess: (page) => {
+      deleteTarget.value = null;
+      // A blocked delete still resolves as a successful redirect, so surface
+      // the guard message rather than pretending the row was removed.
+      blockedMessage.value = page.props?.flash?.error ?? '';
+      reloadFleet();
+    },
+    onFinish: () => {
+      isSubmitting.value = false;
+    },
+  });
+}
+
+/* --------------------------------- Shared ---------------------------------- */
+
+function submit(method, url, payload, onDone) {
+  errors.value = {};
+  isSubmitting.value = true;
+
+  router[method](url, payload, {
+    preserveScroll: true,
+    preserveState: true,
+    onSuccess: () => {
+      onDone();
+      reloadFleet();
+    },
+    onError: (backendErrors) => {
+      errors.value = backendErrors;
+    },
+    onFinish: () => {
+      isSubmitting.value = false;
+    },
+  });
+}
+
+function reloadFleet() {
+  router.reload({ only: ['vehicles', 'drivers', 'providers'] });
 }
 </script>
 
@@ -430,7 +778,7 @@ function addVehicle() {
 }
 
 .table-header {
-  display: grid; grid-template-columns: 80px 1fr 100px 1fr 1fr 80px 90px;
+  display: grid; grid-template-columns: 80px 1fr 100px 1fr 1fr 80px 90px 110px;
   gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--border);
   font-size: 11px; font-weight: 700; color: var(--ink3);
   letter-spacing: 0.6px; text-transform: uppercase;
@@ -438,7 +786,7 @@ function addVehicle() {
 }
 
 .table-row {
-  display: grid; grid-template-columns: 80px 1fr 100px 1fr 1fr 80px 90px;
+  display: grid; grid-template-columns: 80px 1fr 100px 1fr 1fr 80px 90px 110px;
   gap: 10px; padding: 12px 14px; cursor: pointer;
   border-bottom: 1px solid var(--border); align-items: center;
   transition: background-color 0.13s;
@@ -461,13 +809,18 @@ function addVehicle() {
 .fuel-cell.low { color: #dc2626; }
 .fuel-cell.medium { color: #ca8a04; }
 
+.cell-actions { display: flex; align-items: center; justify-content: center; gap: 6px; cursor: default; }
+.required { color: #EF4444; margin-left: 2px; }
+.form-input--error { border-color: #EF4444 !important; background: #FEF2F2; }
+.form-error { display: block; color: #EF4444; font-size: 12px; margin-top: 4px; font-weight: 500; }
+
 .fleet-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
 .fleet-card {
   background: var(--surface); border: 1px solid var(--border);
   border-radius: 10px; padding: 16px; cursor: pointer;
   transition: border-color 0.13s, box-shadow 0.13s;
 }
-.fleet-card:hover { border-color: var(--accent); box-shadow: 0 2px 8px rgba(99,102,241,0.08); }
+.fleet-card:hover { border-color: var(--accent); box-shadow: 0 2px 8px var(--accent-ring); }
 .fc-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
 .fleet-icon { font-size: 22px; }
 .fc-id { font-size: 16px; font-weight: 700; color: var(--ink); margin-bottom: 2px; }
@@ -566,7 +919,9 @@ function addVehicle() {
 .detail-val.text-danger { color: #dc2626; }
 .detail-val.text-warn { color: #ca8a04; }
 
-.action-buttons {
+/* Scoped styles reach a child component's root node, so this must not be named
+   .action-buttons - that is TableActions' root and it would stack its icons. */
+.panel-actions {
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -758,7 +1113,7 @@ function addVehicle() {
 .form-input:focus {
   outline: none;
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.12);
+  box-shadow: 0 0 0 3px var(--accent-ring);
 }
 
 .form-input::placeholder {

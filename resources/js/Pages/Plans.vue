@@ -602,7 +602,7 @@
       />
       <MiniStat label="Teams" :value="selectedPlanObj.teams_count || 0" />
       <MiniStat label="Jobs generated" :value="jobsGenerated" />
-      <MiniStat label="Conflicts" :value="0" tone="warn" />
+      <MiniStat label="Conflicts" :value="conflicts.length" tone="warn" />
       <MiniStat label="Passengers" :value="totalPassengers" />
 
     </div>
@@ -1183,8 +1183,31 @@
                   {{ date }}
                 </option>
               </select>
+              <select
+                v-model="movementsJobFilter"
+                style="
+                  padding: 6px 10px;
+                  border: 1px solid var(--border);
+                  border-radius: 6px;
+                  font-size: 12px;
+                  color: var(--ink);
+                  background: var(--surface);
+                  cursor: pointer;
+                  min-width: 170px;
+                "
+              >
+                <option :value="null">
+                  All Movements
+                </option>
+                <option value="ready">
+                  Ready for Generation ({{ readyForGenerationCount }})
+                </option>
+                <option value="not-ready">
+                  Not Ready ({{ notReadyForGenerationCount }})
+                </option>
+              </select>
               <div
-                v-if="movementsTeamFilter || movementsDateFilter || movementsPhaseFilter"
+                v-if="movementsTeamFilter || movementsDateFilter || movementsPhaseFilter || movementsJobFilter"
                 style="font-size: 11px; color: var(--ink3)"
               >
                 Showing {{ filteredPlanMovements.length }} of
@@ -1228,7 +1251,7 @@
                     <template #icon
                       ><svg-icon name="plus" :size="14" style="color: #fff"
                     /></template>
-                    Generate jobs
+                    Generate jobs{{ genCanGenerate ? ` (${genReadyMovements.length})` : '' }}
                   </Button>
                 </div>
               </div>
@@ -1995,6 +2018,29 @@
         "
       >
         <div
+          v-if="conflicts.length === 0"
+          style="
+            padding: 12px;
+            background: var(--ok-soft, var(--panel));
+            border: 1px solid var(--ok, var(--border));
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+          "
+        >
+          <svg-icon
+            name="check"
+            :size="20"
+            style="color: var(--ok); flex-shrink: 0"
+          />
+          <div style="flex: 1; font-size: 12px; color: var(--ink2)">
+            <b>No conflicts detected</b> — every movement in this event has a
+            valid window, free resources and realistic timings.
+          </div>
+        </div>
+        <div
+          v-else
           style="
             padding: 12px;
             background: var(--warn-soft);
@@ -2016,7 +2062,6 @@
             {{ conflicts.filter((c) => c.sev === "high").length }} require
             immediate attention.
           </div>
-          <Button variant="secondary" size="sm">Auto-resolve</Button>
         </div>
         <div v-for="c in conflicts" :key="c.id" class="plan-table-card">
           <div
@@ -2076,6 +2121,16 @@
                   "
                   >{{ c.id }}</span
                 >
+                <span
+                  v-if="c.when"
+                  style="font-size: 11px; color: var(--ink3)"
+                  >· {{ c.when }}</span
+                >
+                <span
+                  v-if="c.plan"
+                  style="font-size: 11px; color: var(--ink3)"
+                  >· {{ c.plan }}</span
+                >
               </div>
               <div
                 style="
@@ -2086,6 +2141,17 @@
                 "
               >
                 {{ c.text }}
+              </div>
+              <div
+                v-if="c.hint"
+                style="
+                  font-size: 11.5px;
+                  color: var(--ink3);
+                  line-height: 1.5;
+                  margin-bottom: 8px;
+                "
+              >
+                <b style="color: var(--ink2)">Suggested fix:</b> {{ c.hint }}
               </div>
               <div
                 style="
@@ -2115,8 +2181,9 @@
               </div>
             </div>
             <div style="display: flex; flex-direction: column; gap: 4px">
-              <Button variant="primary" size="sm">Resolve</Button>
-              <Button variant="ghost" size="sm">Dismiss</Button>
+              <Button variant="secondary" size="sm" @click="activeTab = 'movements'"
+                >View</Button
+              >
             </div>
           </div>
         </div>
@@ -5000,7 +5067,7 @@
               <div class="gen-subtitle">
                 {{ selectedPlanObj?.code }} ·
                 {{ formatDateTime(selectedPlanObj?.date) }} &mdash;
-                {{ genMovements.length }} movements ready ·
+                {{ genReadyMovements.length }} of {{ genMovements.length }} movements ready ·
                 {{ genAlreadyCount }} already generated
               </div>
             </div>
@@ -5030,11 +5097,14 @@
                   class="gen-mv-row"
                   :class="{
                     'gen-mv-row--checked': genSelectedIds.includes(mv.id),
+                    'gen-mv-row--disabled': !isReadyForGeneration(mv),
                   }"
+                  :title="genRowBlockedReason(mv)"
                 >
                   <input
                     type="checkbox"
                     :checked="genSelectedIds.includes(mv.id)"
+                    :disabled="!isReadyForGeneration(mv)"
                     @change="toggleGenMovement(mv.id)"
                     class="gen-checkbox"
                   />
@@ -5084,16 +5154,25 @@
                       {{ mv.checkpoints_total || 0 }} chk
                     </div>
                   </div>
-                  <div
-                    class="gen-mv-vehicle"
-                    :class="mv.vehicle ? '' : 'gen-mv-vehicle--warn'"
-                  >
-                    <svg-icon v-if="!mv.vehicle" name="warn" :size="12" />
-                    {{
-                      mv.vehicle?.code ||
-                      mv.vehicle?.vehicle_type ||
-                      "no vehicle"
-                    }}
+                  <div class="gen-mv-assign">
+                    <div
+                      class="gen-mv-vehicle"
+                      :class="mv.vehicle ? '' : 'gen-mv-vehicle--warn'"
+                    >
+                      <svg-icon v-if="!mv.vehicle" name="warn" :size="12" />
+                      {{
+                        mv.vehicle?.code ||
+                        mv.vehicle?.vehicle_type ||
+                        "no vehicle"
+                      }}
+                    </div>
+                    <div
+                      v-if="!mv.field_supervisor_id"
+                      class="gen-mv-vehicle gen-mv-vehicle--warn"
+                    >
+                      <svg-icon name="warn" :size="12" />
+                      no supervisor
+                    </div>
                   </div>
                 </label>
 
@@ -7396,6 +7475,27 @@
         </div>
       </div>
     </teleport>
+
+    <!-- Nothing can be generated: explains why -->
+    <ConfirmModal
+      :show="showGenerateBlocked"
+      title="Cannot Generate Jobs"
+      :message="genBlockedMessage"
+      confirm-label="Got it"
+      hide-cancel
+      @close="showGenerateBlocked = false"
+      @confirm="showGenerateBlocked = false"
+    />
+
+    <!-- Some movements are incomplete and will be left out of the batch -->
+    <ConfirmModal
+      :show="showGenerateSkipConfirm"
+      title="Skip Incomplete Movements?"
+      :message="genSkipMessage"
+      confirm-label="Continue"
+      @close="showGenerateSkipConfirm = false"
+      @confirm="openGenerateJobsModal"
+    />
     </div>
   </app-layout>
 </template>
@@ -7416,6 +7516,7 @@ import CheckpointTimeline from "../Components/CheckpointTimeline.vue";
 import Badge from "../Components/Badge.vue";
 import InfoIcon from "../Components/InfoIcon.vue";
 import FlagIcon from "../Components/FlagIcon.vue";
+import ConfirmModal from "../Components/ConfirmModal.vue";
 
 const { success: showSuccessToast, error: showErrorToast } = useToast();
 
@@ -7431,6 +7532,7 @@ const props = defineProps({
   drivers: { type: Array, default: () => [] },
   supervisors: { type: Array, default: () => [] },
   matches: { type: Array, default: () => [] },
+  conflicts: { type: Array, default: () => [] },
   nextMovementNumber: { type: Number, default: 1 },
 });
 
@@ -7594,6 +7696,7 @@ const selectedTeam = ref("");
 const movementsTeamFilter = ref(null);
 const movementsDateFilter = ref(null);
 const movementsPhaseFilter = ref(null);
+const movementsJobFilter = ref(null); // null = all, 'ready', 'not-ready'
 
 const phaseLabels = {
   arrival: 'Arrival',
@@ -7952,9 +8055,16 @@ const checkpointTemplates = [
   { id: "TPL-DEP", name: "Standard Departure", steps: 3, avg: "2h 00m" },
 ];
 
-const genMovements = computed(() =>
-  selectedPlanMovements.value.filter((mv) => !mv.job_id && !isBusMovement(mv))
-);
+// Candidate pool: the tick-box selection when the user has made one, else
+// everything in view. Already-generated and BUS legs can never be candidates.
+const genMovements = computed(() => {
+  const pool = selectedMovementIds.value.size > 0
+    ? selectedPlanMovements.value.filter((mv) => selectedMovementIds.value.has(mv.id))
+    : selectedPlanMovements.value;
+
+  return pool.filter((mv) => !mv.job_id && !isBusMovement(mv));
+});
+
 const genAlreadyCount = computed(
   () => selectedPlanMovements.value.filter((mv) => mv.job_id).length
 );
@@ -7962,55 +8072,61 @@ const genBusCount = computed(
   () => selectedPlanMovements.value.filter((mv) => !mv.job_id && isBusMovement(mv)).length
 );
 
-// Determine target plan for job generation
-const genTargetPlanId = computed(() => {
-  // If a plan is selected, use that
-  if (activePlan.value) return activePlan.value;
-  
-  // In "All Movements" view, check if all movements belong to one plan
-  const planIds = new Set(genMovements.value.map(mv => mv.plan_id).filter(Boolean));
-  return planIds.size === 1 ? Array.from(planIds)[0] : null;
+/** The subset that can actually be generated right now — fully crewed. */
+const genReadyMovements = computed(() =>
+  genMovements.value.filter((mv) => mv.field_supervisor_id && mv.vehicle_id)
+);
+
+/** Ready movements bucketed by plan — generation is a per-plan endpoint. */
+const genPlanGroups = computed(() => {
+  const groups = new Map();
+  for (const mv of genReadyMovements.value) {
+    if (!mv.plan_id) continue;
+    if (!groups.has(mv.plan_id)) groups.set(mv.plan_id, []);
+    groups.get(mv.plan_id).push(mv.id);
+  }
+  return groups;
 });
 
-const genCanGenerate = computed(() => {
-  if (!genTargetPlanId.value || genMovements.value.length === 0) {
-    return false;
-  }
-  
-  // Check if all movements have both supervisor and vehicle assigned
-  const allHaveSupervisor = genMovements.value.every(mv => mv.field_supervisor_id);
-  const allHaveVehicle = genMovements.value.every(mv => mv.vehicle_id);
-  
-  return allHaveSupervisor && allHaveVehicle;
-});
+// Partially-ready batches are allowed: incomplete movements are skipped (with a
+// confirmation) rather than blocking the whole run.
+const genCanGenerate = computed(() => genReadyMovements.value.length > 0);
+
+const showGenerateSkipConfirm = ref(false);
+const genSkipMessage = ref('');
+const showGenerateBlocked = ref(false);
+const genBlockedMessage = ref('');
 
 const genCanGenerateTooltip = computed(() => {
+  const scope = selectedMovementIds.value.size > 0 ? 'selected movement(s)' : 'movement(s)';
+
   if (genMovements.value.length === 0) {
     return genBusCount.value > 0
       ? `${genBusCount.value} movement(s) are BUS (no flight) and can't generate a job`
-      : '';
+      : `No ${scope} awaiting job generation`;
   }
 
-  if (!genTargetPlanId.value) {
-    return 'Movements must be from the same plan to generate jobs';
-  }
-  
   const missingSupervisor = genMovements.value.filter(mv => !mv.field_supervisor_id).length;
   const missingVehicle = genMovements.value.filter(mv => !mv.vehicle_id).length;
-  
-  if (missingSupervisor > 0 && missingVehicle > 0) {
-    return `${missingSupervisor} movement(s) missing supervisor, ${missingVehicle} missing vehicle`;
+
+  if (genReadyMovements.value.length === 0) {
+    if (missingSupervisor > 0 && missingVehicle > 0) {
+      return `${missingSupervisor} ${scope} missing supervisor, ${missingVehicle} missing vehicle`;
+    }
+    if (missingSupervisor > 0) {
+      return `${missingSupervisor} ${scope} missing supervisor`;
+    }
+    if (missingVehicle > 0) {
+      return `${missingVehicle} ${scope} missing vehicle`;
+    }
   }
-  
-  if (missingSupervisor > 0) {
-    return `${missingSupervisor} movement(s) missing supervisor`;
-  }
-  
-  if (missingVehicle > 0) {
-    return `${missingVehicle} movement(s) missing vehicle`;
-  }
-  
-  return '';
+
+  const planCount = genPlanGroups.value.size;
+  const across = planCount > 1 ? ` across ${planCount} plans` : '';
+  const skipped = genMovements.value.length - genReadyMovements.value.length;
+
+  return `Generate ${genReadyMovements.value.length} job(s)${across}`
+    + (skipped > 0 ? ` — ${skipped} incomplete movement(s) will be skipped` : '');
 });
 
 const selectedCheckpointTemplate = computed(
@@ -8026,7 +8142,12 @@ const tabs = computed(() => {
       count: selectedPlanMovements.value.length,
     },
     { id: "checkpoints", label: "Checkpoints", count: 12 },
-    { id: "conflicts", label: "Conflicts", count: 3, danger: true },
+    {
+      id: "conflicts",
+      label: "Conflicts",
+      count: conflicts.value.length,
+      danger: conflicts.value.some((c) => c.sev === "high"),
+    },
     { id: "templates", label: "Templates", count: 5 },
   ];
 
@@ -8048,29 +8169,7 @@ const checkpoints = [
   { id: "CP005", order: 5, name: "Team Handoff", type: "handoff" },
 ];
 
-const conflicts = [
-  {
-    id: "C001",
-    sev: "high",
-    type: "Vehicle Overlap",
-    text: "VEH-04 is assigned to two movements with overlapping time windows.",
-    affects: ["M1", "M4"],
-  },
-  {
-    id: "C002",
-    sev: "medium",
-    type: "Tight Turnaround",
-    text: "Only 15 minutes between movements for Team ARG – may not be sufficient.",
-    affects: ["M2", "M3"],
-  },
-  {
-    id: "C003",
-    sev: "low",
-    type: "Route Optimization",
-    text: "Movement M5 could be combined with M6 for efficiency.",
-    affects: ["M5", "M6"],
-  },
-];
+const conflicts = computed(() => props.conflicts);
 
 const templates = [
   {
@@ -8771,6 +8870,12 @@ const filteredPlanMovements = computed(() => {
     movements = movements.filter((mv) => movementPhase(mv) === movementsPhaseFilter.value);
   }
 
+  // Apply job-generation-readiness filter
+  if (movementsJobFilter.value) {
+    const wantReady = movementsJobFilter.value === 'ready';
+    movements = movements.filter((mv) => isReadyForGeneration(mv) === wantReady);
+  }
+
   // Sort by date (desc), then phase
   movements = [...movements].sort((a, b) => {
     const aTime = a.window_start ? new Date(a.window_start).getTime() : -Infinity;
@@ -8866,6 +8971,26 @@ function phaseMovementCount(phase) {
   return selectedPlanMovements.value.filter((mv) => movementPhase(mv) === phase)
     .length;
 }
+
+// Ready = not already generated, schedulable (BUS legs have no reference time),
+// and fully crewed — vehicle, driver and supervisor all assigned.
+function isReadyForGeneration(mv) {
+  return (
+    !mv.job_id &&
+    !isBusMovement(mv) &&
+    Boolean(mv.vehicle_id) &&
+    Boolean(mv.driver_id) &&
+    Boolean(mv.field_supervisor_id)
+  );
+}
+
+const readyForGenerationCount = computed(
+  () => selectedPlanMovements.value.filter(isReadyForGeneration).length
+);
+
+const notReadyForGenerationCount = computed(
+  () => selectedPlanMovements.value.length - readyForGenerationCount.value
+);
 
 const selectedNewPlanTemplate = computed(() => {
   if (!newPlanTemplate.value) return null;
@@ -10464,34 +10589,45 @@ function saveMovement(andAnother = false) {
 }
 
 function generateJobs() {
-  // Filter movements that have both supervisors and vehicles assigned
-  const validMovements = genMovements.value.filter(mv => mv.field_supervisor_id && mv.vehicle_id);
-  
+  const validMovements = genReadyMovements.value;
+  const missingSupervisor = genMovements.value.filter(mv => !mv.field_supervisor_id).length;
+  const missingVehicle = genMovements.value.filter(mv => !mv.vehicle_id).length;
+
   if (validMovements.length === 0) {
-    const missingSupervisor = genMovements.value.filter(mv => !mv.field_supervisor_id).length;
-    const missingVehicle = genMovements.value.filter(mv => !mv.vehicle_id).length;
-    let message = "No movements ready for job generation.\n\n";
-    if (missingSupervisor > 0) message += `${missingSupervisor} movement(s) missing supervisor.\n`;
-    if (missingVehicle > 0) message += `${missingVehicle} movement(s) missing vehicle.\n`;
-    message += "\nPlease assign supervisors and vehicles before generating jobs.";
-    alert(message);
+    const reasons = [];
+    if (missingSupervisor > 0) reasons.push(`${missingSupervisor} movement(s) missing a supervisor`);
+    if (missingVehicle > 0) reasons.push(`${missingVehicle} movement(s) missing a vehicle`);
+    if (genBusCount.value > 0) reasons.push(`${genBusCount.value} BUS movement(s) have no reference time`);
+
+    genBlockedMessage.value = reasons.length
+      ? `No movements are ready for job generation:<br><br>${reasons.map(r => `• ${r}`).join('<br>')}`
+        + '<br><br>Assign a supervisor and a vehicle, then try again.'
+      : 'No movements are awaiting job generation.';
+    showGenerateBlocked.value = true;
     return;
   }
-  
-  if (validMovements.length < genMovements.value.length) {
-    const skippedCount = genMovements.value.length - validMovements.length;
-    const missingSupervisor = genMovements.value.filter(mv => !mv.field_supervisor_id).length;
-    const missingVehicle = genMovements.value.filter(mv => !mv.vehicle_id).length;
-    let message = `${skippedCount} movement(s) will be skipped:\n\n`;
-    if (missingSupervisor > 0) message += `- ${missingSupervisor} without supervisor\n`;
-    if (missingVehicle > 0) message += `- ${missingVehicle} without vehicle\n`;
-    message += `\nContinue with ${validMovements.length} movement(s)?`;
-    if (!confirm(message)) {
-      return;
-    }
+
+  const skippedCount = genMovements.value.length - validMovements.length;
+  if (skippedCount > 0) {
+    const reasons = [];
+    if (missingSupervisor > 0) reasons.push(`${missingSupervisor} without a supervisor`);
+    if (missingVehicle > 0) reasons.push(`${missingVehicle} without a vehicle`);
+
+    genSkipMessage.value =
+      `<strong>${skippedCount}</strong> movement(s) will be skipped:<br><br>`
+      + reasons.map(r => `• ${r}`).join('<br>')
+      + `<br><br>Continue with <strong>${validMovements.length}</strong> movement(s)?`;
+    showGenerateSkipConfirm.value = true;
+    return;
   }
-  
-  genSelectedIds.value = validMovements.map((mv) => mv.id);
+
+  openGenerateJobsModal();
+}
+
+/** Stages the ready movements and opens the generation options modal. */
+function openGenerateJobsModal() {
+  showGenerateSkipConfirm.value = false;
+  genSelectedIds.value = genReadyMovements.value.map((mv) => mv.id);
   genTemplate.value = "TPL-ARR";
   genAutoAssign.value = true;
   genNotifyLiaisons.value = true;
@@ -10499,47 +10635,87 @@ function generateJobs() {
 }
 
 function toggleGenMovement(id) {
+  const movement = genMovements.value.find((mv) => mv.id === id);
+  if (movement && !isReadyForGeneration(movement)) {
+    return;
+  }
+
   const idx = genSelectedIds.value.indexOf(id);
   if (idx === -1) genSelectedIds.value.push(id);
   else genSelectedIds.value.splice(idx, 1);
 }
 
+function genRowBlockedReason(mv) {
+  const missing = [];
+  if (!mv.vehicle_id) missing.push('vehicle');
+  if (!mv.field_supervisor_id) missing.push('supervisor');
+
+  return missing.length
+    ? `Assign a ${missing.join(' and a ')} before generating a job for this movement`
+    : '';
+}
+
+// The generate-jobs endpoint is scoped to a single plan, so a selection that
+// spans plans is submitted as one request per plan, chained so each starts only
+// after the previous succeeds.
 function confirmGenerateJobs() {
-  const targetPlanId = genTargetPlanId.value;
-  
-  if (!targetPlanId) {
-    console.error("No plan selected or movements from multiple plans");
-    alert("Cannot generate jobs: movements belong to different plans or no plan selected.");
+  const selected = new Set(genSelectedIds.value);
+  const batches = [];
+
+  for (const [planId, ids] of genPlanGroups.value) {
+    const batch = ids.filter((id) => selected.has(id));
+    if (batch.length > 0) {
+      batches.push([planId, batch]);
+    }
+  }
+
+  if (batches.length === 0) {
+    genBlockedMessage.value = 'No movements are selected, or the selected movements are not attached to a plan.';
+    showGenerateBlocked.value = true;
     return;
   }
 
   genProcessing.value = true;
-  const count = genSelectedIds.value.length;
+  const count = batches.reduce((sum, [, ids]) => sum + ids.length, 0);
 
-  router.post(
-    `/plans/${targetPlanId}/generate-jobs`,
-    {
-      movement_ids: genSelectedIds.value,
-      auto_assign: genAutoAssign.value,
-      notify_liaisons: genNotifyLiaisons.value,
-    },
-    {
-      preserveScroll: true,
-      onSuccess: (page) => {
-        console.log('Jobs generated successfully, response:', page);
-        showSuccessToast(`Jobs generated successfully for ${count} movement${count !== 1 ? 's' : ''}`);
-        showGenerateJobs.value = false;
-        genSelectedIds.value = [];
-      },
-      onError: (errors) => {
-        console.error("Failed to generate jobs:", errors);
-        showErrorToast("Failed to generate jobs. Please try again.");
-      },
-      onFinish: () => {
-        genProcessing.value = false;
-      },
+  const runBatch = (index) => {
+    if (index >= batches.length) {
+      const across = batches.length > 1 ? ` across ${batches.length} plans` : '';
+      showSuccessToast(`Jobs generated successfully for ${count} movement${count !== 1 ? 's' : ''}${across}`);
+      showGenerateJobs.value = false;
+      genSelectedIds.value = [];
+      selectedMovementIds.value = new Set();
+      genProcessing.value = false;
+      return;
     }
-  );
+
+    const [planId, movementIds] = batches[index];
+
+    router.post(
+      `/plans/${planId}/generate-jobs`,
+      {
+        movement_ids: movementIds,
+        auto_assign: genAutoAssign.value,
+        notify_liaisons: genNotifyLiaisons.value,
+      },
+      {
+        preserveScroll: true,
+        preserveState: true,
+        onSuccess: () => runBatch(index + 1),
+        onError: (errors) => {
+          console.error("Failed to generate jobs:", errors);
+          showErrorToast(
+            batches.length > 1
+              ? `Failed on plan ${index + 1} of ${batches.length}. Earlier plans were generated.`
+              : "Failed to generate jobs. Please try again."
+          );
+          genProcessing.value = false;
+        },
+      }
+    );
+  };
+
+  runBatch(0);
 }
 
 function generateSingleJob(movement) {
@@ -10557,17 +10733,20 @@ function generateSingleJob(movement) {
   }
 
   if (isBusMovement(movement)) {
-    alert("This is a BUS movement with no reference time — a job can't be generated for it.");
+    genBlockedMessage.value = 'This is a <strong>BUS</strong> movement with no reference time, so a job cannot be generated for it.';
+    showGenerateBlocked.value = true;
     return;
   }
 
   if (!movement?.field_supervisor_id) {
-    alert("Please assign a supervisor to this movement before generating a job.");
+    genBlockedMessage.value = 'Assign a <strong>supervisor</strong> to this movement before generating a job.';
+    showGenerateBlocked.value = true;
     return;
   }
 
   if (!movement?.vehicle_id) {
-    alert("Please assign a vehicle to this movement before generating a job.");
+    genBlockedMessage.value = 'Assign a <strong>vehicle</strong> to this movement before generating a job.';
+    showGenerateBlocked.value = true;
     return;
   }
 
@@ -11098,7 +11277,7 @@ function statusLabel(s) {
 .form-field select:focus {
   outline: none;
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.12);
+  box-shadow: 0 0 0 3px var(--accent-ring);
 }
 
 /* Additional tab and conflict styling */
@@ -11202,6 +11381,24 @@ function statusLabel(s) {
 .gen-mv-row--checked {
   border-color: var(--accent);
   background: var(--accent-soft);
+}
+
+/* Missing a vehicle or supervisor - can't be generated, so it can't be picked */
+.gen-mv-row--disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+  background: var(--panel);
+}
+
+.gen-mv-row--disabled .gen-checkbox {
+  cursor: not-allowed;
+}
+
+.gen-mv-assign {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 3px;
 }
 
 .gen-checkbox {
@@ -11718,7 +11915,7 @@ function statusLabel(s) {
 .ntp-input:focus {
   outline: none;
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+  box-shadow: 0 0 0 3px var(--accent-ring);
 }
 
 /* Starting legs */

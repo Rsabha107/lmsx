@@ -20,6 +20,9 @@ Route::middleware('auth')->group(function () {
     
     // Job Status Management
     Route::post('/jobs/{jobId}/status', [LmsController::class, 'updateJobStatus'])->name('job.updateStatus');
+
+    // Field-reported issues
+    Route::post('/job-issues/{issue}/resolve', [LmsController::class, 'resolveJobIssue'])->name('job.issues.resolve');
     
     // Checkpoint Operations
     Route::prefix('jobs/checkpoint/{checkpointId}')->group(function () {

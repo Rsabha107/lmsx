@@ -124,6 +124,11 @@
                   :class="`jl-job-phase--${job.kind}`"
                 >{{ job.kind }}</span>
                 <span v-if="job.functional_area" class="jl-fa-badge">{{ job.functional_area }}</span>
+                <span
+                  v-if="openIssueCount(job)"
+                  class="jl-issue-badge"
+                  :title="`${openIssueCount(job)} unresolved issue(s) reported from the field`"
+                >⚑ {{ openIssueCount(job) }}</span>
               </div>
               <span class="jl-route" :title="`${formatJobFromLocation(job)} → ${formatJobToLocation(job)}`">{{ formatJobFromLocation(job) }} → {{ formatJobToLocation(job) }}</span>
             </div>
@@ -175,11 +180,16 @@
             </status-pill>
             <div class="detail-actions">
               <Button variant="secondary" size="sm">Contact</Button>
-              <Button 
-                v-if="selectedJob.status !== 'in-progress'" 
-                variant="primary" 
-                size="sm" 
-                @click="startJob">Start Job</Button>
+              <Button
+                v-if="selectedJob.status === 'in-progress'"
+                variant="secondary"
+                size="sm"
+                @click="promptRevertJob">Mark Scheduled</Button>
+              <Button
+                v-else-if="canStartJob(selectedJob)"
+                variant="primary"
+                size="sm"
+                @click="promptStartJob">Start Job</Button>
               <Button variant="primary" size="sm" @click="openOverrideModal">Override</Button>
             </div>
           </div>
@@ -204,6 +214,37 @@
               label="Last Update" 
               :value="formatTimeAgo(selectedJob.updated_at)"/>
             <mini-stat label="Status" :value="statusLabel(selectedJob.status)" :tone="statusTone(selectedJob.status)"/>
+          </div>
+        </div>
+
+        <!-- Field-reported issues -->
+        <div v-if="jobIssues.length" class="detail-card">
+          <div class="issues-head">
+            <span class="issues-title">Reported issues</span>
+            <span class="issues-count">{{ openIssues.length }} open · {{ jobIssues.length }} total</span>
+          </div>
+          <div v-for="issue in jobIssues" :key="issue.id" class="issue-row" :class="{ 'issue-row--resolved': issue.resolved_at }">
+            <span :class="['issue-dot', `issue-dot--${issue.severity}`]"></span>
+            <div class="issue-main">
+              <div class="issue-label">
+                {{ issue.label }}
+                <span v-if="issue.resolved_at" class="issue-resolved-badge">RESOLVED</span>
+              </div>
+              <div v-if="issue.notes" class="issue-notes">{{ issue.notes }}</div>
+              <div class="issue-meta">
+                {{ issue.reported_by }} · {{ issue.reported_at }}
+                <template v-if="issue.resolved_at"> · resolved {{ issue.resolved_at }}</template>
+              </div>
+            </div>
+            <Button
+              v-if="!issue.resolved_at"
+              variant="secondary"
+              size="sm"
+              :disabled="resolvingIssueId === issue.id"
+              @click="resolveIssue(issue)"
+            >
+              {{ resolvingIssueId === issue.id ? 'Resolving…' : 'Resolve' }}
+            </Button>
           </div>
         </div>
 
@@ -471,6 +512,26 @@
       </div>
     </div>
     </div>
+
+    <ConfirmModal
+      :show="pendingStatusChange !== null"
+      :title="pendingStatusChange?.title || ''"
+      :message="pendingStatusChange?.message || ''"
+      :confirm-label="pendingStatusChange?.confirmLabel || 'Confirm'"
+      :processing="statusChanging"
+      @close="pendingStatusChange = null"
+      @confirm="confirmStatusChange"
+    />
+
+    <ConfirmModal
+      :show="showStatusError"
+      title="Cannot Change Job Status"
+      :message="statusErrorMessage"
+      confirm-label="Got it"
+      hide-cancel
+      @close="showStatusError = false"
+      @confirm="showStatusError = false"
+    />
   </app-layout>
 </template>
 
@@ -486,6 +547,7 @@ import Modal from '../Components/Modal.vue';
 import Button from '../Components/Button.vue';
 import CheckpointTimeline from '../Components/CheckpointTimeline.vue';
 import FlagIcon from '../Components/FlagIcon.vue';
+import ConfirmModal from '../Components/ConfirmModal.vue';
 
 const page = usePage();
 const hasActiveEvent = computed(() => !!page.props.activeEventId);
@@ -495,6 +557,41 @@ const props = defineProps({
 });
 
 const selectedJob = ref(null);
+const showStatusError = ref(false);
+const statusErrorMessage = ref('');
+const pendingStatusChange = ref(null);
+const statusChanging = ref(false);
+const resolvingIssueId = ref(null);
+
+const jobIssues = computed(() => selectedJob.value?.issues ?? []);
+const openIssues = computed(() => jobIssues.value.filter(i => !i.resolved_at));
+
+function openIssueCount(job) {
+  return (job.issues ?? []).filter(i => !i.resolved_at).length;
+}
+
+function resolveIssue(issue) {
+  resolvingIssueId.value = issue.id;
+
+  router.post(`/job-issues/${issue.id}/resolve`, {}, {
+    preserveScroll: true,
+    preserveState: true,
+    onSuccess: () => {
+      const currentJobId = selectedJob.value?.id;
+      router.reload({
+        only: ['schedule'],
+        onSuccess: () => {
+          if (currentJobId) {
+            selectedJob.value = props.schedule.find(j => j.id === currentJobId);
+          }
+        },
+      });
+    },
+    onFinish: () => {
+      resolvingIssueId.value = null;
+    },
+  });
+}
 
 // Filter refs
 const dateFilter = ref('all');
@@ -1194,10 +1291,52 @@ function clearSignature() {
   }
 }
 
-function startJob() {
+function canStartJob(job) {
+  return ['pending', 'dispatched'].includes(job?.status);
+}
+
+function promptStartJob() {
   if (!selectedJob.value) return;
 
+  pendingStatusChange.value = {
+    status: 'in-progress',
+    title: 'Start Job?',
+    confirmLabel: 'Start Job',
+    message:
+      `<strong>${selectedJob.value.id}</strong> · ${selectedJob.value.team || ''}<br><br>`
+      + 'This will:<br>'
+      + '&bull; Set the job status to <strong>In Progress</strong><br>'
+      + '&bull; Record the start time as <strong>now</strong><br>'
+      + '&bull; Stamp the actual departure on the linked movement<br>'
+      + '&bull; Write an entry to the audit trail<br><br>'
+      + 'Checkpoints are not affected — the crew still completes them in the field.',
+  };
+}
+
+function promptRevertJob() {
+  if (!selectedJob.value) return;
+
+  pendingStatusChange.value = {
+    status: 'pending',
+    title: 'Mark Job as Scheduled?',
+    confirmLabel: 'Mark Scheduled',
+    message:
+      `<strong>${selectedJob.value.id}</strong> · ${selectedJob.value.team || ''}<br><br>`
+      + 'Use this if the job was started by mistake. It will:<br>'
+      + '&bull; Set the job status back to <strong>Scheduled</strong><br>'
+      + '&bull; Clear the recorded start time<br>'
+      + '&bull; Clear the actual departure on the linked movement<br>'
+      + '&bull; Write an entry to the audit trail<br><br>'
+      + 'Completed checkpoints are kept.',
+  };
+}
+
+function confirmStatusChange() {
+  const change = pendingStatusChange.value;
+  if (!change || !selectedJob.value) return;
+
   const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content;
+  statusChanging.value = true;
 
   fetch(`/jobs/${selectedJob.value.id}/status`, {
     method: 'POST',
@@ -1206,31 +1345,38 @@ function startJob() {
       'Accept': 'application/json',
       'X-CSRF-TOKEN': csrfToken || '',
     },
-    body: JSON.stringify({ status: 'in-progress' }),
+    body: JSON.stringify({ status: change.status }),
   })
-    .then(response => {
-      if (!response.ok) throw new Error('Network response was not ok');
-      return response.json();
-    })
-    .then(data => {
-      if (data.success) {
-        const currentJobId = selectedJob.value?.id;
-        router.reload({ 
-          only: ['schedule'],
-          onSuccess: () => {
-            // Re-select the same job after refresh
-            if (currentJobId) {
-              selectedJob.value = props.schedule.find(j => j.id === currentJobId);
-            }
-          }
-        });
-      } else {
-        alert('Failed to update job status: ' + (data.message || 'Unknown error'));
+    // A rejected transition comes back as 422 with an explanation, so read the
+    // body before deciding whether this failed.
+    .then(async (response) => ({ ok: response.ok, data: await response.json().catch(() => ({})) }))
+    .then(({ ok, data }) => {
+      statusChanging.value = false;
+      pendingStatusChange.value = null;
+
+      if (!ok || !data.success) {
+        statusErrorMessage.value = data.message || 'Failed to update job status. Please try again.';
+        showStatusError.value = true;
+        return;
       }
+
+      const currentJobId = selectedJob.value?.id;
+      router.reload({
+        only: ['schedule'],
+        onSuccess: () => {
+          // Re-select the same job after refresh
+          if (currentJobId) {
+            selectedJob.value = props.schedule.find(j => j.id === currentJobId);
+          }
+        }
+      });
     })
     .catch(error => {
       console.error('Error updating job status:', error);
-      alert('Failed to update job status. Please try again.');
+      statusChanging.value = false;
+      pendingStatusChange.value = null;
+      statusErrorMessage.value = 'Failed to update job status. Please try again.';
+      showStatusError.value = true;
     });
 }
 
@@ -1594,6 +1740,53 @@ function submitOverride() {
   letter-spacing: 0.3px;
 }
 
+.jl-issue-badge {
+  font-size: 9px;
+  font-weight: 700;
+  color: #b91c1c;
+  background: rgba(239, 68, 68, 0.12);
+  padding: 1px 5px;
+  border-radius: 3px;
+  letter-spacing: 0.3px;
+}
+
+.issues-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.issues-title { font-size: 13px; font-weight: 700; color: var(--ink); }
+.issues-count { font-size: 11px; color: var(--ink3); }
+
+.issue-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 0;
+  border-top: 1px solid var(--border);
+}
+.issue-row--resolved { opacity: 0.55; }
+
+.issue-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  margin-top: 5px; flex-shrink: 0;
+  background: var(--ink4);
+}
+.issue-dot--danger { background: var(--danger); }
+.issue-dot--warn { background: var(--warn); }
+
+.issue-main { flex: 1; min-width: 0; }
+.issue-label { font-size: 13px; font-weight: 600; color: var(--ink); display: flex; align-items: center; gap: 6px; }
+.issue-resolved-badge {
+  font-size: 9px; font-weight: 700; letter-spacing: 0.3px;
+  color: var(--ink3); background: var(--panel);
+  border: 1px solid var(--border); border-radius: 3px; padding: 1px 4px;
+}
+.issue-notes { font-size: 12px; color: var(--ink2); margin-top: 2px; }
+.issue-meta { font-size: 11px; color: var(--ink3); margin-top: 3px; }
+
 .jl-col-progress {
   display: flex; flex-direction: column; gap: 4px;
 }
@@ -1780,7 +1973,7 @@ function submitOverride() {
   font-size: 10px;
   font-weight: 700;
   color: var(--accent);
-  background: var(--accent-soft, rgba(99, 102, 241, 0.1));
+  background: var(--accent-soft, var(--accent-ring));
   padding: 2px 8px;
   border-radius: 4px;
   text-transform: uppercase;
@@ -1952,7 +2145,7 @@ function submitOverride() {
 }
 
 .crew-phone:hover {
-  color: var(--accent-fg, #4338ca);
+  color: var(--accent-fg, #0F1724);
   text-decoration: underline;
 }
 
@@ -2000,7 +2193,7 @@ function submitOverride() {
   outline: none; box-sizing: border-box;
 }
 .override-select:focus, .override-input:focus {
-  border-color: var(--accent); box-shadow: 0 0 0 3px rgba(99,102,241,0.1);
+  border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-ring);
 }
 
 .override-select--checkpoints {
@@ -2088,7 +2281,7 @@ function submitOverride() {
   outline: none; resize: vertical; box-sizing: border-box;
 }
 .override-textarea:focus {
-  border-color: var(--accent); box-shadow: 0 0 0 3px rgba(99,102,241,0.1);
+  border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-ring);
 }
 
 .override-notify {
@@ -2308,15 +2501,15 @@ function submitOverride() {
 }
 
 .quick-filter-btn--active {
-  background: var(--accent, #6366f1);
+  background: var(--accent, #0F1724);
   color: #ffffff;
-  border-color: var(--accent, #6366f1);
+  border-color: var(--accent, #0F1724);
 }
 
 .quick-filter-btn--active:hover {
-  background: var(--accent, #6366f1);
+  background: var(--accent, #0F1724);
   color: #ffffff;
-  border-color: var(--accent, #6366f1);
+  border-color: var(--accent, #0F1724);
   opacity: 0.9;
 }
 

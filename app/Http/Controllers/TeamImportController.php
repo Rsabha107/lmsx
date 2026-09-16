@@ -161,7 +161,7 @@ class TeamImportController extends Controller
             ['Group', 'Optional, e.g. "Group A".'],
             ['Hotel Name', 'Optional. Creates or updates the team\'s accommodation record.'],
             ['Room Count', 'Optional whole number.'],
-            ['Airport Code', 'Optional. 3-letter IATA code for the team\'s home airport, used for both the arrival and departure leg.'],
+            ['Airport Code', 'Optional. 3-letter code for the airport the team lands at (the event venue airport, e.g. HIA). Used as the arrival destination and the departure origin.'],
             ['Arrival Flight Number', 'Optional. Leave blank if not booked yet.'],
             ['Arrival Date', 'Optional. Format YYYY-MM-DD.'],
             ['Arrival Time', 'Optional. Format HH:MM, 24-hour.'],

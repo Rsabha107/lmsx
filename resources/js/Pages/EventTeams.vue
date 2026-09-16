@@ -593,11 +593,16 @@
         <div class="form-row">
           <div class="form-group" style="flex: 2">
             <label class="form-label">Hotel Name</label>
-            <input
+            <Select
               v-model="stayForm.hotel_name"
-              type="text"
-              class="form-input"
-              maxlength="255"
+              :options="baseCampHotels"
+              optionLabel="name"
+              optionValue="name"
+              filter
+              filterPlaceholder="Search hotels..."
+              showClear
+              placeholder="Select a base camp hotel"
+              class="w-full"
             />
           </div>
         </div>
@@ -911,9 +916,10 @@
     </Modal>
 
     <!-- Delete Confirmation Modal -->
-    <DeleteConfirmModal
+    <ConfirmModal
       :show="showDeleteModal"
-      :title="deleteType"
+      tone="danger"
+      :title="`Delete ${deleteType}`"
       :message="deleteMessage"
       :processing="deleting"
       @close="closeDeleteModal"
@@ -1037,8 +1043,9 @@ import Button from "@/Components/Button.vue";
 import RefreshButton from "@/Components/RefreshButton.vue";
 import MiniStat from "@/Components/MiniStat.vue";
 import SvgIcon from "@/Components/SvgIcon.vue";
-import DeleteConfirmModal from "@/Components/DeleteConfirmModal.vue";
+import ConfirmModal from "@/Components/ConfirmModal.vue";
 import FlagIcon from "@/Components/FlagIcon.vue";
+import Select from "primevue/select";
 
 const props = defineProps({
   activeEvent: { type: Object, default: null },
@@ -1046,6 +1053,7 @@ const props = defineProps({
   airports: { type: Array, default: () => [] },
   countries: { type: Array, default: () => [] },
   classifications: { type: Array, default: () => [] },
+  baseCampHotels: { type: Array, default: () => [] },
 });
 
 const searchQuery = ref("");

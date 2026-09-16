@@ -10,6 +10,33 @@ class JobOperation extends Model
 {
     protected $table = 'jobs_operations';
 
+    public const STATUSES = ['pending', 'dispatched', 'in-progress', 'completed', 'cancelled'];
+
+    /**
+     * Which statuses a job may move to from its current one. A job only ever
+     * moves forwards, except that anything unfinished can be cancelled and a
+     * job started by mistake can be put back to pending.
+     */
+    public const TRANSITIONS = [
+        'pending' => ['dispatched', 'in-progress', 'cancelled'],
+        'dispatched' => ['in-progress', 'cancelled'],
+        'in-progress' => ['completed', 'cancelled', 'pending'],
+        'completed' => [],
+        'cancelled' => [],
+    ];
+
+    /** The timestamp column stamped when a job enters a given status. */
+    public const STATUS_TIMESTAMPS = [
+        'dispatched' => 'dispatched_at',
+        'in-progress' => 'started_at',
+        'completed' => 'completed_at',
+    ];
+
+    public function canTransitionTo(string $status): bool
+    {
+        return in_array($status, self::TRANSITIONS[$this->status] ?? [], true);
+    }
+
     protected $fillable = [
         'job_id',
         'event_id',
@@ -101,6 +128,14 @@ class JobOperation extends Model
     public function checkpoints(): HasMany
     {
         return $this->hasMany(JobCheckpoint::class, 'job_id')->orderBy('order');
+    }
+
+    /**
+     * Field-reported problems, newest first.
+     */
+    public function issues(): HasMany
+    {
+        return $this->hasMany(JobIssue::class, 'job_id')->latest();
     }
 
     /**

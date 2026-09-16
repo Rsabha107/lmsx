@@ -122,11 +122,12 @@ class TeamImportService
             throw new RuntimeException("Could not determine a country for '{$teamName}' ({$code}). Add a 'Country Code' column, or add this country to the system first.");
         }
 
-        // "Home" airport (the team's own city) and "venue" airport (the event's host
-        // city, e.g. Doha) - an itinerary like "TAS-DOH-TAS" gives us both: arrival
-        // flies home -> venue, departure flies venue -> home.
-        $airportId = $this->resolveAirport($row['airport_code'] ?? null, $row['airport_code_hint'] ?? null);
-        $venueAirportId = $this->resolveAirport(null, $row['venue_airport_code_hint'] ?? null);
+        // "Venue" airport (where the team lands, e.g. Doha) and "home" airport (the
+        // team's own city) - arrival flies home -> venue, departure flies venue ->
+        // home. The "Airport Code" column holds the venue/arrival airport; an
+        // itinerary like "TAS-DOH-TAS" supplies both legs as soft hints.
+        $venueAirportId = $this->resolveAirport($row['airport_code'] ?? null, $row['venue_airport_code_hint'] ?? null);
+        $airportId = $this->resolveAirport(null, $row['airport_code_hint'] ?? null);
         $groupPool = trim((string) ($row['group'] ?? ''));
         $hotelName = trim((string) ($row['hotel_name'] ?? ''));
         $roomCount = $this->parseRoomCount($row['room_count'] ?? null);

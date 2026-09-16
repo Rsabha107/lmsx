@@ -495,9 +495,10 @@
     </Modal>
 
     <!-- Delete Confirm Modal -->
-    <DeleteConfirmModal
+    <ConfirmModal
       :show="showDeleteModal"
-      title="Event"
+      tone="danger"
+      title="Delete Event"
       :message="eventToDelete ? `Are you sure you want to delete <strong>${eventToDelete.name}</strong>?<br><br>All team assignments will be removed.` : ''"
       :processing="deleting"
       @close="showDeleteModal = false; eventToDelete = null;"
@@ -505,9 +506,10 @@
     />
 
     <!-- Delete Confirm Modal for Flights/Stays -->
-    <DeleteConfirmModal
+    <ConfirmModal
       :show="showManageDeleteModal"
-      :title="manageDeleteType"
+      tone="danger"
+      :title="`Delete ${manageDeleteType}`"
       :message="manageDeleteMessage"
       :processing="managingDeleting"
       @close="closeManageDeleteModal"
@@ -524,7 +526,7 @@ import MiniStat        from '../Components/MiniStat.vue';
 import SvgIcon         from '../Components/SvgIcon.vue';
 import Button          from '../Components/Button.vue';
 import Modal           from '../Components/Modal.vue';
-import DeleteConfirmModal from '../Components/DeleteConfirmModal.vue';
+import ConfirmModal from '../Components/ConfirmModal.vue';
 import TableActions    from '../Components/TableActions.vue';
 import RefreshButton   from '../Components/RefreshButton.vue';
 import FlagIcon        from '../Components/FlagIcon.vue';
@@ -993,7 +995,7 @@ function fmtDT(dt) {
 /* Flight record action buttons */
 .fr-btn { display:inline-flex; align-items:center; justify-content:center; width:26px; height:26px; border:1px solid var(--border); background:var(--surface); border-radius:6px; cursor:pointer; color:var(--ink3); transition:all .15s; }
 .fr-btn:hover       { background:var(--panel); color:var(--ink); }
-.fr-btn--sync:hover { border-color:#6366f1; color:#6366f1; }
+.fr-btn--sync:hover { border-color:var(--accent); color:var(--accent); }
 .fr-btn--del:hover  { border-color:#ef4444; color:#ef4444; background:rgba(239,68,68,.06); }
 .fr-btn:disabled    { opacity:.4; cursor:not-allowed; }
 

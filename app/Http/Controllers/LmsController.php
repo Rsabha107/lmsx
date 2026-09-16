@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Data\LmsData;
+use App\Models\AuditLog;
 use App\Models\Vehicle;
 use App\Models\FleetProvider;
 use App\Models\Driver;
@@ -16,6 +17,7 @@ use App\Models\CheckpointTemplate;
 use App\Models\MovementTemplate;
 use App\Models\JobOperation;
 use App\Models\JobCheckpoint;
+use App\Models\JobIssue;
 use App\Models\User;
 use App\Models\Event;
 use App\Models\Plan;
@@ -24,8 +26,10 @@ use App\Services\CheckpointUploadService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -207,7 +211,9 @@ class LmsController extends Controller
             'driver',
             'supervisor',
             'checkpoints.completedBy',
-            'checkpoints.checkpoint'
+            'checkpoints.skippedBy',
+            'checkpoints.checkpoint',
+            'issues.reporter',
         ])
             ->when($activeEventId, fn ($q) => $q->where('event_id', $activeEventId));
 
@@ -266,6 +272,21 @@ class LmsController extends Controller
                         'destination_airport' => $team->destinationAirport?->code,
                         'training_ground' => $team->training_ground,
                     ] : null,
+                    'team_data' => $team ? [
+                        'hotel_name' => $team->hotel_name,
+                        'origin_airport' => $team->originAirport?->code,
+                        'destination_airport' => $team->destinationAirport?->code,
+                        'training_ground' => $team->training_ground,
+                    ] : null,
+                    'issues' => $job->issues->map(fn ($issue) => [
+                        'id' => $issue->id,
+                        'label' => $issue->label(),
+                        'severity' => $issue->severity,
+                        'notes' => $issue->notes,
+                        'reported_by' => $issue->reporter?->name ?? 'Unknown',
+                        'reported_at' => $issue->created_at?->format('d M H:i'),
+                        'resolved_at' => $issue->resolved_at?->format('d M H:i'),
+                    ])->values(),
                     'checkpoints' => $job->checkpoints->map(function ($checkpoint) {
                         // Determine the time to display
                         $displayTime = null;
@@ -291,6 +312,10 @@ class LmsController extends Controller
                             'scheduled_ts' => $checkpoint->scheduled_at?->timestamp,
                             'completed_ts' => $checkpoint->completed_at?->timestamp,
                             'by' => $checkpoint->completedBy?->name ?? ($checkpoint->state === 'done' ? 'System' : null),
+                            'skip_reason' => $checkpoint->skip_reason,
+                            'skipped_at' => $checkpoint->skipped_at?->format('H:i'),
+                            'skipped_by' => $checkpoint->skippedBy?->name,
+                            'notes' => $checkpoint->notes,
                             'completion_method' => $checkpoint->completion_method,
                             'estimated_minutes' => $checkpoint->estimated_minutes,
                             'actual_duration_seconds' => $checkpoint->actual_duration_seconds,
@@ -331,6 +356,7 @@ class LmsController extends Controller
             'driver',
             'supervisor',
             'checkpoints.completedBy',
+            'checkpoints.skippedBy',
             'checkpoints.checkpoint'
         ])
             ->join('movements', 'jobs_operations.movement_id', '=', 'movements.id')
@@ -416,6 +442,7 @@ class LmsController extends Controller
             'driver',
             'supervisor',
             'checkpoints.completedBy',
+            'checkpoints.skippedBy',
             'checkpoints.checkpoint'
         ])->where('job_id', $id)
             ->orWhere('id', $id)
@@ -464,11 +491,15 @@ class LmsController extends Controller
             ];
 
             $dbCheckpoints = $jobOperation->checkpoints->map(function ($checkpoint, $index) use ($jobOperation) {
-                // Determine status
+                // Determine status. A skipped checkpoint is settled, not outstanding,
+                // so it counts towards the position of the next active one.
+                $settledCount = $jobOperation->checkpoints->whereIn('state', ['done', 'skipped'])->count();
                 $status = 'pending';
                 if ($checkpoint->state === 'done') {
                     $status = 'done';
-                } elseif ($index === $jobOperation->checkpoints->where('state', 'done')->count()) {
+                } elseif ($checkpoint->state === 'skipped') {
+                    $status = 'skipped';
+                } elseif ($index === $settledCount) {
                     $status = 'active';
                 }
 
@@ -478,6 +509,9 @@ class LmsController extends Controller
                     'status' => $status,
                     'time' => $checkpoint->scheduled_at?->format('H:i') ?? '--:--',
                     'actual' => $checkpoint->completed_at?->format('H:i'),
+                    'skip_reason' => $checkpoint->skip_reason,
+                    'skipped_at' => $checkpoint->skipped_at?->format('H:i'),
+                    'skipped_by' => $checkpoint->skippedBy?->name,
                     'requires_photo' => $checkpoint->requires_photo,
                     'requires_signature' => $checkpoint->requires_signature,
                     'requires_baggage_count' => $checkpoint->checkpoint?->requires_baggage_count ?? false,
@@ -521,7 +555,8 @@ class LmsController extends Controller
             'vehicle',
             'driver',
             'supervisor',
-            'checkpoints.completedBy'
+            'checkpoints.completedBy',
+            'checkpoints.skippedBy'
         ])->find($id);
 
         // If job not found, redirect to jobs page
@@ -551,12 +586,16 @@ class LmsController extends Controller
 
         // Transform checkpoints for frontend
         $checkpoints = $jobOperation->checkpoints->map(function ($cp, $index) use ($jobOperation, $movement) {
-            // Determine status
+            // Determine status. A skipped checkpoint is settled, not outstanding,
+            // so it counts towards the position of the next active one.
+            $settledCount = $jobOperation->checkpoints->whereIn('state', ['done', 'skipped'])->count();
             $status = 'pending';
             if ($cp->state === 'done') {
                 $status = 'done';
-            } elseif ($index === $jobOperation->checkpoints->where('state', 'done')->count()) {
-                // Next uncompleted checkpoint is active
+            } elseif ($cp->state === 'skipped') {
+                $status = 'skipped';
+            } elseif ($index === $settledCount) {
+                // Next unsettled checkpoint is active
                 $status = 'active';
             }
 
@@ -581,6 +620,9 @@ class LmsController extends Controller
                 'status' => $status,
                 'time' => $scheduledTime,
                 'actual' => $cp->completed_at ? \Carbon\Carbon::parse($cp->completed_at)->format('H:i') : null,
+                'skip_reason' => $cp->skip_reason,
+                'skipped_at' => $cp->skipped_at?->format('H:i'),
+                'skipped_by' => $cp->skippedBy?->name,
                 'requires_photo' => $cp->requires_photo,
                 'requires_signature' => $cp->requires_signature,
                 'has_photo' => $cp->photo_path ? true : false,
@@ -644,8 +686,8 @@ class LmsController extends Controller
     {
         return Inertia::render('Fleet', [
             'vehicles' => Vehicle::all(),
-            'providers' => FleetProvider::all(),
-            'drivers' => Driver::all(),
+            'providers' => FleetProvider::withCount(['vehicles', 'drivers'])->get(),
+            'drivers' => Driver::with('provider:id,name')->get(),
         ]);
     }
 
@@ -710,10 +752,18 @@ class LmsController extends Controller
         ]);
     }
 
-    public function audit(): Response
-    {
+    public function audit(): Response    {
+        $entries = AuditLog::latest()->limit(500)->get()->map(fn (AuditLog $log) => [
+            't' => $log->created_at->format('d M H:i'),
+            'who' => $log->user_name,
+            'role' => $log->user_role,
+            'action' => $log->action,
+            'target' => $log->target ?? '',
+            'meta' => $log->meta ?? '',
+        ])->all();
+
         return Inertia::render('Audit', [
-            'audit' => LmsData::audit(),
+            'audit' => $entries,
         ]);
     }
 
@@ -1239,10 +1289,32 @@ class LmsController extends Controller
     /**
      * Update job status
      */
+    /**
+     * Marks a field-reported issue as dealt with.
+     */
+    public function resolveJobIssue(JobIssue $issue): RedirectResponse
+    {
+        if ($issue->resolved_at) {
+            return back()->with('error', 'That issue is already resolved.');
+        }
+
+        $issue->update(['resolved_at' => now()]);
+
+        AuditLog::record(
+            action: 'Issue resolved',
+            target: ($issue->job?->job_id ?? 'JOB').' · '.$issue->label(),
+            meta: $issue->notes,
+            subject: $issue->job,
+            eventId: $issue->event_id,
+        );
+
+        return back()->with('success', 'Issue resolved');
+    }
+
     public function updateJobStatus(Request $request, $jobId): JsonResponse
     {
         $validated = $request->validate([
-            'status' => 'required|in:pending,dispatched,in-progress,completed,cancelled',
+            'status' => ['required', Rule::in(JobOperation::STATUSES)],
         ]);
 
         // The frontend passes the job's display id (the job_id string, e.g.
@@ -1260,10 +1332,73 @@ class LmsController extends Controller
             abort(404, 'Job not found');
         }
 
-        $job->update([
-            'status' => $validated['status'],
-        ]);
+        $from = $job->status;
+        $to = $validated['status'];
 
-        return response()->json(['success' => true, 'message' => 'Job status updated successfully']);
+        if ($from === $to) {
+            return response()->json(['success' => true, 'message' => "Job is already {$to}"]);
+        }
+
+        if (!$job->canTransitionTo($to)) {
+            $allowed = JobOperation::TRANSITIONS[$from] ?? [];
+
+            return response()->json([
+                'success' => false,
+                'message' => $allowed === []
+                    ? "Job {$job->job_id} is {$from} and can no longer change status."
+                    : "Cannot move job {$job->job_id} from {$from} to {$to}. Allowed: " . implode(', ', $allowed) . '.',
+            ], 422);
+        }
+
+        DB::transaction(function () use ($job, $from, $to) {
+            $attrs = ['status' => $to];
+
+            // Stamp the entry time for this status, but never overwrite one
+            // already recorded (e.g. a job re-entering a status).
+            $timestampColumn = JobOperation::STATUS_TIMESTAMPS[$to] ?? null;
+            if ($timestampColumn && !$job->{$timestampColumn}) {
+                $attrs[$timestampColumn] = now();
+            }
+
+            // Undoing an accidental start clears the evidence that it ever ran.
+            $isRevertToPending = $from === 'in-progress' && $to === 'pending';
+            if ($isRevertToPending) {
+                $attrs['started_at'] = null;
+            }
+
+            $job->update($attrs);
+
+            // Mirror onto the movement so the schedule reflects reality, not just the plan.
+            if ($job->movement) {
+                if ($to === 'in-progress' && !$job->movement->actual_departure) {
+                    $job->movement->update(['actual_departure' => now()]);
+                } elseif ($to === 'completed' && !$job->movement->actual_arrival) {
+                    $job->movement->update(['actual_arrival' => now()]);
+                } elseif ($isRevertToPending) {
+                    $job->movement->update(['actual_departure' => null]);
+                }
+            }
+
+            AuditLog::record(
+                action: match (true) {
+                    $to === 'dispatched' => 'Job dispatched',
+                    $to === 'in-progress' => 'Job started',
+                    $to === 'completed' => 'Job completed',
+                    $to === 'cancelled' => 'Job cancelled',
+                    $isRevertToPending => 'Job reverted to scheduled',
+                    default => 'Job status changed',
+                },
+                target: $job->job_id . ($job->team ? ' · ' . $job->team->team_name : ''),
+                meta: "{$from} → {$to}",
+                subject: $job,
+                eventId: $job->event_id,
+            );
+        });
+
+        return response()->json([
+            'success' => true,
+            'message' => "Job status updated to {$to}",
+            'status' => $to,
+        ]);
     }
 }

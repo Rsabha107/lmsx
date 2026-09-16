@@ -50,6 +50,7 @@ class AirportSeeder extends Seeder
             
             // Middle Eastern Airports
             ['code' => 'DOH', 'name' => 'Hamad International Airport', 'city' => 'Doha', 'country' => 'Qatar'],
+            ['code' => 'HIA', 'name' => 'Hamad International Airport', 'city' => 'Doha', 'country' => 'Qatar'],
             ['code' => 'AUH', 'name' => 'Abu Dhabi International Airport', 'city' => 'Abu Dhabi', 'country' => 'United Arab Emirates'],
             ['code' => 'IST', 'name' => 'Istanbul Airport', 'city' => 'Istanbul', 'country' => 'Turkey'],
             

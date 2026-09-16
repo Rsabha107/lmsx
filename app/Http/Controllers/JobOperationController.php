@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\AuditLog;
 use App\Models\JobCheckpoint;
 use App\Models\JobOperation;
 use Illuminate\Http\Request;
@@ -109,6 +110,8 @@ class JobOperationController extends Controller
             'dispatched_at' => now(),
         ]);
 
+        AuditLog::record('Job dispatched', $job->job_id, 'pending → dispatched', $job, $job->event_id);
+
         // Optionally send notification to supervisor/driver
         // event(new JobDispatched($job));
 
@@ -124,10 +127,18 @@ class JobOperationController extends Controller
             return back()->with('error', 'Job cannot be started in current status');
         }
 
+        $previous = $job->status;
+
         $job->update([
             'status' => 'in-progress',
             'started_at' => now(),
         ]);
+
+        if ($job->movement && !$job->movement->actual_departure) {
+            $job->movement->update(['actual_departure' => now()]);
+        }
+
+        AuditLog::record('Job started', $job->job_id, "{$previous} → in-progress", $job, $job->event_id);
 
         // Auto-complete first checkpoint if it's auto-dispatch
         $firstCheckpoint = $job->checkpoints()->orderBy('order')->first();
@@ -167,6 +178,12 @@ class JobOperationController extends Controller
             'status' => 'completed',
             'completed_at' => now(),
         ]);
+
+        if ($job->movement && !$job->movement->actual_arrival) {
+            $job->movement->update(['actual_arrival' => now()]);
+        }
+
+        AuditLog::record('Job completed', $job->job_id, 'in-progress → completed', $job, $job->event_id);
 
         return redirect()->route('jobs.index')->with('success', "Job {$job->job_id} completed successfully");
     }

@@ -6,6 +6,7 @@
  */
 
 use App\Http\Controllers\LmsController;
+use App\Models\Event;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Route;
@@ -25,8 +26,17 @@ Route::middleware('auth')->group(function () {
 
     // Session: active event selector
     Route::post('/session/active-event', function (Request $request) {
-        Log::info('Setting active event in session', ['event_id' => $request->input('event_id')]);  
-        $request->session()->put('active_event_id', $request->input('event_id'));
+        $eventId = $request->input('event_id');
+        Log::info('Setting active event in session', ['event_id' => $eventId]);
+        $request->session()->put('active_event_id', $eventId);
+
+        // Mobile clients have no session and resolve the event from this flag,
+        // so keep it exclusive and in step with the web selector.
+        if ($eventId) {
+            Event::whereKeyNot($eventId)->update(['active_flag' => false]);
+            Event::whereKey($eventId)->update(['active_flag' => true]);
+        }
+
         return redirect()->back();
     })->name('session.active-event');
 

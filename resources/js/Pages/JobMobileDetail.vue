@@ -75,8 +75,8 @@
             v-for="(cp, i) in checkpoints"
             :key="cp.id"
             :class="['checkpoint-item', i === checkpoints.length - 1 ? 'checkpoint-item--last' : '', !isCheckpointEnabled(i) ? 'checkpoint-item--disabled' : '']"
-            @click="isCheckpointEnabled(i) && cp.status !== 'done' ? openCheckpointModal(cp) : null"
-            :style="{ cursor: isCheckpointEnabled(i) && cp.status !== 'done' ? 'pointer' : cp.status === 'done' ? 'default' : 'not-allowed' }"
+            @click="isCheckpointEnabled(i) && !isSettled(cp) ? openCheckpointModal(cp) : null"
+            :style="{ cursor: isCheckpointEnabled(i) && !isSettled(cp) ? 'pointer' : isSettled(cp) ? 'default' : 'not-allowed' }"
           >
             <!-- Connector Line -->
             <div v-if="i !== checkpoints.length - 1" :class="['checkpoint-connector', `checkpoint-connector--${cp.status}`]"></div>
@@ -84,6 +84,7 @@
             <!-- Icon -->
             <div :class="['checkpoint-icon', `checkpoint-icon--${cp.status}`]">
               <svg-icon v-if="cp.status === 'done'" name="check" :size="12" />
+              <span v-else-if="cp.status === 'skipped'" style="font-size: 11px; font-weight: 700; color: #fff; line-height: 1;">↷</span>
               <svg-icon v-else-if="cp.status === 'active'" name="clock" :size="12" />
               <div v-else class="checkpoint-dot"></div>
             </div>
@@ -92,6 +93,7 @@
             <div class="checkpoint-content">
               <div class="checkpoint-label">
                 {{ cp.label }}
+                <span v-if="cp.status === 'skipped'" class="checkpoint-req-badge checkpoint-skip-badge">SKIPPED</span>
                 <span v-if="cp.requires_photo"
                       @click.stop="cp.has_photo && cp.photo_url ? openPhotoViewer(cp.photo_url, cp.label) : null"
                       :class="['checkpoint-req-badge', 'checkpoint-req-badge--photo', cp.has_photo && cp.photo_url ? 'checkpoint-req-badge--clickable' : '']"
@@ -111,11 +113,13 @@
                 <span v-else-if="cp.status === 'active'" class="time-progress">Awaiting supervisor confirmation</span>
                 <span v-if="cp.requires_baggage_count && bagCountLine(cp)" class="time-bags">{{ bagCountLine(cp) }}</span>
               </div>
+              <div v-if="cp.status === 'skipped' && skipDetail(cp)" class="checkpoint-skip-reason">{{ skipDetail(cp) }}</div>
             </div>
 
             <!-- Status Badge -->
             <div :class="['checkpoint-badge', `checkpoint-badge--${cp.status}`]">
               <svg-icon v-if="cp.status === 'done'" name="check" :size="10" />
+              <span v-else-if="cp.status === 'skipped'" style="font-size: 9px; font-weight: 700;">↷</span>
             </div>
           </div>
         </div>
@@ -364,13 +368,26 @@ function closeSignatureViewer() {
 }
 
 function isCheckpointEnabled(index) {
-  // Checkpoint is enabled if all previous checkpoints are done
+  // Enabled once every earlier checkpoint is settled - a skipped one is
+  // resolved, so it must not block the rest of the chain.
   for (let i = 0; i < index; i++) {
-    if (props.checkpoints[i].status !== 'done') {
+    if (!isSettled(props.checkpoints[i])) {
       return false;
     }
   }
   return true;
+}
+
+function isSettled(cp) {
+  return ['done', 'skipped'].includes(cp?.status);
+}
+
+function skipDetail(cp) {
+  const parts = [];
+  if (cp.skip_reason) parts.push(cp.skip_reason);
+  if (cp.skipped_by) parts.push(`by ${cp.skipped_by}`);
+  if (cp.skipped_at) parts.push(`at ${cp.skipped_at}`);
+  return parts.join(' · ');
 }
 
 function isDelayed(estimatedTime, actualTime) {
@@ -1044,6 +1061,10 @@ function formatJobToLocation(job) {
   background: var(--border);
 }
 
+.checkpoint-connector--skipped {
+  background: var(--border-strong);
+}
+
 .checkpoint-icon {
   width: 24px;
   height: 24px;
@@ -1071,6 +1092,11 @@ function formatJobToLocation(job) {
   background: var(--panel);
   border: 2px solid var(--border);
   color: var(--ink4);
+}
+
+.checkpoint-icon--skipped {
+  background: var(--ink4);
+  color: #fff;
 }
 
 .checkpoint-dot {
@@ -1175,6 +1201,24 @@ function formatJobToLocation(job) {
 .checkpoint-badge--pending {
   background: transparent;
   border: 1px solid var(--border);
+}
+
+.checkpoint-badge--skipped {
+  background: var(--panel);
+  color: var(--ink3);
+  border: 1px solid var(--border);
+}
+
+.checkpoint-skip-badge {
+  background: var(--panel);
+  color: var(--ink3);
+  border: 1px solid var(--border);
+}
+
+.checkpoint-skip-reason {
+  font-size: 11px;
+  color: var(--ink3);
+  margin-top: 2px;
 }
 
 /* Actions Section */

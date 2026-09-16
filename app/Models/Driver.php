@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Driver extends Model
 {
@@ -17,6 +18,16 @@ class Driver extends Model
     protected $casts = [
         'provider_id' => 'integer',
     ];
+
+    public function movements(): HasMany
+    {
+        return $this->hasMany(Movement::class);
+    }
+
+    public function jobs(): HasMany
+    {
+        return $this->hasMany(JobOperation::class);
+    }
 
     /**
      * Scope a query to only include available drivers.

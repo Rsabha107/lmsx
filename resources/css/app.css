@@ -13,18 +13,20 @@
 }
 
 :root {
-    --bg: #F7F8FA;
+    /* page and cards are both white, so borders/panels carry the separation */
+    --bg: #FFFFFF;
     --surface: #FFFFFF;
-    --panel: #FBFBFD;
-    --border: #E6E8EE;
-    --border-strong: #D7DAE2;
+    --panel: #F5F6F8;
+    --border: #E1E4EA;
+    --border-strong: #CDD2DB;
     --ink: #0F1724;
     --ink2: #384152;
     --ink3: #6B7486;
     --ink4: #9AA2B2;
-    --accent: #6366F1;
-    --accent-soft: #EEF0FE;
-    --accent-fg: #4338CA;
+    --accent: #0F1724;
+    --accent-soft: #F0F1F4;
+    --accent-fg: #0F1724;
+    --accent-ring: rgba(15, 23, 36, 0.12);
     --live: #2563EB;
     --live-soft: #EFF6FF;
     --warn: #F59E0B;
@@ -47,8 +49,12 @@
     --ink3: #7D8799;
     --ink4: #5C6477;
     /* soft/tint tokens need dark-mode overrides so they don't render as white-on-white */
-    --accent-soft: rgba(99, 102, 241, 0.18);
-    --accent-fg: #818CF8;
+    /* accent stays dark enough for the white text that sits on it, while reading as a
+       lighter neutral than the surface behind it */
+    --accent: #3A4353;
+    --accent-soft: rgba(232, 236, 243, 0.14);
+    --accent-fg: #E8ECF3;
+    --accent-ring: rgba(232, 236, 243, 0.18);
     --ok-soft: rgba(22, 163, 74, 0.18);
     --warn-soft: rgba(245, 158, 11, 0.18);
     --danger-soft: rgba(239, 68, 68, 0.18);
@@ -93,3 +99,19 @@ button { font-family: inherit; }
 /* Compact density */
 [data-density="compact"] { --pad-card: 10px; }
 [data-density="comfortable"] { --pad-card: 14px; }
+
+/* On a white page, a border alone barely separates a white card - lift the
+   common card shells with a faint shadow. Global (not scoped) so every page
+   using these class names picks it up. */
+.table-card,
+.contact-card,
+.fleet-card {
+    box-shadow: 0 1px 2px rgba(15, 23, 36, 0.04), 0 1px 8px rgba(15, 23, 36, 0.03);
+}
+
+[data-theme="dark"] .table-card,
+[data-theme="dark"] .contact-card,
+[data-theme="dark"] .fleet-card {
+    box-shadow: none;
+}
+

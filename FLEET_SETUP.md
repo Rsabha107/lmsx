@@ -76,8 +76,6 @@ The `fleet_providers` table has the following columns:
 - `contact_person` - Contact person name (nullable)
 - `phone` - Contact phone number (nullable)
 - `email` - Contact email address (nullable)
-- `total_vehicles` - Number of vehicles (default: 0)
-- `total_drivers` - Number of drivers (default: 0)
 - `rating` - Provider rating out of 5 (default: 0.0)
 - `status` - Provider status (active, standby)
 - `notes` - Additional notes about provider (nullable)
@@ -201,8 +199,6 @@ FleetProvider::create([
     'contact_person' => 'J. Smith',
     'phone' => '+33 6 78 90 05',
     'email' => 'j.smith@express.com',
-    'total_vehicles' => 10,
-    'total_drivers' => 15,
     'rating' => 4.6,
     'status' => 'active',
     'notes' => '24/7 availability, premium service',

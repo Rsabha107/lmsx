@@ -13,7 +13,7 @@
     <aside :class="['sidebar', sidebarOpen ? 'sidebar--open' : '', !isMobile && sidebarMini ? 'sidebar--mini' : '']">
       <div class="sidebar-logo">
         <span class="sidebar-logo-mark">LMS</span>
-        <span class="sidebar-logo-name">Atlas Cup</span>
+        <span class="sidebar-logo-name">NAQLA LMS</span>
         <button v-if="isMobile" class="sidebar-close-btn" @click="sidebarOpen = false">
           <svg-icon name="x" />
         </button>
@@ -238,6 +238,7 @@ const navItems = [
       { label: 'Fleet',         route: 'fleet',             icon: 'fleet' },
       { label: 'Movement Tracking', route: 'kit-truck',     icon: 'fleet' },
       { label: 'Contacts',      route: 'contacts',          icon: 'contacts' },
+      { label: 'Base Camp Hotel', route: 'base-camp-hotels', icon: 'building' },
       { label: 'Audit Trail',   route: 'audit',             icon: 'audit' },
     ]
   },

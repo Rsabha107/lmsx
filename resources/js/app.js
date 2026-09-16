@@ -26,7 +26,7 @@ const LmsxPreset = definePreset(Aura, {
 });
 
 createInertiaApp({
-    title: title => title ? `${title} — Atlas Cup LMS` : 'Atlas Cup LMS',
+    title: title => title ? `${title} — NAQLA LMS` : 'NAQLA LMS',
     resolve: name => resolvePageComponent(
         `./Pages/${name}.vue`,
         import.meta.glob('./Pages/**/*.vue'),
@@ -42,6 +42,6 @@ createInertiaApp({
             .mount(el);
     },
     progress: {
-        color: '#6366F1',
+        color: '#0F1724',
     },
 });

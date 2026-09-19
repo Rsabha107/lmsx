@@ -28,6 +28,15 @@ class AuthController extends Controller
 
         if (Auth::attempt($credentials, $request->boolean('remember'))) {
             $request->session()->regenerate();
+
+            // Field supervisors have no desk console, so honouring an intended
+            // console URL would land them on a 403.
+            if (! $request->user()->can('console.view')) {
+                $request->session()->forget('url.intended');
+
+                return redirect()->route('jobs.mobile');
+            }
+
             return redirect()->intended('/');
         }
 

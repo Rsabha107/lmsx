@@ -190,7 +190,7 @@
                 variant="primary"
                 size="sm"
                 @click="promptStartJob">Start Job</Button>
-              <Button variant="primary" size="sm" @click="openOverrideModal">Override</Button>
+              <Button v-if="canOverride" variant="primary" size="sm" @click="openOverrideModal">Override</Button>
             </div>
           </div>
           <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 14px;">
@@ -491,7 +491,7 @@
 
       <template #footer>
         <div class="override-footer-inner">
-          <span class="override-signed-as">Signed as <strong>Logistics Manager</strong></span>
+          <span class="override-signed-as">Signed as <strong>{{ page.props.auth?.user?.name || 'Unknown user' }}</strong></span>
           <div style="display:flex;gap:8px;">
             <Button variant="secondary" size="sm" @click="showOverrideModal = false" :disabled="overrideProcessing">Cancel</Button>
             <Button variant="primary" size="sm" :disabled="!canSubmitOverride" :processing="overrideProcessing" @click="submitOverride">Override &amp; log</Button>
@@ -1042,6 +1042,7 @@ const resourceOptions = computed(() => {
 });
 
 // Override modal
+const canOverride = computed(() => page.props.auth?.can?.['jobs.override'] === true);
 const showOverrideModal = ref(false);
 const overrideProcessing = ref(false);
 const overrideCheckpoint = ref(null);

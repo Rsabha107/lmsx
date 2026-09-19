@@ -176,7 +176,7 @@
     </div>
 
     <!-- Add Contact Modal -->
-    <div v-if="showAddModal" class="modal-backdrop" @click.self="closeModal">
+    <div v-if="showAddModal" v-dialog="closeModal" class="modal-backdrop" @click.self="closeModal">
       <div class="contact-modal">
         <div class="modal-header">
           <h3 class="modal-title">Add New Contact</h3>
@@ -230,7 +230,7 @@
     </div>
 
     <!-- Edit Contact Modal -->
-    <div v-if="showEditModal" class="modal-backdrop" @click.self="closeEditModal">
+    <div v-if="showEditModal" v-dialog="closeEditModal" class="modal-backdrop" @click.self="closeEditModal">
       <div class="contact-modal">
         <div class="modal-header">
           <h3 class="modal-title">Edit Contact</h3>

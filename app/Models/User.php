@@ -7,6 +7,7 @@ use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
@@ -36,6 +37,41 @@ class User extends Authenticatable
     public function functionalAreas(): HasMany
     {
         return $this->hasMany(UserFunctionalArea::class);
+    }
+
+    public function events(): BelongsToMany
+    {
+        return $this->belongsToMany(Event::class, 'user_events')->withTimestamps();
+    }
+
+    /**
+     * Admins and holders of events.access-all reach every event. Everyone else
+     * is limited to their assignments, and no assignments means no access.
+     */
+    public function canAccessEvent(?int $eventId): bool
+    {
+        if (! $eventId) {
+            return false;
+        }
+
+        if ($this->hasRole('admin') || $this->can('events.access-all')) {
+            return true;
+        }
+
+        return $this->events->pluck('id')->contains($eventId);
+    }
+
+    /**
+     * @return array<int, int>
+     */
+    public function accessibleEventIds(): array
+    {
+        return $this->events->pluck('id')->all();
+    }
+
+    public function canAccessAllEvents(): bool
+    {
+        return $this->hasRole('admin') || $this->can('events.access-all');
     }
 
     public function hasFunctionalArea(?string $area): bool

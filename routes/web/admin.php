@@ -11,7 +11,9 @@ use App\Http\Controllers\SettingsController;
 use App\Http\Controllers\UserController;
 use Illuminate\Support\Facades\Route;
 
-Route::middleware('auth')->prefix('setups')->name('setups.')->group(function () {
+// User, role and permission management are privilege-granting surfaces, so the
+// whole Setups area is admin-only rather than merely authenticated.
+Route::middleware(['auth', 'role:admin'])->prefix('setups')->name('setups.')->group(function () {
     
     // User Management
     Route::prefix('users')->name('users.')->group(function () {

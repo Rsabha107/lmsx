@@ -44,6 +44,11 @@ class Event extends Model
                     ->withTimestamps();
     }
 
+    public function users(): BelongsToMany
+    {
+        return $this->belongsToMany(User::class, 'user_events')->withTimestamps();
+    }
+
     public function scopeActive($query)
     {
         return $query->where('is_active', true);

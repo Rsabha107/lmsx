@@ -7,6 +7,9 @@
           :key="toast.id"
           class="toast"
           :class="`toast-${toast.type}`"
+          :role="toast.type === 'error' ? 'alert' : 'status'"
+          :aria-live="toast.type === 'error' ? 'assertive' : 'polite'"
+          aria-atomic="true"
           @click="removeToast(toast.id)"
         >
           <div class="toast-icon">
@@ -24,7 +27,7 @@
             </svg>
           </div>
           <div class="toast-message">{{ toast.message }}</div>
-          <button class="toast-close" @click.stop="removeToast(toast.id)">
+          <button type="button" class="toast-close" aria-label="Dismiss notification" @click.stop="removeToast(toast.id)">
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
               <path d="M12.5 3.5L3.5 12.5M3.5 3.5L12.5 12.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
             </svg>
@@ -46,9 +49,11 @@ const { toasts, removeToast } = useToast();
   position: fixed;
   top: 20px;
   right: 20px;
+  left: 20px;
   z-index: 9999;
   display: flex;
   flex-direction: column;
+  align-items: flex-end;
   gap: 10px;
   pointer-events: none;
 }
@@ -57,8 +62,9 @@ const { toasts, removeToast } = useToast();
   display: flex;
   align-items: center;
   gap: 12px;
-  min-width: 300px;
-  max-width: 500px;
+  /* A flat 300px overflows narrow phones. */
+  min-width: min(300px, 100%);
+  max-width: min(500px, 100%);
   padding: 14px 16px;
   background: white;
   border-radius: 8px;
@@ -114,6 +120,8 @@ const { toasts, removeToast } = useToast();
 
 .toast-message {
   flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
   font-size: 14px;
   font-weight: 500;
   color: #1F2937;

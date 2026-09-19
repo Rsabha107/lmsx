@@ -53,6 +53,7 @@
                 <th>City</th>
                 <th>Country</th>
                 <th>Type</th>
+                <th>Events</th>
                 <th class="center">Capacity</th>
                 <th class="center" style="width:100px;">Actions</th>
               </tr>
@@ -79,6 +80,14 @@
                 <td>
                   <span :class="['type-pill', `type-pill--${venue.type}`]">{{ formatType(venue.type) }}</span>
                 </td>
+                <td>
+                  <div class="event-tags">
+                    <span v-for="e in venue.events" :key="e.id" class="event-tag" :title="e.name">
+                      {{ e.short_name || e.name }}
+                    </span>
+                    <span v-if="!venue.events?.length" style="color:var(--ink4);">—</span>
+                  </div>
+                </td>
                 <td class="center mono">{{ venue.capacity ? venue.capacity.toLocaleString() : '—' }}</td>
                 <td class="actions-cell" @click.stop>
                   <TableActions
@@ -88,7 +97,7 @@
                 </td>
               </tr>
               <tr v-if="filteredVenues.length === 0">
-                <td colspan="6" style="text-align:center;padding:40px;color:var(--ink3);">No venues found.</td>
+                <td colspan="7" style="text-align:center;padding:40px;color:var(--ink3);">No venues found.</td>
               </tr>
             </tbody>
           </table>
@@ -378,6 +387,11 @@ function confirmDelete() {
 
 /* Type pills */
 .type-pill { display:inline-block; padding:2px 8px; border-radius:12px; font-size:11px; font-weight:600; text-transform:capitalize; }
+.event-tags { display:flex; flex-wrap:wrap; gap:4px; }
+.event-tag {
+  background: var(--panel); color: var(--ink2); border: 1px solid var(--border);
+  font-size: 11px; font-weight: 500; padding: 2px 7px; border-radius: 20px; white-space: nowrap;
+}
 .type-pill--stadium         { background:#EFF6FF; color:#1d4ed8; }
 .type-pill--training_ground { background:#F0FDF4; color:#15803d; }
 .type-pill--hotel           { background:#FEF3C7; color:#92400e; }

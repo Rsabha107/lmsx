@@ -45,6 +45,7 @@
             </div>
             <span class="notif-time">{{ n.t }}</span>
           </div>
+          <div v-if="!notifications.length" class="notif-meta">No alerts right now.</div>
         </div>
       </section>
     </div>

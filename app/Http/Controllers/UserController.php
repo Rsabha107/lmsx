@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Event;
 use App\Models\User;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -16,10 +17,11 @@ class UserController extends Controller
     public function index(): Response
     {
         return Inertia::render('Setups/Users', [
-            'users' => User::with('roles:id,name')
+            'users' => User::with(['roles:id,name', 'events:id,name'])
                 ->orderBy('name')
                 ->get(['id', 'name', 'email', 'created_at']),
             'roles' => Role::orderBy('name')->get(['id', 'name']),
+            'events' => Event::orderByDesc('active_flag')->orderByDesc('id')->get(['id', 'name', 'short_name']),
         ]);
     }
 
@@ -31,6 +33,8 @@ class UserController extends Controller
             'password' => 'required|string|min:8',
             'roles'    => 'nullable|array',
             'roles.*'  => 'integer|exists:roles,id',
+            'events'   => 'nullable|array',
+            'events.*' => 'integer|exists:events,id',
         ]);
 
         $user = User::create([
@@ -40,10 +44,11 @@ class UserController extends Controller
         ]);
 
         $user->syncRoles($data['roles'] ?? []);
+        $user->events()->sync($data['events'] ?? []);
 
         Log::info("User created: {$user->email}");
 
-        return redirect()->route('users.index')->with('success', 'User created.');
+        return redirect()->route('setups.users.index')->with('success', 'User created.');
     }
 
     public function update(Request $request, int $id): RedirectResponse
@@ -56,6 +61,8 @@ class UserController extends Controller
             'password' => 'nullable|string|min:8',
             'roles'    => 'nullable|array',
             'roles.*'  => 'integer|exists:roles,id',
+            'events'   => 'nullable|array',
+            'events.*' => 'integer|exists:events,id',
         ]);
 
         $user->name  = $data['name'];
@@ -67,10 +74,11 @@ class UserController extends Controller
 
         $user->save();
         $user->syncRoles($data['roles'] ?? []);
+        $user->events()->sync($data['events'] ?? []);
 
         Log::info("User updated: {$user->email}");
 
-        return redirect()->route('users.index')->with('success', 'User updated.');
+        return redirect()->route('setups.users.index')->with('success', 'User updated.');
     }
 
     public function destroy(Request $request, int $id): RedirectResponse
@@ -86,6 +94,6 @@ class UserController extends Controller
 
         Log::info("User deleted: {$email}");
 
-        return redirect()->route('users.index')->with('success', 'User deleted.');
+        return redirect()->route('setups.users.index')->with('success', 'User deleted.');
     }
 }

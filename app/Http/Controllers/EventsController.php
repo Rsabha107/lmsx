@@ -13,6 +13,7 @@ use App\Models\Venue;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Arr;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -63,9 +64,12 @@ class EventsController extends Controller
             'end_date'     => 'nullable|date|after_or_equal:start_date',
             'status'       => 'nullable|in:upcoming,active,completed',
             'notes'        => 'nullable|string',
+            'venue_ids'    => 'nullable|array',
+            'venue_ids.*'  => 'integer|exists:venues,id',
         ]);
 
-        Event::create($validated);
+        $event = Event::create(Arr::except($validated, 'venue_ids'));
+        $event->venues()->sync($validated['venue_ids'] ?? []);
 
         return redirect()->back()->with('success', 'Event created successfully.');
     }
@@ -82,9 +86,20 @@ class EventsController extends Controller
             'end_date'     => 'nullable|date|after_or_equal:start_date',
             'status'       => 'nullable|in:upcoming,active,completed',
             'notes'        => 'nullable|string',
+            'venue_ids'    => 'nullable|array',
+            'venue_ids.*'  => 'integer|exists:venues,id',
         ]);
 
-        $event->update($validated);
+        $event->update(Arr::except($validated, 'venue_ids'));
+
+        // Only touch assignments when the form actually submitted them, so other
+        // callers can't silently wipe the pivot (purpose/notes included).
+        if ($request->has('venue_ids')) {
+            $event->venues()->syncWithoutDetaching($validated['venue_ids'] ?? []);
+            $event->venues()->detach(
+                $event->venues()->pluck('venues.id')->diff($validated['venue_ids'] ?? [])->all()
+            );
+        }
 
         return redirect()->back()->with('success', 'Event updated successfully.');
     }
@@ -96,23 +111,34 @@ class EventsController extends Controller
         return redirect()->back()->with('success', 'Event deleted successfully.');
     }
 
-    // Assign a venue to an event
+    // Assign one or more venues to an event
     public function assignVenue(Request $request, int $id): RedirectResponse
     {
         $event = Event::findOrFail($id);
 
         $validated = $request->validate([
-            'venue_id' => 'required|integer|exists:venues,id',
-            'purpose'  => 'nullable|string|max:100',
-            'notes'    => 'nullable|string',
+            'venue_ids'   => 'required|array|min:1',
+            'venue_ids.*' => 'integer|exists:venues,id',
+            'purpose'     => 'nullable|string|max:100',
+            'notes'       => 'nullable|string',
         ]);
 
-        $event->venues()->attach($validated['venue_id'], [
+        $pivot = [
             'purpose' => $validated['purpose'] ?? null,
             'notes'   => $validated['notes'] ?? null,
-        ]);
+        ];
 
-        return redirect()->back()->with('success', 'Venue assigned to event.');
+        // syncWithoutDetaching keeps existing assignments and makes a repeated
+        // submit idempotent instead of raising a duplicate-key error.
+        $event->venues()->syncWithoutDetaching(
+            collect($validated['venue_ids'])->mapWithKeys(fn ($venueId) => [$venueId => $pivot])->all()
+        );
+
+        $count = count($validated['venue_ids']);
+
+        return redirect()->back()->with('success', $count === 1
+            ? 'Venue assigned to event.'
+            : "{$count} venues assigned to event.");
     }
 
     // Remove a venue from an event

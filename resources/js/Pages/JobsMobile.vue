@@ -20,11 +20,13 @@
 
       <!-- Job Cards -->
       <div class="job-cards">
-        <div
+        <button
           v-for="job in schedule"
           :key="job.id"
-          @click="selectJob(job)"
+          type="button"
           class="job-card"
+          :aria-label="`Open job ${job.jobId || job.id} for ${job.team}`"
+          @click="selectJob(job)"
         >
           <div class="job-card-header">
             <div class="job-card-left">
@@ -90,7 +92,7 @@
             <svg-icon name="warn" :size="14" />
             <span>Delayed +{{ job.delay }}m</span>
           </div>
-        </div>
+        </button>
       </div>
 
       <!-- Floating Action Button -->
@@ -385,6 +387,11 @@ function formatJobToLocation(job) {
 }
 
 .job-card {
+  display: block;
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  color: inherit;
   background: var(--surface);
   border: 2px solid var(--border);
   border-radius: 12px;

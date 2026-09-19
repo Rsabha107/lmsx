@@ -20,14 +20,28 @@ return Application::configure(basePath: dirname(__DIR__))
         // proxy, which breaks signed URL validation (portal links, RSVP links)
         // since the scheme used to validate the signature won't match the one
         // used to generate it.
+        //
+        // Trusting '*' is only safe while the origin is unreachable except through
+        // the load balancer: anyone who can hit it directly can forge their client
+        // IP, scheme and host. Set TRUSTED_PROXIES to the balancer's CIDR(s) if the
+        // origin is ever exposed.
         $middleware->trustProxies(
-            at: '*',
+            at: array_map('trim', explode(',', (string) env('TRUSTED_PROXIES', '*'))),
             headers: Request::HEADER_X_FORWARDED_FOR
                 | Request::HEADER_X_FORWARDED_HOST
                 | Request::HEADER_X_FORWARDED_PORT
                 | Request::HEADER_X_FORWARDED_PROTO
                 | Request::HEADER_X_FORWARDED_AWS_ELB
         );
+
+        // Blocks Host-header poisoning (password-reset links pointing at an
+        // attacker's domain). Opt-in, because a wrong value 403s every request.
+        if ($trustedHosts = env('TRUSTED_HOSTS')) {
+            $middleware->trustHosts(
+                at: array_map('trim', explode(',', (string) $trustedHosts)),
+                subdomains: true,
+            );
+        }
         $middleware->web(append: [
             \App\Http\Middleware\HandleInertiaRequests::class,
             \App\Http\Middleware\CheckInactivity::class,

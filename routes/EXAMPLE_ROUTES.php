@@ -18,7 +18,7 @@ use App\Models\MovementTemplate;
 use Illuminate\Support\Facades\Route;
 
 // Job Operations (Field Execution)
-Route::prefix('jobs')->name('jobs.')->group(function () {
+Route::prefix('jobs')->name('jobs.')->middleware('auth')->group(function () {
     // Route::get('/', [JobOperationController::class, 'index'])->name('index'); // Commented out - conflicts with LmsController@jobs
     Route::get('/{job}', [JobOperationController::class, 'show'])->name('show');
     Route::post('/{job}/dispatch', [JobOperationController::class, 'dispatch'])->name('dispatch');
@@ -38,8 +38,7 @@ Route::prefix('api')->name('api.')->middleware(['auth:sanctum'])->group(function
 });
 
 // Admin Routes (Template Management)
-// Note: Middleware commented out for testing. Add back: ->middleware(['auth', 'admin'])
-Route::prefix('admin')->name('admin.')->group(function () {
+Route::prefix('admin')->name('admin.')->middleware(['auth', 'role:admin'])->group(function () {
     // Checkpoint Library
     Route::delete('checkpoints/bulk-delete', [CheckpointController::class, 'destroyBulk'])->name('checkpoints.bulk-delete');
     Route::resource('checkpoints', CheckpointController::class);

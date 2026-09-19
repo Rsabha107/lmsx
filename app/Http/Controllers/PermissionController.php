@@ -28,7 +28,7 @@ class PermissionController extends Controller
 
         Log::info("Permission created: {$permission->name}");
 
-        return redirect()->route('permissions.index')->with('success', 'Permission created.');
+        return redirect()->route('setups.permissions.index')->with('success', 'Permission created.');
     }
 
     public function update(Request $request, int $id): RedirectResponse
@@ -43,7 +43,7 @@ class PermissionController extends Controller
 
         Log::info("Permission updated: {$permission->name}");
 
-        return redirect()->route('permissions.index')->with('success', 'Permission updated.');
+        return redirect()->route('setups.permissions.index')->with('success', 'Permission updated.');
     }
 
     public function destroy(int $id): RedirectResponse
@@ -54,6 +54,6 @@ class PermissionController extends Controller
 
         Log::info("Permission deleted: {$name}");
 
-        return redirect()->route('permissions.index')->with('success', 'Permission deleted.');
+        return redirect()->route('setups.permissions.index')->with('success', 'Permission deleted.');
     }
 }

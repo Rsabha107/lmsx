@@ -70,14 +70,22 @@
           <div class="section-count">{{ completedCount }} of {{ checkpoints.length }} complete</div>
         </div>
 
-        <div class="checkpoint-list">
-          <div
+        <ul class="checkpoint-list">
+          <li
             v-for="(cp, i) in checkpoints"
             :key="cp.id"
             :class="['checkpoint-item', i === checkpoints.length - 1 ? 'checkpoint-item--last' : '', !isCheckpointEnabled(i) ? 'checkpoint-item--disabled' : '']"
-            @click="isCheckpointEnabled(i) && !isSettled(cp) ? openCheckpointModal(cp) : null"
-            :style="{ cursor: isCheckpointEnabled(i) && !isSettled(cp) ? 'pointer' : isSettled(cp) ? 'default' : 'not-allowed' }"
           >
+            <!-- Covers the row so the whole card is one keyboard target; the
+                 evidence badges sit above it. -->
+            <button
+              type="button"
+              class="checkpoint-open"
+              :disabled="!isCheckpointEnabled(i) || isSettled(cp)"
+              :aria-label="`Confirm ${cp.label}`"
+              @click="openCheckpointModal(cp)"
+            ></button>
+
             <!-- Connector Line -->
             <div v-if="i !== checkpoints.length - 1" :class="['checkpoint-connector', `checkpoint-connector--${cp.status}`]"></div>
             
@@ -94,18 +102,24 @@
               <div class="checkpoint-label">
                 {{ cp.label }}
                 <span v-if="cp.status === 'skipped'" class="checkpoint-req-badge checkpoint-skip-badge">SKIPPED</span>
-                <span v-if="cp.requires_photo"
-                      @click.stop="cp.has_photo && cp.photo_url ? openPhotoViewer(cp.photo_url, cp.label) : null"
+                <button v-if="cp.requires_photo"
+                      type="button"
+                      :disabled="!(cp.has_photo && cp.photo_url)"
+                      :aria-label="cp.has_photo && cp.photo_url ? `View photo for ${cp.label}` : `${cp.label} requires a photo`"
+                      @click.stop="openPhotoViewer(cp.photo_url, cp.label)"
                       :class="['checkpoint-req-badge', 'checkpoint-req-badge--photo', cp.has_photo && cp.photo_url ? 'checkpoint-req-badge--clickable' : '']"
                       :style="{ background: cp.has_photo ? '#f0fdf4' : '#fffbeb', color: cp.has_photo ? '#166534' : '#92400e' }">
                   📷 {{ cp.has_photo ? 'View' : 'Req' }}
-                </span>
-                <span v-if="cp.requires_signature"
-                      @click.stop="cp.has_signature && cp.signature_url ? openSignatureViewer(cp.signature_url, cp.label) : null"
+                </button>
+                <button v-if="cp.requires_signature"
+                      type="button"
+                      :disabled="!(cp.has_signature && cp.signature_url)"
+                      :aria-label="cp.has_signature && cp.signature_url ? `View signature for ${cp.label}` : `${cp.label} requires a signature`"
+                      @click.stop="openSignatureViewer(cp.signature_url, cp.label)"
                       :class="['checkpoint-req-badge', 'checkpoint-req-badge--sign', cp.has_signature && cp.signature_url ? 'checkpoint-req-badge--clickable' : '']"
                       :style="{ background: cp.has_signature ? '#f0fdf4' : '#fffbeb', color: cp.has_signature ? '#166534' : '#92400e' }">
                   ✍ {{ cp.has_signature ? 'View' : 'Req' }}
-                </span>
+                </button>
               </div>
               <div class="checkpoint-time">
                 <span class="time-planned">Est. {{ cp.time }}</span>
@@ -121,8 +135,8 @@
               <svg-icon v-if="cp.status === 'done'" name="check" :size="10" />
               <span v-else-if="cp.status === 'skipped'" style="font-size: 9px; font-weight: 700;">↷</span>
             </div>
-          </div>
-        </div>
+          </li>
+        </ul>
       </div>
 
       <!-- Actions Section -->
@@ -141,9 +155,9 @@
     <!-- Photo Viewer Modal -->
     <teleport to="body">
       <transition name="slide-up">
-        <div v-if="showPhotoViewer" @click="closePhotoViewer" class="evidence-viewer-overlay">
-          <div class="evidence-viewer-content" @click.stop>
-            <button @click="closePhotoViewer" class="evidence-viewer-close">
+        <div v-if="showPhotoViewer" v-dialog="closePhotoViewer" @click="closePhotoViewer" class="evidence-viewer-overlay">
+          <div class="evidence-viewer-content" :aria-label="`Photo evidence${currentEvidenceName ? ' for ' + currentEvidenceName : ''}`" @click.stop>
+            <button @click="closePhotoViewer" type="button" class="evidence-viewer-close" aria-label="Close photo">
               <svg-icon name="x" :size="20" />
             </button>
             <img v-if="currentPhoto" :src="currentPhoto" alt="Checkpoint photo" class="evidence-viewer-image" />
@@ -156,9 +170,9 @@
     <!-- Signature Viewer Modal -->
     <teleport to="body">
       <transition name="slide-up">
-        <div v-if="showSignatureViewer" @click="closeSignatureViewer" class="evidence-viewer-overlay">
-          <div class="evidence-viewer-content" @click.stop>
-            <button @click="closeSignatureViewer" class="evidence-viewer-close">
+        <div v-if="showSignatureViewer" v-dialog="closeSignatureViewer" @click="closeSignatureViewer" class="evidence-viewer-overlay">
+          <div class="evidence-viewer-content" :aria-label="`Signature evidence${currentEvidenceName ? ' for ' + currentEvidenceName : ''}`" @click.stop>
+            <button @click="closeSignatureViewer" type="button" class="evidence-viewer-close" aria-label="Close signature">
               <svg-icon name="x" :size="20" />
             </button>
             <img v-if="currentSignature" :src="currentSignature" alt="Checkpoint signature" class="evidence-viewer-image" />
@@ -171,9 +185,9 @@
     <!-- Checkpoint Confirmation Modal -->
     <teleport to="body">
       <transition name="slide-up">
-        <div v-if="showCheckpointModal" class="mobile-modal">
-          <div class="mobile-modal-overlay" @click="showCheckpointModal = false"></div>
-          <div class="mobile-modal-content">
+        <div v-if="showCheckpointModal" v-dialog="closeCheckpointModal" class="mobile-modal">
+          <div class="mobile-modal-overlay" @click="closeCheckpointModal"></div>
+          <div class="mobile-modal-content" data-dialog-panel>
             <div class="mobile-modal-handle"></div>
             
             <div class="modal-header">
@@ -181,16 +195,19 @@
                 <div class="modal-title">Confirm {{ selectedCheckpoint.label }}</div>
                 <div class="modal-subtitle">{{ job.id }} · {{ job.team }}</div>
               </div>
-              <button class="modal-close-btn" @click="showCheckpointModal = false">
+              <button class="modal-close-btn" type="button" aria-label="Close" @click="closeCheckpointModal">
                 <svg-icon name="x" :size="20" />
               </button>
             </div>
 
+            <p v-if="formError" class="form-error-banner" role="alert">{{ formError }}</p>
+
             <div class="form-section">
               <div class="form-field">
-                <label class="form-label">Actual Time</label>
+                <label class="form-label" for="cp-actual-time">Actual Time</label>
                 <div class="time-input-wrapper">
                   <input
+                    id="cp-actual-time"
                     v-model="actualTime"
                     type="time"
                     class="form-input"
@@ -204,26 +221,27 @@
 
               <div v-if="selectedCheckpoint?.requires_baggage_count" style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
                 <div class="form-field">
-                  <label class="form-label">Planned Bags</label>
-                  <input v-model.number="plannedBags" type="number" min="0" class="form-input" placeholder="0" />
+                  <label class="form-label" for="cp-planned-bags">Planned Bags</label>
+                  <input id="cp-planned-bags" v-model.number="plannedBags" type="number" min="0" class="form-input" placeholder="0" />
                 </div>
                 <div class="form-field">
-                  <label class="form-label">Actual Bags</label>
-                  <input v-model.number="bagsLoaded" type="number" min="0" class="form-input" placeholder="0" />
+                  <label class="form-label" for="cp-bags-loaded">Actual Bags</label>
+                  <input id="cp-bags-loaded" v-model.number="bagsLoaded" type="number" min="0" class="form-input" placeholder="0" />
                 </div>
                 <div class="form-field">
-                  <label class="form-label">Food Bags</label>
-                  <input v-model.number="foodBags" type="number" min="0" class="form-input" placeholder="0" />
+                  <label class="form-label" for="cp-food-bags">Food Bags</label>
+                  <input id="cp-food-bags" v-model.number="foodBags" type="number" min="0" class="form-input" placeholder="0" />
                 </div>
                 <div class="form-field">
-                  <label class="form-label">Oversized</label>
-                  <input v-model.number="oversizedPieces" type="number" min="0" class="form-input" placeholder="0" />
+                  <label class="form-label" for="cp-oversized">Oversized</label>
+                  <input id="cp-oversized" v-model.number="oversizedPieces" type="number" min="0" class="form-input" placeholder="0" />
                 </div>
               </div>
 
               <div class="form-field">
-                <label class="form-label">Note (Optional)</label>
+                <label class="form-label" for="cp-note">Note (Optional)</label>
                 <textarea
+                  id="cp-note"
                   v-model="checkpointNote"
                   class="form-textarea"
                   rows="3"
@@ -232,11 +250,11 @@
               </div>
 
               <div v-if="selectedCheckpoint?.requires_photo" class="form-field">
-                <label class="form-label">Photo Required 📷</label>
-                <div class="photo-capture-wrapper">
+                <span class="form-label" id="cp-photo-label">Photo Required 📷</span>
+                <div class="photo-capture-wrapper" role="group" aria-labelledby="cp-photo-label">
                   <div v-if="photoPreview" class="photo-preview">
                     <img :src="photoPreview" alt="Captured photo" />
-                    <button class="remove-photo-btn" @click="removePhoto" type="button">
+                    <button class="remove-photo-btn" @click="removePhoto" type="button" aria-label="Remove photo">
                       ✕
                     </button>
                   </div>
@@ -249,7 +267,13 @@
                       @change="handlePhotoCapture"
                       style="display: none;"
                     />
-                    <button class="photo-btn photo-btn--camera" @click="openCamera" type="button">
+                    <button
+                      class="photo-btn photo-btn--camera"
+                      type="button"
+                      :aria-invalid="fieldErrors.photo ? 'true' : undefined"
+                      :aria-describedby="fieldErrors.photo ? 'cp-photo-error' : undefined"
+                      @click="openCamera"
+                    >
                       📷 Take Photo
                     </button>
                     <button class="photo-btn photo-btn--upload" @click="openFileUpload" type="button">
@@ -257,11 +281,30 @@
                     </button>
                   </div>
                 </div>
+                <p v-if="fieldErrors.photo" id="cp-photo-error" class="field-error">{{ fieldErrors.photo }}</p>
               </div>
 
               <div v-if="selectedCheckpoint?.requires_signature" class="form-field">
-                <label class="form-label">Signature Required ✍</label>
-                <div class="signature-pad-wrapper">
+                <span class="form-label" id="cp-signature-label">Signature Required ✍</span>
+
+                <div class="sig-mode-switch" role="group" aria-labelledby="cp-signature-label">
+                  <button
+                    type="button"
+                    class="sig-mode-btn"
+                    :class="{ 'sig-mode-btn--active': signatureMode === 'draw' }"
+                    :aria-pressed="signatureMode === 'draw'"
+                    @click="setSignatureMode('draw')"
+                  >Draw</button>
+                  <button
+                    type="button"
+                    class="sig-mode-btn"
+                    :class="{ 'sig-mode-btn--active': signatureMode === 'type' }"
+                    :aria-pressed="signatureMode === 'type'"
+                    @click="setSignatureMode('type')"
+                  >Type instead</button>
+                </div>
+
+                <div v-show="signatureMode === 'draw'" class="signature-pad-wrapper">
                   <canvas
                     ref="signatureCanvas"
                     class="signature-canvas"
@@ -279,11 +322,30 @@
                     Clear
                   </button>
                 </div>
+
+                <div v-show="signatureMode === 'type'" class="typed-signature">
+                  <label class="form-label" for="cp-typed-signature">Type your full name to attest</label>
+                  <input
+                    id="cp-typed-signature"
+                    v-model="typedSignature"
+                    type="text"
+                    class="form-input"
+                    autocomplete="name"
+                    placeholder="e.g. Priya Anand"
+                    :aria-invalid="fieldErrors.signature ? 'true' : undefined"
+                    :aria-describedby="`cp-typed-signature-hint${fieldErrors.signature ? ' cp-signature-error' : ''}`"
+                  />
+                  <p id="cp-typed-signature-hint" class="field-hint">
+                    Recorded as your attestation against {{ selectedCheckpoint?.label }}, alongside your account name.
+                  </p>
+                </div>
+
+                <p v-if="fieldErrors.signature" id="cp-signature-error" class="field-error">{{ fieldErrors.signature }}</p>
               </div>
             </div>
 
             <div class="modal-actions">
-              <Button variant="secondary" size="sm" style="flex: 1;" @click="showCheckpointModal = false" :disabled="processing">
+              <Button variant="secondary" size="sm" style="flex: 1;" @click="closeCheckpointModal" :disabled="processing">
                 Cancel
               </Button>
               <Button variant="primary" size="sm" style="flex: 1;" @click="confirmCheckpoint" :disabled="processing" :processing="processing">
@@ -323,10 +385,14 @@ const foodBags = ref(0);
 const oversizedPieces = ref(0);
 const signatureCanvas = ref(null);
 const signatureData = ref(null);
+const signatureMode = ref('draw');
+const typedSignature = ref('');
 const photoInput = ref(null);
 const photoData = ref(null);
 const photoPreview = ref(null);
 const processing = ref(false);
+const formError = ref('');
+const fieldErrors = ref({});
 
 // Evidence viewer state
 const showPhotoViewer = ref(false);
@@ -422,9 +488,13 @@ function openCheckpointModal(checkpoint) {
   foodBags.value = checkpoint.food_bags || 0;
   oversizedPieces.value = checkpoint.oversized_pieces || 0;
   signatureData.value = null;
+  signatureMode.value = 'draw';
+  typedSignature.value = '';
   photoData.value = null;
   photoPreview.value = null;
   processing.value = false;
+  formError.value = '';
+  fieldErrors.value = {};
   showCheckpointModal.value = true;
   
   // Initialize signature canvas after modal is shown
@@ -433,6 +503,44 @@ function openCheckpointModal(checkpoint) {
       initSignatureCanvas();
     }, 100);
   }
+}
+
+function closeCheckpointModal() {
+  showCheckpointModal.value = false;
+}
+
+function setSignatureMode(mode) {
+  signatureMode.value = mode;
+  fieldErrors.value = { ...fieldErrors.value, signature: undefined };
+
+  if (mode === 'draw') {
+    setTimeout(() => initSignatureCanvas(), 50);
+  }
+}
+
+/**
+ * Renders the typed name onto the same canvas so a typed attestation produces
+ * the identical signature image the drawn path would.
+ */
+function renderTypedSignature() {
+  const canvas = signatureCanvas.value;
+  const name = typedSignature.value.trim();
+
+  if (!canvas || !name) return null;
+
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = '#111';
+  ctx.font = 'italic 34px Georgia, serif';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(name, 16, canvas.height / 2 - 10);
+  ctx.font = '11px system-ui, sans-serif';
+  ctx.fillStyle = '#555';
+  ctx.fillText(`Typed attestation \u00b7 ${new Date().toLocaleString()}`, 16, canvas.height - 22);
+
+  return canvas.toDataURL('image/png');
 }
 
 function setCurrentTime() {
@@ -524,15 +632,17 @@ function handlePhotoCapture(event) {
   
   // Validate file type
   if (!file.type.startsWith('image/')) {
-    alert('Please select an image file.');
+    fieldErrors.value = { ...fieldErrors.value, photo: 'Please select an image file.' };
     return;
   }
   
   // Validate file size (max 5MB)
   if (file.size > 5 * 1024 * 1024) {
-    alert('Photo size must be less than 5MB.');
+    fieldErrors.value = { ...fieldErrors.value, photo: 'Photo size must be less than 5MB.' };
     return;
   }
+
+  fieldErrors.value = { ...fieldErrors.value, photo: undefined };
   
   const reader = new FileReader();
   reader.onload = (e) => {
@@ -552,16 +662,33 @@ function removePhoto() {
 
 function confirmCheckpoint() {
   if (!selectedCheckpoint.value || processing.value) return;
-  
-  // Validate signature if required
-  if (selectedCheckpoint.value.requires_signature && !signatureData.value) {
-    alert('Please provide a signature before confirming.');
-    return;
+
+  formError.value = '';
+  fieldErrors.value = {};
+
+  // A typed attestation is rendered to the same canvas, so both modes end up
+  // submitting an image.
+  if (selectedCheckpoint.value.requires_signature && signatureMode.value === 'type') {
+    signatureData.value = renderTypedSignature();
   }
-  
-  // Validate photo if required
+
+  const errors = {};
+
+  if (selectedCheckpoint.value.requires_signature && !signatureData.value) {
+    errors.signature = signatureMode.value === 'type'
+      ? 'Type your full name to attest this checkpoint.'
+      : 'Draw a signature, or switch to "Type instead".';
+  }
+
   if (selectedCheckpoint.value.requires_photo && !photoData.value) {
-    alert('Please take or upload a photo before confirming.');
+    errors.photo = 'Take or upload a photo before confirming.';
+  }
+
+  if (Object.keys(errors).length > 0) {
+    fieldErrors.value = errors;
+    formError.value = 'This checkpoint still needs '
+      + Object.keys(errors).join(' and ') + ' before it can be confirmed.';
+
     return;
   }
 
@@ -612,13 +739,13 @@ function confirmCheckpoint() {
         router.reload({ only: ['job', 'checkpoints'] });
       } else {
         processing.value = false;
-        alert('Failed to complete checkpoint: ' + (data.message || 'Unknown error'));
+        formError.value = 'Failed to complete checkpoint: ' + (data.message || 'Unknown error');
       }
     })
     .catch(error => {
       processing.value = false;
       console.error('Failed to complete checkpoint:', error);
-      alert('Error: ' + error.message);
+      formError.value = error.message;
     });
 }
 
@@ -995,7 +1122,9 @@ function formatJobToLocation(job) {
   display: flex;
   flex-direction: column;
   position: relative;
+  margin: 0;
   padding-left: 4px;
+  list-style: none;
 }
 
 .checkpoint-item {
@@ -1004,6 +1133,25 @@ function formatJobToLocation(job) {
   position: relative;
   padding-bottom: 14px;
   transition: background 0.2s;
+}
+
+/* Stretched target: sits over the row, under the evidence badges. */
+.checkpoint-open {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+
+.checkpoint-open:disabled {
+  cursor: default;
+}
+
+.checkpoint-open:focus-visible {
+  border-radius: 8px;
 }
 
 .checkpoint-item--last {
@@ -1125,13 +1273,21 @@ function formatJobToLocation(job) {
 }
 
 .checkpoint-req-badge {
+  position: relative;
+  z-index: 2;
+  font: inherit;
   font-size: 10px;
   padding: 2px 4px;
+  border: 0;
   border-radius: 3px;
   font-weight: 600;
   display: inline-flex;
   align-items: center;
   flex-shrink: 0;
+}
+
+.checkpoint-req-badge:disabled {
+  cursor: default;
 }
 
 .checkpoint-req-badge--photo {
@@ -1372,6 +1528,59 @@ function formatJobToLocation(job) {
 }
 
 /* Signature Pad */
+.sig-mode-switch {
+  display: inline-flex;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.sig-mode-btn {
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 5px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--ink2);
+  cursor: pointer;
+}
+
+.sig-mode-btn--active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.typed-signature {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.field-hint {
+  margin: 0;
+  font-size: 11px;
+  color: var(--ink3);
+}
+
+.field-error {
+  margin: 6px 0 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--danger);
+}
+
+.form-error-banner {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--danger-soft);
+  color: var(--danger);
+  font-size: 13px;
+  font-weight: 600;
+}
+
 .signature-pad-wrapper {
   position: relative;
   border: 2px solid var(--border);

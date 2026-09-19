@@ -246,7 +246,7 @@
     <!-- Override Modal -->
     <teleport to="body">
       <transition name="fade-modal">
-        <div v-if="showOverride" class="modal-backdrop" @click.self="showOverride = false">
+        <div v-if="showOverride" v-dialog="() => (showOverride = false)" class="modal-backdrop" @click.self="showOverride = false">
           <div class="modal">
             <div class="modal-header">
               <div>
@@ -351,7 +351,7 @@
     <!-- AI Explain Delay Modal -->
     <teleport to="body">
       <transition name="fade-modal">
-        <div v-if="showExplainModal" class="modal-backdrop" @click.self="showExplainModal = false">
+        <div v-if="showExplainModal" v-dialog="() => (showExplainModal = false)" class="modal-backdrop" @click.self="showExplainModal = false">
           <div class="modal">
             <div class="modal-header">
               <div>

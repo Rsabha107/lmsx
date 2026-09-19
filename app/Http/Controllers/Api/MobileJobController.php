@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Controllers\Api\Concerns\ScopesMobileAccess;
 use App\Http\Resources\JobResource;
 use App\Models\AuditLog;
 use App\Models\Event;
@@ -10,10 +11,12 @@ use App\Models\JobCheckpoint;
 use App\Models\JobIssue;
 use App\Models\JobOperation;
 use App\Services\CheckpointUploadService;
+use App\Services\JobLifecycleService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
+use RuntimeException;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 /**
@@ -21,16 +24,22 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
  */
 class MobileJobController extends Controller
 {
-    public function __construct(private readonly CheckpointUploadService $uploads)
-    {
+    use ScopesMobileAccess;
+
+    public function __construct(
+        private readonly CheckpointUploadService $uploads,
+        private readonly JobLifecycleService $lifecycle,
+    ) {
     }
 
     /**
-     * Jobs for the active event.
+     * Jobs for the active event, limited to the caller's functional areas.
      */
     public function index(Request $request): JsonResponse
     {
-        $jobs = JobOperation::with([
+        $this->assertCanViewJobs($request);
+
+        $query = JobOperation::with([
             'team',
             'movement.team',
             'vehicle',
@@ -38,7 +47,9 @@ class MobileJobController extends Controller
             'supervisor',
             'checkpoints',
         ])
-            ->where('jobs_operations.event_id', $this->activeEventId($request))
+            ->where('jobs_operations.event_id', $this->activeEventId($request));
+
+        $jobs = $this->scopeToVisibleAreas($query, $request, 'jobs_operations.functional_area')
             ->leftJoin('movements', 'jobs_operations.movement_id', '=', 'movements.id')
             ->orderByRaw('movements.window_start IS NULL, movements.window_start asc')
             ->select('jobs_operations.*')
@@ -52,6 +63,8 @@ class MobileJobController extends Controller
 
     public function show(Request $request, JobOperation $job): JsonResponse
     {
+        $this->authorizeJobAccess($request, $job);
+
         $job->load([
             'team',
             'movement.team',
@@ -75,6 +88,8 @@ class MobileJobController extends Controller
         JobOperation $job,
         JobCheckpoint $checkpoint
     ): JsonResponse {
+        $this->authorizeJobAccess($request, $job);
+
         if ($checkpoint->job_id !== $job->id) {
             return response()->json(
                 ['message' => 'Checkpoint does not belong to this job.'],
@@ -102,64 +117,29 @@ class MobileJobController extends Controller
             'gps_longitude' => 'nullable|numeric|between:-180,180',
         ]);
 
-        $update = [
-            'state' => 'done',
-            'completed_by' => $request->user()->id,
-            'completion_method' => 'mobile',
-            'completed_at' => $this->resolveCompletedAt($checkpoint, $validated['actual_time'] ?? null),
-            'notes' => $validated['notes'] ?? null,
-        ];
-
-        foreach (['planned_bags', 'bags_loaded', 'food_bags', 'oversized_pieces', 'gps_latitude', 'gps_longitude'] as $field) {
-            if (array_key_exists($field, $validated)) {
-                $update[$field] = $validated[$field];
-            }
-        }
-
-        if ($request->hasFile('photo')) {
-            $update['photo_path'] = $this->uploads->storePhoto(
-                $request->file('photo'),
-                $checkpoint->id,
-                $checkpoint->job_id
+        try {
+            $this->lifecycle->completeCheckpoint(
+                $checkpoint,
+                $request->user(),
+                [
+                    'actual_time' => $validated['actual_time'] ?? null,
+                    'notes' => $validated['notes'] ?? null,
+                    'photo' => $request->file('photo'),
+                    'signature' => $validated['signature'] ?? null,
+                    'planned_bags' => $validated['planned_bags'] ?? null,
+                    'bags_loaded' => $validated['bags_loaded'] ?? null,
+                    'food_bags' => $validated['food_bags'] ?? null,
+                    'oversized_pieces' => $validated['oversized_pieces'] ?? null,
+                    'gps_latitude' => $validated['gps_latitude'] ?? null,
+                    'gps_longitude' => $validated['gps_longitude'] ?? null,
+                ],
+                'mobile',
             );
+        } catch (RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 409);
         }
 
-        if (! empty($validated['signature'])) {
-            $update['signature_path'] = $this->uploads->storeSignature(
-                $validated['signature'],
-                $checkpoint->id,
-                $checkpoint->job_id
-            );
-        }
-
-        // SLA is judged against the movement window, matching the web app.
-        $movement = $job->movement;
-        if ($movement?->window_end) {
-            $completedAt = $update['completed_at'];
-            $windowEnd = $movement->window_end;
-            $isLate = $completedAt->greaterThan($windowEnd);
-            $update['is_on_time'] = ! $isLate;
-            $update['delay_minutes'] = $isLate ? $completedAt->diffInMinutes($windowEnd, true) : 0;
-        }
-
-        if ($checkpoint->scheduled_at) {
-            $update['actual_duration_seconds'] = abs(
-                $update['completed_at']->diffInSeconds($checkpoint->scheduled_at)
-            );
-        }
-
-        $checkpoint->update($update);
-
-        $job->updateProgress();
         $job->refresh();
-
-        if ($job->status === 'pending') {
-            $job->update(['status' => 'in-progress']);
-        }
-
-        if ($job->checkpoints_total > 0 && $job->checkpoints_completed === $job->checkpoints_total) {
-            $job->update(['status' => 'completed', 'completed_at' => now()]);
-        }
 
         $job->load([
             'team',
@@ -181,6 +161,8 @@ class MobileJobController extends Controller
      */
     public function reportIssue(Request $request, JobOperation $job): JsonResponse
     {
+        $this->authorizeJobAccess($request, $job);
+
         $validated = $request->validate([
             'type' => ['required', Rule::in(array_keys(JobIssue::TYPES))],
             'notes' => ['nullable', 'string', 'max:500'],
@@ -216,49 +198,23 @@ class MobileJobController extends Controller
         ], 201);
     }
 
-    public function photo(JobCheckpoint $checkpoint): StreamedResponse
+    public function photo(Request $request, JobCheckpoint $checkpoint): StreamedResponse
     {
+        $this->authorizeCheckpointAccess($request, $checkpoint);
+
         abort_unless($checkpoint->photo_path, 404);
         abort_unless(Storage::disk('local')->exists($checkpoint->photo_path), 404);
 
         return Storage::disk('local')->response($checkpoint->photo_path);
     }
 
-    public function signature(JobCheckpoint $checkpoint): StreamedResponse
+    public function signature(Request $request, JobCheckpoint $checkpoint): StreamedResponse
     {
+        $this->authorizeCheckpointAccess($request, $checkpoint);
+
         abort_unless($checkpoint->signature_path, 404);
         abort_unless(Storage::disk('local')->exists($checkpoint->signature_path), 404);
 
         return Storage::disk('local')->response($checkpoint->signature_path);
-    }
-
-    /**
-     * Mobile clients have no session, so resolve the flagged active event.
-     */
-    private function activeEventId(Request $request): ?int
-    {
-        return $request->integer('event_id')
-            ?: Event::where('active_flag', true)->latest('id')->value('id')
-            ?: Event::query()->latest('id')->value('id');
-    }
-
-    private function resolveCompletedAt(JobCheckpoint $checkpoint, ?string $actualTime): \Carbon\Carbon
-    {
-        if (! $actualTime) {
-            return now();
-        }
-
-        [$hours, $minutes] = array_map('intval', explode(':', $actualTime));
-        $completedAt = \Carbon\Carbon::today()->setTime($hours, $minutes);
-
-        // A late-evening checkpoint confirmed just after midnight belongs to the
-        // next day, not 24 hours in the past.
-        if ($checkpoint->scheduled_at
-            && $checkpoint->scheduled_at->hour >= 18
-            && $hours < 6) {
-            $completedAt->addDay();
-        }
-
-        return $completedAt;
     }
 }

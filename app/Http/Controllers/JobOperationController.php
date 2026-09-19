@@ -5,10 +5,12 @@ namespace App\Http\Controllers;
 use App\Models\AuditLog;
 use App\Models\JobCheckpoint;
 use App\Models\JobOperation;
+use App\Services\JobLifecycleService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
+use RuntimeException;
 
 /**
  * Controller for job execution and checkpoint completion.
@@ -21,6 +23,10 @@ use Inertia\Inertia;
  */
 class JobOperationController extends Controller
 {
+    public function __construct(private readonly JobLifecycleService $lifecycle)
+    {
+    }
+
     /**
      * List all jobs (with filtering).
      */
@@ -101,19 +107,11 @@ class JobOperationController extends Controller
      */
     public function dispatch(Request $request, JobOperation $job)
     {
-        if ($job->status !== 'pending') {
-            return back()->with('error', 'Job is not in pending status');
+        try {
+            $this->lifecycle->transitionStatus($job, 'dispatched', Auth::user());
+        } catch (RuntimeException $e) {
+            return back()->with('error', $e->getMessage());
         }
-
-        $job->update([
-            'status' => 'dispatched',
-            'dispatched_at' => now(),
-        ]);
-
-        AuditLog::record('Job dispatched', $job->job_id, 'pending → dispatched', $job, $job->event_id);
-
-        // Optionally send notification to supervisor/driver
-        // event(new JobDispatched($job));
 
         return back()->with('success', "Job {$job->job_id} dispatched successfully");
     }
@@ -123,33 +121,16 @@ class JobOperationController extends Controller
      */
     public function start(Request $request, JobOperation $job)
     {
-        if (!in_array($job->status, ['pending', 'dispatched'])) {
-            return back()->with('error', 'Job cannot be started in current status');
+        try {
+            $this->lifecycle->transitionStatus($job, 'in-progress', Auth::user());
+        } catch (RuntimeException $e) {
+            return back()->with('error', $e->getMessage());
         }
 
-        $previous = $job->status;
-
-        $job->update([
-            'status' => 'in-progress',
-            'started_at' => now(),
-        ]);
-
-        if ($job->movement && !$job->movement->actual_departure) {
-            $job->movement->update(['actual_departure' => now()]);
-        }
-
-        AuditLog::record('Job started', $job->job_id, "{$previous} → in-progress", $job, $job->event_id);
-
-        // Auto-complete first checkpoint if it's auto-dispatch
+        // A leading dispatch checkpoint is satisfied by the act of starting.
         $firstCheckpoint = $job->checkpoints()->orderBy('order')->first();
-        if ($firstCheckpoint && $firstCheckpoint->type === 'dispatch') {
-            $firstCheckpoint->update([
-                'state' => 'done',
-                'completed_at' => now(),
-                'completed_by' => Auth::id(),
-                'completion_method' => 'auto',
-            ]);
-            $job->updateProgress();
+        if ($firstCheckpoint && $firstCheckpoint->type === 'dispatch' && $firstCheckpoint->state !== 'done') {
+            $this->lifecycle->completeCheckpoint($firstCheckpoint, Auth::user(), [], 'auto');
         }
 
         return back()->with('success', "Job {$job->job_id} started");
@@ -160,10 +141,6 @@ class JobOperationController extends Controller
      */
     public function complete(Request $request, JobOperation $job)
     {
-        if ($job->status !== 'in-progress') {
-            return back()->with('error', 'Job is not in progress');
-        }
-
         // Check if all required checkpoints are completed
         $pendingRequired = $job->checkpoints()
             ->where('state', 'pending')
@@ -174,16 +151,11 @@ class JobOperationController extends Controller
             return back()->with('error', "Cannot complete job. {$pendingRequired} required checkpoints are still pending");
         }
 
-        $job->update([
-            'status' => 'completed',
-            'completed_at' => now(),
-        ]);
-
-        if ($job->movement && !$job->movement->actual_arrival) {
-            $job->movement->update(['actual_arrival' => now()]);
+        try {
+            $this->lifecycle->transitionStatus($job, 'completed', Auth::user());
+        } catch (RuntimeException $e) {
+            return back()->with('error', $e->getMessage());
         }
-
-        AuditLog::record('Job completed', $job->job_id, 'in-progress → completed', $job, $job->event_id);
 
         return redirect()->route('jobs.index')->with('success', "Job {$job->job_id} completed successfully");
     }
@@ -198,67 +170,35 @@ class JobOperationController extends Controller
             return back()->with('error', 'Checkpoint does not belong to this job');
         }
 
-        if ($checkpoint->state === 'done') {
-            return back()->with('error', 'Checkpoint already completed');
-        }
-
         $validated = $request->validate([
             'completion_method' => 'required|in:mobile,web,auto,gps',
             'photo' => 'nullable|image|max:5120', // 5MB max
             'signature' => 'nullable|string', // Base64 signature data
-            'gps_latitude' => 'nullable|numeric',
-            'gps_longitude' => 'nullable|numeric',
+            'gps_latitude' => 'nullable|numeric|between:-90,90',
+            'gps_longitude' => 'nullable|numeric|between:-180,180',
             'notes' => 'nullable|string|max:500',
         ]);
 
-        $evidence = [];
-
-        // Handle photo upload
-        if ($request->hasFile('photo')) {
-            $path = $request->file('photo')->store('checkpoints/photos', 'public');
-            $evidence['photo'] = $path;
+        try {
+            $this->lifecycle->completeCheckpoint(
+                $checkpoint,
+                Auth::user(),
+                [
+                    'notes' => $validated['notes'] ?? null,
+                    'photo' => $request->file('photo'),
+                    'signature' => $validated['signature'] ?? null,
+                    'gps_latitude' => $validated['gps_latitude'] ?? null,
+                    'gps_longitude' => $validated['gps_longitude'] ?? null,
+                ],
+                $validated['completion_method'],
+            );
+        } catch (RuntimeException $e) {
+            return back()->with('error', $e->getMessage());
         }
 
-        // Handle signature
-        if ($request->has('signature')) {
-            $signatureData = $request->signature;
-            // Save base64 signature as image
-            $signaturePath = 'checkpoints/signatures/' . uniqid() . '.png';
-            Storage::disk('public')->put($signaturePath, base64_decode(preg_replace('#^data:image/\w+;base64,#i', '', $signatureData)));
-            $evidence['signature'] = $signaturePath;
-        }
-
-        // Handle GPS
-        if ($request->has('gps_latitude') && $request->has('gps_longitude')) {
-            $evidence['gps_latitude'] = $request->gps_latitude;
-            $evidence['gps_longitude'] = $request->gps_longitude;
-        }
-
-        // Handle notes
-        if ($request->has('notes')) {
-            $evidence['notes'] = $request->notes;
-        }
-
-        // Mark checkpoint as done
-        $checkpoint->markAsDone(Auth::user(), $validated['completion_method'], $evidence);
-
-        // Auto-start job if it's still pending
-        if ($job->fresh()->status === 'pending') {
-            $job->update(['status' => 'in-progress']);
-        }
-
-        // Check if this was the last checkpoint
-        if ($job->fresh()->checkpoints_completed === $job->checkpoints_total) {
-            // Auto-complete job if all checkpoints are done
-            $job->update([
-                'status' => 'completed',
-                'completed_at' => now(),
-            ]);
-
-            return back()->with('success', 'Checkpoint completed! All checkpoints done - job completed.');
-        }
-
-        return back()->with('success', 'Checkpoint completed successfully');
+        return back()->with('success', $job->fresh()->status === 'completed'
+            ? 'Checkpoint completed! All checkpoints done - job completed.'
+            : 'Checkpoint completed successfully');
     }
 
     /**
@@ -271,28 +211,15 @@ class JobOperationController extends Controller
             return back()->with('error', 'Checkpoint does not belong to this job');
         }
 
-        if ($checkpoint->state !== 'pending') {
-            return back()->with('error', 'Only pending checkpoints can be skipped');
-        }
-
         $validated = $request->validate([
             'reason' => 'required|string|max:500',
         ]);
 
-        $checkpoint->update([
-            'state' => 'skipped',
-            'completed_at' => now(),
-            'completed_by' => Auth::id(),
-            'notes' => 'SKIPPED: ' . $validated['reason'],
-        ]);
-
-        // Auto-start job if it's still pending
-        if ($job->fresh()->status === 'pending') {
-            $job->update(['status' => 'in-progress']);
+        try {
+            $this->lifecycle->skipCheckpoint($checkpoint, Auth::user(), $validated['reason']);
+        } catch (RuntimeException $e) {
+            return back()->with('error', $e->getMessage());
         }
-
-        // Note: We don't update job progress for skipped checkpoints
-        // They don't count towards completion
 
         return back()->with('warning', 'Checkpoint skipped');
     }
@@ -327,33 +254,29 @@ class JobOperationController extends Controller
     {
         $validated = $request->validate([
             'photo' => 'nullable|image|max:5120',
-            'gps_latitude' => 'nullable|numeric',
-            'gps_longitude' => 'nullable|numeric',
+            'gps_latitude' => 'nullable|numeric|between:-90,90',
+            'gps_longitude' => 'nullable|numeric|between:-180,180',
         ]);
 
-        $evidence = [];
-
-        if ($request->hasFile('photo')) {
-            $evidence['photo'] = $request->file('photo')->store('checkpoints/photos', 'public');
-        }
-
-        if ($request->has('gps_latitude') && $request->has('gps_longitude')) {
-            $evidence['gps_latitude'] = $request->gps_latitude;
-            $evidence['gps_longitude'] = $request->gps_longitude;
-        }
-
-        $checkpoint->markAsDone(Auth::user(), 'mobile', $evidence);
-
-        // Auto-start job if it's still pending
-        $job = $checkpoint->job->fresh();
-        if ($job->status === 'pending') {
-            $job->update(['status' => 'in-progress']);
+        try {
+            $checkpoint = $this->lifecycle->completeCheckpoint(
+                $checkpoint,
+                Auth::user(),
+                [
+                    'photo' => $request->file('photo'),
+                    'gps_latitude' => $validated['gps_latitude'] ?? null,
+                    'gps_longitude' => $validated['gps_longitude'] ?? null,
+                ],
+                'mobile',
+            );
+        } catch (RuntimeException $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 409);
         }
 
         return response()->json([
             'success' => true,
-            'checkpoint' => $checkpoint->fresh(),
-            'job_progress' => $job->progress_percentage,
+            'checkpoint' => $checkpoint,
+            'job_progress' => $checkpoint->job->fresh()->progress_percentage,
         ]);
     }
 

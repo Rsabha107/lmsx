@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\JobOperation;
 use App\Models\JobCheckpoint;
+use App\Models\Event;
 use App\Models\Movement;
 use App\Models\Plan;
 use App\Models\Vehicle;
@@ -21,40 +22,77 @@ class AnalyticsController extends Controller
     public function index(Request $request)
     {
         $period = $request->get('period', '7d'); // Default to last 7 days
-        
+        $eventId = $this->activeEventId($request);
+
         return Inertia::render('Analytics', [
-            'realTimeStats' => $this->getRealTimeStats(),
-            'performanceMetrics' => $this->getPerformanceMetrics($period),
-            'resourceUtilization' => $this->getResourceUtilization($period),
-            'complianceMetrics' => $this->getComplianceMetrics($period),
-            'checkpointAnalysis' => $this->getCheckpointAnalysis($period),
-            'teamPatterns' => $this->getTeamPatterns($period),
-            'planEffectiveness' => $this->getPlanEffectiveness($period),
-            'trendsData' => $this->getTrendsData($period),
+            'activeEvent' => $eventId ? Event::find($eventId)?->only(['id', 'name', 'short_name']) : null,
+            'realTimeStats' => $this->getRealTimeStats($eventId),
+            'performanceMetrics' => $this->getPerformanceMetrics($period, $eventId),
+            'resourceUtilization' => $this->getResourceUtilization($period, $eventId),
+            'complianceMetrics' => $this->getComplianceMetrics($period, $eventId),
+            'checkpointAnalysis' => $this->getCheckpointAnalysis($period, $eventId),
+            'teamPatterns' => $this->getTeamPatterns($period, $eventId),
+            'planEffectiveness' => $this->getPlanEffectiveness($period, $eventId),
+            'trendsData' => $this->getTrendsData($period, $eventId),
         ]);
+    }
+
+    /**
+     * The selected event, or null when the user is looking across all events.
+     */
+    protected function activeEventId(Request $request): ?int
+    {
+        $eventId = $request->session()->get('active_event_id');
+
+        if (! $eventId || ! $request->user()?->canAccessEvent((int) $eventId)) {
+            return null;
+        }
+
+        return (int) $eventId;
     }
 
     /**
      * Get real-time operational statistics
      */
-    protected function getRealTimeStats()
+    protected function getRealTimeStats(?int $eventId = null)
     {
         return [
-            'active_jobs' => JobOperation::where('status', 'in-progress')->count(),
+            'active_jobs' => JobOperation::where('status', 'in-progress')
+                ->when($eventId, fn ($q) => $q->where('event_id', $eventId))
+                ->count(),
             // 'delayed' was never a valid jobs_operations.status value (see the
             // enum in the create-table migration), so this always returned 0.
             // Delay is tracked on the movement, not the job status.
             'delayed_jobs' => JobOperation::join('movements', 'jobs_operations.movement_id', '=', 'movements.id')
                 ->where('movements.delay_minutes', '>', 0)
+                ->when($eventId, fn ($q) => $q->where('jobs_operations.event_id', $eventId))
                 ->count(),
             'completed_today' => JobOperation::where('status', 'completed')
                 ->whereDate('updated_at', today())
+                ->when($eventId, fn ($q) => $q->where('event_id', $eventId))
                 ->count(),
-            'pending_jobs' => JobOperation::where('status', 'pending')->count(),
-            'vehicles_active' => Vehicle::where('status', 'on_job')->count(),
-            'drivers_on_shift' => Driver::where('status', 'on_shift')->count(),
+            'pending_jobs' => JobOperation::where('status', 'pending')
+                ->when($eventId, fn ($q) => $q->where('event_id', $eventId))
+                ->count(),
+            // Fleet tables are global, so an event view counts only the units
+            // currently assigned to that event's live jobs.
+            'vehicles_active' => $eventId
+                ? JobOperation::where('event_id', $eventId)
+                    ->whereIn('status', ['dispatched', 'in-progress'])
+                    ->whereNotNull('vehicle_id')
+                    ->distinct()
+                    ->count('vehicle_id')
+                : Vehicle::where('status', 'on_job')->count(),
+            'drivers_on_shift' => $eventId
+                ? JobOperation::where('event_id', $eventId)
+                    ->whereIn('status', ['dispatched', 'in-progress'])
+                    ->whereNotNull('driver_id')
+                    ->distinct()
+                    ->count('driver_id')
+                : Driver::where('status', 'on_shift')->count(),
             'checkpoints_completed_today' => JobCheckpoint::where('state', 'done')
                 ->whereDate('completed_at', today())
+                ->when($eventId, fn ($q) => $q->where('event_id', $eventId))
                 ->count(),
         ];
     }
@@ -62,7 +100,7 @@ class AnalyticsController extends Controller
     /**
      * Get performance and efficiency metrics
      */
-    protected function getPerformanceMetrics($period)
+    protected function getPerformanceMetrics($period, ?int $eventId = null)
     {
         $startDate = $this->getPeriodStartDate($period);
         
@@ -70,6 +108,7 @@ class AnalyticsController extends Controller
         $completedJobs = JobOperation::with(['movement', 'checkpoints'])
             ->where('status', 'completed')
             ->where('updated_at', '>=', $startDate)
+            ->when($eventId, fn ($q) => $q->where('event_id', $eventId))
             ->get();
 
         $totalJobs = $completedJobs->count();
@@ -120,24 +159,28 @@ class AnalyticsController extends Controller
     /**
      * Get resource utilization metrics
      */
-    protected function getResourceUtilization($period)
+    protected function getResourceUtilization($period, ?int $eventId = null)
     {
         $startDate = $this->getPeriodStartDate($period);
         
         $totalVehicles = Vehicle::count();
         $totalDrivers = Driver::count();
         
-        $jobsInPeriod = JobOperation::where('created_at', '>=', $startDate)->count();
+        $jobsInPeriod = JobOperation::where('created_at', '>=', $startDate)
+            ->when($eventId, fn ($q) => $q->where('event_id', $eventId))
+            ->count();
         
         // Vehicle utilization
         $vehicleUsage = JobOperation::where('created_at', '>=', $startDate)
             ->whereNotNull('vehicle_id')
+            ->when($eventId, fn ($q) => $q->where('event_id', $eventId))
             ->distinct('vehicle_id')
             ->count();
         
         // Driver utilization
         $driverUsage = JobOperation::where('created_at', '>=', $startDate)
             ->whereNotNull('driver_id')
+            ->when($eventId, fn ($q) => $q->where('event_id', $eventId))
             ->distinct('driver_id')
             ->count();
 
@@ -153,12 +196,13 @@ class AnalyticsController extends Controller
     /**
      * Get compliance metrics
      */
-    protected function getComplianceMetrics($period)
+    protected function getComplianceMetrics($period, ?int $eventId = null)
     {
         $startDate = $this->getPeriodStartDate($period);
         
         $checkpoints = JobCheckpoint::where('state', 'done')
             ->where('completed_at', '>=', $startDate)
+            ->when($eventId, fn ($q) => $q->where('event_id', $eventId))
             ->get();
 
         $totalCheckpoints = $checkpoints->count();
@@ -184,6 +228,7 @@ class AnalyticsController extends Controller
 
         $overrides = JobCheckpoint::where('completed_at', '>=', $startDate)
             ->where('was_overridden', true)
+            ->when($eventId, fn ($q) => $q->where('event_id', $eventId))
             ->count();
 
         return [
@@ -197,12 +242,13 @@ class AnalyticsController extends Controller
     /**
      * Get checkpoint analysis
      */
-    protected function getCheckpointAnalysis($period)
+    protected function getCheckpointAnalysis($period, ?int $eventId = null)
     {
         $startDate = $this->getPeriodStartDate($period);
         
         $checkpoints = JobCheckpoint::where('state', 'done')
             ->where('completed_at', '>=', $startDate)
+            ->when($eventId, fn ($q) => $q->where('event_id', $eventId))
             ->get();
 
         // Group by type and calculate averages
@@ -227,12 +273,13 @@ class AnalyticsController extends Controller
     /**
      * Get team and movement patterns
      */
-    protected function getTeamPatterns($period)
+    protected function getTeamPatterns($period, ?int $eventId = null)
     {
         $startDate = $this->getPeriodStartDate($period);
         
         $movements = Movement::with('team')
             ->where('created_at', '>=', $startDate)
+            ->when($eventId, fn ($q) => $q->where('event_id', $eventId))
             ->get();
 
         // Movement kind distribution
@@ -253,11 +300,13 @@ class AnalyticsController extends Controller
     /**
      * Get plan effectiveness metrics
      */
-    protected function getPlanEffectiveness($period)
+    protected function getPlanEffectiveness($period, ?int $eventId = null)
     {
         $startDate = $this->getPeriodStartDate($period);
         
-        $plans = Plan::where('created_at', '>=', $startDate)->get();
+        $plans = Plan::where('created_at', '>=', $startDate)
+            ->when($eventId, fn ($q) => $q->where('event_id', $eventId))
+            ->get();
         
         $completedPlans = $plans->where('status', 'completed')->count();
         $avgMovementsPerPlan = $plans->count() > 0 ? round($plans->sum(function ($plan) {
@@ -275,7 +324,7 @@ class AnalyticsController extends Controller
     /**
      * Get trend data for charts
      */
-    protected function getTrendsData($period)
+    protected function getTrendsData($period, ?int $eventId = null)
     {
         $startDate = $this->getPeriodStartDate($period);
         $days = Carbon::now()->diffInDays($startDate);
@@ -283,6 +332,7 @@ class AnalyticsController extends Controller
         // Daily job completion trend
         $dailyJobs = JobOperation::where('status', 'completed')
             ->where('updated_at', '>=', $startDate)
+            ->when($eventId, fn ($q) => $q->where('event_id', $eventId))
             ->selectRaw('DATE(updated_at) as date, COUNT(*) as count')
             ->groupBy('date')
             ->orderBy('date')
@@ -292,6 +342,7 @@ class AnalyticsController extends Controller
         // Daily delay trend
         $dailyDelays = Movement::where('updated_at', '>=', $startDate)
             ->whereNotNull('delay_minutes')
+            ->when($eventId, fn ($q) => $q->where('event_id', $eventId))
             ->selectRaw('DATE(updated_at) as date, AVG(delay_minutes) as avg_delay')
             ->groupBy('date')
             ->orderBy('date')
@@ -313,17 +364,19 @@ class AnalyticsController extends Controller
     {
         $period = $request->get('period', '7d');
         $format = $request->get('format', 'json'); // json, csv
+        $eventId = $this->activeEventId($request);
         
         $data = [
             'exported_at' => now()->toIso8601String(),
             'period' => $period,
-            'real_time_stats' => $this->getRealTimeStats(),
-            'performance_metrics' => $this->getPerformanceMetrics($period),
-            'resource_utilization' => $this->getResourceUtilization($period),
-            'compliance_metrics' => $this->getComplianceMetrics($period),
-            'checkpoint_analysis' => $this->getCheckpointAnalysis($period),
-            'team_patterns' => $this->getTeamPatterns($period),
-            'plan_effectiveness' => $this->getPlanEffectiveness($period),
+            'event' => $eventId ? Event::find($eventId)?->only(['id', 'name', 'short_name']) : 'all events',
+            'real_time_stats' => $this->getRealTimeStats($eventId),
+            'performance_metrics' => $this->getPerformanceMetrics($period, $eventId),
+            'resource_utilization' => $this->getResourceUtilization($period, $eventId),
+            'compliance_metrics' => $this->getComplianceMetrics($period, $eventId),
+            'checkpoint_analysis' => $this->getCheckpointAnalysis($period, $eventId),
+            'team_patterns' => $this->getTeamPatterns($period, $eventId),
+            'plan_effectiveness' => $this->getPlanEffectiveness($period, $eventId),
         ];
 
         if ($format === 'csv') {

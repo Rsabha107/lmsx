@@ -238,7 +238,7 @@ function confirmDelete() {
 
 .btn-danger {
   display: inline-flex; align-items: center; justify-content: center; gap: 6px;
-  background: #EF4444; color: #fff; border: none; border-radius: 8px;
+  background: var(--danger); color: #fff; border: none; border-radius: 8px;
   padding: 5px 12px; font-size: 12px; font-weight: 600;
   cursor: pointer; transition: opacity 0.15s; font-family: inherit;
 }

@@ -13,7 +13,7 @@ class VenuesController extends Controller
 {
     public function index(): Response
     {
-        $venues = Venue::with('country')
+        $venues = Venue::with(['country', 'events:id,name,short_name'])
             ->orderBy('name')
             ->get();
 

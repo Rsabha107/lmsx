@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Controllers\Api\Concerns\ScopesMobileAccess;
 use App\Models\Contact;
 use App\Models\Event;
 use App\Models\JobCheckpoint;
@@ -19,15 +20,22 @@ use Illuminate\Http\Request;
  */
 class MobileFeedController extends Controller
 {
+    use ScopesMobileAccess;
+
     /**
      * Alerts (derived) + recent activity (real completions).
      */
     public function alerts(Request $request): JsonResponse
     {
+        $this->assertCanViewJobs($request);
+
         $eventId = $this->activeEventId($request);
 
-        $checkpoints = JobCheckpoint::with(['job.team', 'job.movement', 'completedBy'])
-            ->where('event_id', $eventId)
+        $checkpoints = $this->scopeToVisibleAreasViaJob(
+            JobCheckpoint::with(['job.team', 'job.movement', 'completedBy'])
+                ->where('event_id', $eventId),
+            $request
+        )
             ->orderByDesc('updated_at')
             ->limit(60)
             ->get();
@@ -69,7 +77,12 @@ class MobileFeedController extends Controller
             }
         }
 
-        foreach (JobIssue::with('job', 'reporter')->open()->where('event_id', $eventId)->latest()->limit(25)->get() as $issue) {
+        $issues = $this->scopeToVisibleAreasViaJob(
+            JobIssue::with('job', 'reporter')->open()->where('event_id', $eventId),
+            $request
+        )->latest()->limit(25)->get();
+
+        foreach ($issues as $issue) {
             $alerts[] = [
                 'id' => 'issue-'.$issue->id,
                 'tone' => $issue->severity,
@@ -112,10 +125,14 @@ class MobileFeedController extends Controller
      */
     public function map(Request $request): JsonResponse
     {
-        $jobs = JobOperation::with(['team', 'movement', 'vehicle'])
-            ->where('event_id', $this->activeEventId($request))
-            ->whereIn('status', ['dispatched', 'in-progress'])
-            ->get();
+        $this->assertCanViewJobs($request);
+
+        $jobs = $this->scopeToVisibleAreas(
+            JobOperation::with(['team', 'movement', 'vehicle'])
+                ->where('event_id', $this->activeEventId($request))
+                ->whereIn('status', ['dispatched', 'in-progress']),
+            $request
+        )->get();
 
         $locations = [];
         $live = $jobs->map(function ($job) use (&$locations) {
@@ -153,16 +170,20 @@ class MobileFeedController extends Controller
         $user = $request->user();
         $eventId = $this->activeEventId($request);
 
-        $jobs = JobOperation::where('event_id', $eventId);
+        // Stats must count the same jobs the supervisor can actually open.
+        $jobs = $this->scopeToVisibleAreas(
+            JobOperation::where('event_id', $eventId),
+            $request
+        );
 
-        $totalCheckpoints = JobCheckpoint::where('event_id', $eventId)->count();
-        $doneCheckpoints = JobCheckpoint::where('event_id', $eventId)
-            ->where('state', 'done')
-            ->count();
-        $onTime = JobCheckpoint::where('event_id', $eventId)
-            ->where('state', 'done')
-            ->where('is_on_time', true)
-            ->count();
+        $checkpoints = fn () => $this->scopeToVisibleAreasViaJob(
+            JobCheckpoint::where('event_id', $eventId),
+            $request
+        );
+
+        $totalCheckpoints = $checkpoints()->count();
+        $doneCheckpoints = $checkpoints()->where('state', 'done')->count();
+        $onTime = $checkpoints()->where('state', 'done')->where('is_on_time', true)->count();
 
         return response()->json([
             'user' => [
@@ -201,6 +222,8 @@ class MobileFeedController extends Controller
      */
     public function events(Request $request): JsonResponse
     {
+        $user = $request->user();
+
         $counts = JobOperation::query()
             ->selectRaw('event_id, count(*) as total')
             ->groupBy('event_id')
@@ -210,6 +233,7 @@ class MobileFeedController extends Controller
             ->orderByDesc('active_flag')
             ->orderByDesc('id')
             ->get()
+            ->filter(fn (Event $event) => $user->canAccessEvent($event->id))
             ->map(fn (Event $event) => [
                 'id' => $event->id,
                 'name' => $event->name,
@@ -219,15 +243,23 @@ class MobileFeedController extends Controller
                 'ends_on' => $event->end_date?->toDateString(),
                 'active' => (bool) $event->active_flag,
                 'jobs' => (int) ($counts[$event->id] ?? 0),
-            ]);
+            ])
+            ->values();
+
+        // Falls back to the first event the user may work, so the picker never
+        // defaults to something they'd be denied.
+        $default = $this->resolveEventId($request);
+        if (! $user->canAccessEvent($default)) {
+            $default = $events->first()['id'] ?? null;
+        }
 
         return response()->json([
             'data' => $events,
-            'default_id' => $this->activeEventId($request),
+            'default_id' => $default,
         ]);
     }
 
-    private function activeEventId(Request $request): ?int
+    private function resolveEventId(Request $request): ?int
     {
         return $request->integer('event_id')
             ?: Event::where('active_flag', true)->latest('id')->value('id')

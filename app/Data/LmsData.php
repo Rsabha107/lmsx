@@ -16,7 +16,6 @@ class LmsData
             'mapNodes'       => self::mapNodes(),
             'liveJobs'       => self::liveJobs(),
             'contacts'       => self::contacts(),
-            'notifications'  => self::notifications(),
             'audit'          => self::audit(),
         ];
     }
@@ -183,17 +182,6 @@ class LmsData
             ['name'=>'Thabo Ngwenya',   'role'=>'Team Liaison · MER',      'org'=>'FC Meridian',   'phone'=>'+33 6 12 44 00 06','on'=>true],
             ['name'=>'Hannah Stein',    'role'=>'Team Liaison · NOR',      'org'=>'Nordstad FK',   'phone'=>'+33 6 12 44 00 07','on'=>true],
             ['name'=>'Omar El-Haddad',  'role'=>'Venue Ops',               'org'=>'Stadium Azure', 'phone'=>'+33 6 12 44 00 08','on'=>true],
-        ];
-    }
-
-    public static function notifications(): array
-    {
-        return [
-            ['id'=>'n1','t'=>'2 min ago', 'tone'=>'warn',   'title'=>'Flight AF812 delayed by 18 min',   'body'=>'J-1045 pickup window pushed to 15:50. Pampas liaison notified.'],
-            ['id'=>'n2','t'=>'8 min ago', 'tone'=>'primary','title'=>'Checkpoint: team on board',          'body'=>'J-1042 · FC Meridian boarded Coach 12 at 14:32.'],
-            ['id'=>'n3','t'=>'14 min ago','tone'=>'ok',     'title'=>'Daily summary emailed',              'body'=>'Morning snapshot sent to 23 recipients (exec + partner groups).'],
-            ['id'=>'n4','t'=>'22 min ago','tone'=>'danger', 'title'=>'SLA breach — J-1039',                'body'=>'Officials transfer missed 15-min handoff. Audit log created.'],
-            ['id'=>'n5','t'=>'41 min ago','tone'=>'neutral','title'=>'Driver roster updated',              'body'=>'S. Reyes moved from Van 22 to Coach 07.'],
         ];
     }
 

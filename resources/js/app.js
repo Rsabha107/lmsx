@@ -4,6 +4,7 @@ import { resolvePageComponent } from 'laravel-vite-plugin/inertia-helpers';
 import PrimeVue from 'primevue/config';
 import Aura from '@primevue/themes/aura';
 import { definePreset } from '@primevue/themes';
+import dialog from './Directives/dialog';
 
 // LMSX's own accent color (--accent in app.css, indigo-500) instead of
 // Aura's default emerald primary.
@@ -39,6 +40,7 @@ createInertiaApp({
                     preset: LmsxPreset,
                 },
             })
+            .directive('dialog', dialog)
             .mount(el);
     },
     progress: {

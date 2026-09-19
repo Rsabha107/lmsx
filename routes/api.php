@@ -13,7 +13,10 @@ use App\Http\Controllers\Api\MobileJobController;
 use Illuminate\Support\Facades\Route;
 
 Route::name('api.mobile.')->group(function () {
-    Route::post('/login', [AuthController::class, 'login'])->name('login');
+    // Credential stuffing is the main exposure on a public mobile endpoint.
+    Route::post('/login', [AuthController::class, 'login'])
+        ->middleware('throttle:5,1')
+        ->name('login');
 
     Route::middleware('auth:sanctum')->group(function () {
         Route::get('/me', [AuthController::class, 'me'])->name('me');

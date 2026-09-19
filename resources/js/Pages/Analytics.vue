@@ -5,6 +5,7 @@
       <div>
         <p class="page-sub">Business Intelligence</p>
         <h1 class="page-title">Analytics</h1>
+        <p class="page-scope">{{ scopeLabel }}</p>
       </div>
       <div class="page-header-actions">
         <select v-model="selectedPeriod" @change="reloadData" class="period-selector">
@@ -226,6 +227,7 @@ import SvgIcon from '../Components/SvgIcon.vue';
 use([CanvasRenderer, LineChart, GridComponent, TooltipComponent, LegendComponent, TitleComponent]);
 
 const props = defineProps({
+  activeEvent: { type: Object, default: null },
   realTimeStats: { type: Object, required: true },
   performanceMetrics: { type: Object, required: true },
   resourceUtilization: { type: Object, required: true },
@@ -237,6 +239,10 @@ const props = defineProps({
 });
 
 const selectedPeriod = ref('7d');
+
+const scopeLabel = computed(() => (props.activeEvent
+  ? props.activeEvent.name
+  : 'All events — select an event to scope these figures'));
 
 const hasCheckpointData = computed(() => {
   return Object.keys(props.checkpointAnalysis).length > 0;
@@ -509,6 +515,12 @@ function formatKind(kind) {
   color: var(--ink3);
   font-weight: 700;
   margin: 0 0 4px;
+}
+
+.page-scope {
+  font-size: 13px;
+  color: var(--ink3);
+  margin: 4px 0 0;
 }
 
 .page-header-actions {

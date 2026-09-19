@@ -19,7 +19,7 @@
         @click="handleConfirm"
         :processing="processing"
         :disabled="processing"
-        :style="tone === 'danger' ? 'background: #EF4444;' : undefined"
+        :style="tone === 'danger' ? 'background: var(--danger); border-color: var(--danger);' : undefined"
       >
         {{ resolvedConfirmLabel }}
       </Button>

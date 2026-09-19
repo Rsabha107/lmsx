@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Data\LmsData;
+use App\Mail\DailySummaryMail;
 use App\Models\AuditLog;
 use App\Models\Vehicle;
 use App\Models\FleetProvider;
@@ -22,12 +23,16 @@ use App\Models\User;
 use App\Models\Event;
 use App\Models\Plan;
 use App\Models\Movement;
-use App\Services\CheckpointUploadService;
+use App\Services\JobLifecycleService;
+use App\Services\DailySummaryService;
+use App\Services\NotificationFeedService;
+use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
@@ -35,12 +40,18 @@ use Inertia\Response;
 
 class LmsController extends Controller
 {
-    public function dashboard(): Response
+    use AuthorizesRequests;
+
+    public function dashboard(Request $request, NotificationFeedService $notifications): Response|RedirectResponse
     {
+        if (! $request->user()->can('console.view')) {
+            return redirect()->route('jobs.mobile');
+        }
+
         return Inertia::render('Dashboard', [
             'kpis'          => LmsData::kpis(),
             'schedule'      => LmsData::schedule(),
-            'notifications' => LmsData::notifications(),
+            'notifications' => $notifications->recent($request->session()->get('active_event_id'), 6),
             'audit'         => LmsData::audit(),
         ]);
     }
@@ -737,19 +748,63 @@ class LmsController extends Controller
         return redirect()->route('contacts');
     }
 
-    public function notifications(): Response
+    public function notifications(Request $request, NotificationFeedService $feed): Response
     {
         return Inertia::render('Notifications', [
-            'notifications' => LmsData::notifications(),
+            'notifications' => $feed->recent($request->session()->get('active_event_id')),
         ]);
     }
 
-    public function email(): Response
+    public function email(Request $request, DailySummaryService $summary): Response
     {
-        return Inertia::render('Email', [
-            'schedule' => LmsData::schedule(),
-            'kpis'     => LmsData::kpis(),
+        $date = $request->query('date');
+        try {
+            $date = $date ? \Carbon\Carbon::parse($date)->toDateString() : now()->toDateString();
+        } catch (\Exception) {
+            $date = now()->toDateString();
+        }
+
+        return Inertia::render('Email', $summary->build(
+            $request->session()->get('active_event_id'),
+            $date,
+        ));
+    }
+
+    public function sendEmail(Request $request, DailySummaryService $summary): RedirectResponse
+    {
+        $validated = $request->validate([
+            'date' => ['nullable', 'date'],
         ]);
+
+        $eventId = $request->session()->get('active_event_id');
+        $date = isset($validated['date'])
+            ? \Carbon\Carbon::parse($validated['date'])->toDateString()
+            : now()->toDateString();
+
+        $snapshot = $summary->build($eventId, $date);
+        $recipients = collect($snapshot['recipients'])->pluck('email')->filter()->values();
+
+        if ($recipients->isEmpty()) {
+            return redirect()->back()->with('error', 'No recipients are assigned to this event.');
+        }
+
+        try {
+            Mail::to($recipients->all())->send(new DailySummaryMail($snapshot));
+        } catch (\Throwable $e) {
+            Log::error('Daily summary email failed', ['date' => $date, 'error' => $e->getMessage()]);
+
+            return redirect()->back()->with('error', 'Could not send the summary: '.$e->getMessage());
+        }
+
+        AuditLog::record(
+            'Daily summary sent',
+            'Email · '.$date,
+            $recipients->count().' recipient(s)',
+            null,
+            $eventId ? (int) $eventId : null,
+        );
+
+        return redirect()->back()->with('success', "Daily summary sent to {$recipients->count()} recipient(s).");
     }
 
     public function audit(): Response    {
@@ -772,15 +827,7 @@ class LmsController extends Controller
      */
     public function overrideCheckpoint(Request $request, string $checkpointId): JsonResponse
     {
-        $uploadService = app(CheckpointUploadService::class);
         try {
-            Log::info('Override checkpoint called', [
-                'checkpoint_id' => $checkpointId,
-                'has_photo' => $request->hasFile('photo'),
-                'request_all' => $request->all(), // Log all request data for debugging (including files info, but not file contents)
-                // 'request_all' => $request->except(['photo', 'signature_data'])
-            ]);
-
             $validated = $request->validate([
                 'state' => 'required|in:done,skipped',
                 'actual_time' => 'nullable|date_format:H:i',
@@ -796,201 +843,50 @@ class LmsController extends Controller
                 'update_flight_actual' => 'nullable|string', // Flag to update team flight actual_at
             ]);
 
-            $checkpoint = JobCheckpoint::with(['job', 'checkpoint'])->findOrFail($checkpointId);
+            $checkpoint = JobCheckpoint::with(['job.movement', 'checkpoint'])->findOrFail($checkpointId);
 
-            // Get current user or use a default user for now (supervisor)
-            // In production, you'd use auth()->user()
-            $user = User::first(); // TODO: Replace with actual authenticated user
+            $this->authorize('override', $checkpoint->job);
 
-            $updateData = [
-                'state' => $validated['state'],
-                'was_overridden' => true,
-                'override_reason' => $validated['reason'],
-                'override_notes' => $validated['notes'] ?? null,
-                'overridden_by' => $user->id,
-                'overridden_at' => now(),
-            ];
+            $checkpoint = app(JobLifecycleService::class)->overrideCheckpoint(
+                $checkpoint,
+                $request->user(),
+                [
+                    'state' => $validated['state'],
+                    'reason' => $validated['reason'],
+                    'notes' => $validated['notes'] ?? null,
+                    'actual_time' => $validated['actual_time'] ?? null,
+                    'exclude_date' => $request->boolean('exclude_date'),
+                    'photo' => $request->hasFile('photo') && $request->file('photo')->isValid()
+                        ? $request->file('photo')
+                        : null,
+                    'signature' => $request->input('signature_data'),
+                    'planned_bags' => $validated['planned_bags'] ?? null,
+                    'bags_loaded' => $validated['bags_loaded'] ?? null,
+                    'food_bags' => $validated['food_bags'] ?? null,
+                    'oversized_pieces' => $validated['oversized_pieces'] ?? null,
+                ],
+            );
 
-            $excludeDate = $request->boolean('exclude_date');
-
-            // Handle based on state
-            if (($validated['state'] === 'done' || $validated['state'] === 'success') && $validated['actual_time']) {
-                $updateData['override_actual_time'] = $validated['actual_time'];
-
-                list($hours, $minutes) = explode(':', $validated['actual_time']);
-
-                if ($excludeDate && $checkpoint->scheduled_at) {
-                    // "Exclude date" means the checkpoint's own scheduled date is
-                    // authoritative, not today — anchoring completed_at on it means
-                    // every later diff against scheduled_at (here and anywhere else
-                    // in the app) sees a pure time-of-day variance, with nothing
-                    // further to special-case.
-                    $actualDateTime = \Carbon\Carbon::parse($checkpoint->scheduled_at)->setTime((int)$hours, (int)$minutes, 0);
-                } else {
-                    // Use TODAY's date as the base, not the scheduled date
-                    $actualDateTime = \Carbon\Carbon::today()->setTime((int)$hours, (int)$minutes, 0);
-                }
-
-                // Handle midnight crossover: if actual time is very early (e.g., 00:39) and scheduled time
-                // was late (e.g., 14:19), assume the completion happened early next day
-                if ($checkpoint->scheduled_at) {
-                    $scheduledDateTime = \Carbon\Carbon::parse($checkpoint->scheduled_at);
-                    $scheduledHour = $scheduledDateTime->hour;
-                    $actualHour = (int)$hours;
-                    
-                    // If scheduled late (after 18:00) and actual is very early (before 06:00),
-                    // it likely crossed midnight to tomorrow
-                    if ($scheduledHour >= 18 && $actualHour < 6) {
-                        $actualDateTime->addDay();
-                    }
-                }
-                
-                $updateData['completed_at'] = $actualDateTime;
-                $updateData['completed_by'] = $user->id;
-                $updateData['completion_method'] = 'web';
-                $updateData['notes'] = $validated['notes'] ?? null;
-
-                // Add baggage count if provided
-                if (isset($validated['planned_bags'])) {
-                    $updateData['planned_bags'] = $validated['planned_bags'];
-                }
-                if (isset($validated['bags_loaded'])) {
-                    $updateData['bags_loaded'] = $validated['bags_loaded'];
-                }
-                if (isset($validated['food_bags'])) {
-                    $updateData['food_bags'] = $validated['food_bags'];
-                }
-                if (isset($validated['oversized_pieces'])) {
-                    $updateData['oversized_pieces'] = $validated['oversized_pieces'];
-                }
-
-                // Handle photo upload
-                if ($request->hasFile('photo') && $request->file('photo')->isValid()) {
-                    $updateData['photo_path'] = $uploadService->storePhoto(
-                        $request->file('photo'),
-                        $checkpointId,
-                        $checkpoint->job_id
-                    );
-                }
-
-                // Handle signature data (base64)
-                if ($request->filled('signature_data')) {
-                    $signaturePath = $uploadService->storeSignature(
-                        $request->input('signature_data'),
-                        $checkpointId,
-                        $checkpoint->job_id
-                    );
-
-                    if ($signaturePath) {
-                        $updateData['signature_path'] = $signaturePath;
-                    }
-                }
-
-                // Calculate duration based on scheduled time
-                if ($checkpoint->scheduled_at) {
-                    $scheduledTime = \Carbon\Carbon::parse($checkpoint->scheduled_at);
-                    $updateData['actual_duration_seconds'] = abs($actualDateTime->diffInSeconds($scheduledTime));
-                }
-                // Fallback: If checkpoint was started, use start time
-                elseif ($checkpoint->started_at) {
-                    $updateData['actual_duration_seconds'] = $actualDateTime->diffInSeconds($checkpoint->started_at);
-                }
-                // Last resort: use estimated duration
-                elseif ($checkpoint->estimated_minutes) {
-                    $updateData['actual_duration_seconds'] = $checkpoint->estimated_minutes * 60;
-                }
-
-                // Check if on time based on movement's window_end (not individual checkpoint scheduled_at)
-                $job = $checkpoint->job;
-                $movement = $job->movement;
-                if ($movement && $movement->window_end) {
-                    $windowEnd = \Carbon\Carbon::parse($movement->window_end);
-                    if ($excludeDate) {
-                        $windowEnd = $this->alignTimeOfDayTo($windowEnd, $actualDateTime);
-                    }
-                    // diffInMinutes()'s signed mode is relative to the argument, not
-                    // $this, so a plain "<= 0" check on it gets the direction backwards
-                    // (late completions read as on-time and vice versa). greaterThan()
-                    // for direction + an explicit absolute diff for magnitude avoids
-                    // that footgun (and Carbon 3 defaults diffInMinutes() to signed,
-                    // unlike Carbon 2, so the second argument must be passed explicitly).
-                    $isLate = $actualDateTime->greaterThan($windowEnd);
-                    $updateData['is_on_time'] = !$isLate;
-                    $updateData['delay_minutes'] = $isLate ? $actualDateTime->diffInMinutes($windowEnd, true) : 0;
-                }
-            } elseif ($validated['state'] === 'skipped') {
-                $updateData['skip_reason'] = $validated['reason'];
-                $updateData['skipped_by'] = $user->id;
-                $updateData['skipped_at'] = now();
-                $updateData['notes'] = $validated['notes'] ?? null;
-            } elseif ($validated['state'] === 'missed') {
-                $updateData['skip_reason'] = $validated['reason'];
-                $updateData['skipped_by'] = $user->id;
-                $updateData['skipped_at'] = now();
-                $updateData['exception_type'] = 'missed';
-                $updateData['notes'] = $validated['notes'] ?? null;
-            }
-
-            $checkpoint->update($updateData);
-
-            // Update team flight actual_at if this is PMA Arrival checkpoint
-            if ($request->filled('update_flight_actual') && 
-                $validated['state'] === 'done' && 
-                isset($updateData['completed_at'])) {
-                
-                $job = $checkpoint->job;
-                $movement = $job->movement;
-                
-                if ($movement && $movement->team_id && $movement->event_id) {
-                    // Find the arrival flight for this team
-                    $teamFlight = \App\Models\TeamFlight::where('event_id', $movement->event_id)
-                        ->where('team_id', $movement->team_id)
-                        ->where('direction', 'arrival')
-                        ->first();
-                    
-                    if ($teamFlight) {
-                        $teamFlight->update([
-                            'actual_at' => $updateData['completed_at'],
-                        ]);
-                        
-                        Log::info('Updated team flight actual_at for PMA Arrival', [
-                            'team_flight_id' => $teamFlight->id,
-                            'actual_at' => $updateData['completed_at'],
-                            'checkpoint_id' => $checkpointId,
-                        ]);
-                    }
-                }
-            }
-
-            // Update job progress
-            $job = $checkpoint->job;
-            $job->updateProgress();
-
-            // Auto-start job if it's still pending
-            if ($job->fresh()->status === 'pending') {
-                $job->update(['status' => 'in-progress']);
-            }
-
-            // Auto-complete job if all checkpoints are done
-            if ($job->fresh()->checkpoints_completed === $job->checkpoints_total) {
-                $job->update([
-                    'status' => 'completed',
-                    'completed_at' => now(),
-                ]);
+            if ($request->filled('update_flight_actual') && $checkpoint->completed_at) {
+                $this->syncTeamFlightArrival($checkpoint);
             }
 
             return response()->json([
                 'success' => true,
                 'message' => 'Checkpoint updated successfully',
-                'checkpoint' => $checkpoint->fresh(),
+                'checkpoint' => $checkpoint,
             ]);
+        } catch (\Illuminate\Validation\ValidationException
+            | \Illuminate\Auth\Access\AuthorizationException
+            | \Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            // These carry their own HTTP status; the catch-all below would hide it.
+            throw $e;
         } catch (\Exception $e) {
             Log::error('Override checkpoint failed', [
                 'checkpoint_id' => $checkpointId,
                 'error' => $e->getMessage(),
                 'file' => $e->getFile(),
                 'line' => $e->getLine(),
-                'trace' => $e->getTraceAsString()
             ]);
 
             return response()->json([
@@ -1001,23 +897,32 @@ class LmsController extends Controller
     }
 
     /**
-     * Re-date $reference onto $anchor's calendar date (keeping $reference's
-     * time-of-day), picking whichever adjacent day keeps it within 12 hours
-     * of $anchor. Used to compare two times "time of day only" when their
-     * underlying dates aren't expected to match (e.g. demo/seed schedules).
+     * Mirror a confirmed PMA arrival checkpoint onto the team's arrival flight.
      */
-    private function alignTimeOfDayTo(\Carbon\Carbon $reference, \Carbon\Carbon $anchor): \Carbon\Carbon
+    private function syncTeamFlightArrival(JobCheckpoint $checkpoint): void
     {
-        $aligned = $anchor->copy()->setTime($reference->hour, $reference->minute, $reference->second);
+        $movement = $checkpoint->job?->movement;
 
-        $diffSeconds = $aligned->getTimestamp() - $anchor->getTimestamp();
-        if ($diffSeconds > 12 * 3600) {
-            $aligned->subDay();
-        } elseif ($diffSeconds < -12 * 3600) {
-            $aligned->addDay();
+        if (! $movement || ! $movement->team_id || ! $movement->event_id) {
+            return;
         }
 
-        return $aligned;
+        $teamFlight = \App\Models\TeamFlight::where('event_id', $movement->event_id)
+            ->where('team_id', $movement->team_id)
+            ->where('direction', 'arrival')
+            ->first();
+
+        if (! $teamFlight) {
+            return;
+        }
+
+        $teamFlight->update(['actual_at' => $checkpoint->completed_at]);
+
+        Log::info('Updated team flight actual_at for PMA Arrival', [
+            'team_flight_id' => $teamFlight->id,
+            'actual_at' => $checkpoint->completed_at,
+            'checkpoint_id' => $checkpoint->id,
+        ]);
     }
 
     /**
@@ -1036,176 +941,38 @@ class LmsController extends Controller
             'oversized_pieces' => 'nullable|integer|min:0',
         ]);
 
-        $checkpoint = JobCheckpoint::with(['job', 'checkpoint'])->findOrFail($checkpointId);
+        $checkpoint = JobCheckpoint::with(['job.movement', 'checkpoint'])->findOrFail($checkpointId);
 
-        if ($checkpoint->state === 'done') {
+        $this->authorize('update', $checkpoint->job);
+
+        try {
+            $checkpoint = app(JobLifecycleService::class)->completeCheckpoint(
+                $checkpoint,
+                $request->user(),
+                [
+                    'actual_time' => $validated['actual_time'] ?? null,
+                    'notes' => $validated['notes'] ?? null,
+                    'photo' => $validated['photo'] ?? null,
+                    'signature' => $validated['signature'] ?? null,
+                    'planned_bags' => $validated['planned_bags'] ?? null,
+                    'bags_loaded' => $validated['bags_loaded'] ?? null,
+                    'food_bags' => $validated['food_bags'] ?? null,
+                    'oversized_pieces' => $validated['oversized_pieces'] ?? null,
+                ],
+                'mobile',
+            );
+        } catch (\RuntimeException $e) {
             return response()->json([
                 'success' => false,
-                'message' => 'Checkpoint already completed'
+                'message' => $e->getMessage(),
             ], 400);
-        }
-
-        // Get current user or use a default user for now
-        $user = User::first(); // TODO: Replace with actual authenticated user
-
-        $updateData = [
-            'state' => 'done',
-            'completed_by' => $user->id,
-            'completion_method' => 'mobile',
-            'notes' => $validated['notes'] ?? null,
-        ];
-
-        if (isset($validated['planned_bags'])) {
-            $updateData['planned_bags'] = $validated['planned_bags'];
-        }
-        if (isset($validated['bags_loaded'])) {
-            $updateData['bags_loaded'] = $validated['bags_loaded'];
-        }
-        if (isset($validated['food_bags'])) {
-            $updateData['food_bags'] = $validated['food_bags'];
-        }
-        if (isset($validated['oversized_pieces'])) {
-            $updateData['oversized_pieces'] = $validated['oversized_pieces'];
-        }
-
-        // Save photo to private storage if provided
-        if (!empty($validated['photo'])) {
-            $photoPath = $this->saveBase64File(
-                $validated['photo'],
-                'photos',
-                $checkpoint->job_id,
-                'photo',
-                $checkpoint->id
-            );
-            if ($photoPath) {
-                $updateData['photo_path'] = $photoPath;
-            }
-        }
-
-        // Save signature to private storage if provided
-        if (!empty($validated['signature'])) {
-            $signaturePath = $this->saveBase64File(
-                $validated['signature'],
-                'signatures',
-                $checkpoint->job_id,
-                'signature',
-                $checkpoint->id
-            );
-            if ($signaturePath) {
-                $updateData['signature_path'] = $signaturePath;
-            }
-        }
-
-        // Set completion time
-        if (!empty($validated['actual_time'])) {
-            // Use TODAY's date as the base, not the scheduled date
-            list($hours, $minutes) = explode(':', $validated['actual_time']);
-            $actualDateTime = \Carbon\Carbon::today()->setTime((int)$hours, (int)$minutes, 0);
-            
-            // Handle midnight crossover: if actual time is very early (e.g., 00:39) and scheduled time
-            // was late (e.g., 14:19), assume the completion happened early next day
-            if ($checkpoint->scheduled_at) {
-                $scheduledDateTime = \Carbon\Carbon::parse($checkpoint->scheduled_at);
-                $scheduledHour = $scheduledDateTime->hour;
-                $actualHour = (int)$hours;
-                
-                // If scheduled late (after 18:00) and actual is very early (before 06:00),
-                // it likely crossed midnight to tomorrow
-                if ($scheduledHour >= 18 && $actualHour < 6) {
-                    $actualDateTime->addDay();
-                }
-            }
-
-            $updateData['completed_at'] = $actualDateTime;
-
-            // Calculate duration based on scheduled time
-            if ($checkpoint->scheduled_at) {
-                $scheduledTime = \Carbon\Carbon::parse($checkpoint->scheduled_at);
-                $updateData['actual_duration_seconds'] = abs($actualDateTime->diffInSeconds($scheduledTime));
-            }
-
-            // Check if on time based on movement's window_end (not individual checkpoint scheduled_at)
-            $job = $checkpoint->job;
-            $movement = $job->movement;
-            if ($movement && $movement->window_end) {
-                $windowEnd = \Carbon\Carbon::parse($movement->window_end);
-                // diffInMinutes()'s signed mode is relative to the argument, not
-                // $this, so a plain "<= 0" check on it gets the direction backwards
-                // (late completions read as on-time and vice versa). greaterThan()
-                // for direction + an explicit absolute diff for magnitude avoids
-                // that footgun (and Carbon 3 defaults diffInMinutes() to signed,
-                // unlike Carbon 2, so the second argument must be passed explicitly).
-                $isLate = $actualDateTime->greaterThan($windowEnd);
-                $updateData['is_on_time'] = !$isLate;
-                $updateData['delay_minutes'] = $isLate ? $actualDateTime->diffInMinutes($windowEnd, true) : 0;
-            }
-        } else {
-            $updateData['completed_at'] = now();
-        }
-
-        $checkpoint->update($updateData);
-
-        // Update job progress
-        $job = $checkpoint->job;
-        $job->updateProgress();
-
-        // Auto-start job if it's still pending
-        if ($job->fresh()->status === 'pending') {
-            $job->update(['status' => 'in-progress']);
-        }
-
-        // Auto-complete job if all checkpoints are done
-        if ($job->fresh()->checkpoints_completed === $job->checkpoints_total) {
-            $job->update([
-                'status' => 'completed',
-                'completed_at' => now(),
-            ]);
         }
 
         return response()->json([
             'success' => true,
             'message' => 'Checkpoint completed successfully',
-            'checkpoint' => $checkpoint->fresh(),
+            'checkpoint' => $checkpoint,
         ]);
-    }
-
-    /**
-     * Save base64 encoded file to private storage
-     */
-    private function saveBase64File(string $base64Data, string $directory, int $jobId, string $type, int $checkpointId): ?string
-    {
-        try {
-            // Extract the base64 string (remove data:image/...;base64, prefix)
-            if (preg_match('/^data:image\/(\w+);base64,/', $base64Data, $matches)) {
-                $extension = $matches[1];
-                $base64Data = substr($base64Data, strpos($base64Data, ',') + 1);
-            } else {
-                $extension = 'png';
-            }
-
-            // Decode base64
-            $fileData = base64_decode($base64Data);
-            if ($fileData === false) {
-                Log::error('Failed to decode base64 file data');
-                return null;
-            }
-
-            // Generate unique filename with checkpoint ID
-            $timestamp = now()->format('YmdHis');
-            $filename = "checkpoint_{$checkpointId}_{$type}_{$timestamp}.{$extension}";
-            
-            // Store in job-specific directory
-            $jobDirectory = "jobs/{$jobId}/{$directory}";
-            $filePath = "{$jobDirectory}/{$filename}";
-
-            // Save to private storage (storage/app/...)
-            Storage::disk('local')->put($filePath, $fileData);
-
-            return $filePath;
-        } catch (\Exception $e) {
-            Log::error('Failed to save file: ' . $e->getMessage());
-            return null;
-        }
     }
 
     /**
@@ -1213,7 +980,9 @@ class LmsController extends Controller
      */
     public function getCheckpointPhoto(string $checkpointId)
     {
-        $checkpoint = JobCheckpoint::findOrFail($checkpointId);
+        $checkpoint = JobCheckpoint::with('job')->findOrFail($checkpointId);
+
+        $this->authorize('view', $checkpoint->job);
 
         if (!$checkpoint->photo_path) {
             abort(404, 'Photo not found');
@@ -1244,7 +1013,9 @@ class LmsController extends Controller
      */
     public function getCheckpointSignature(string $checkpointId)
     {
-        $checkpoint = JobCheckpoint::findOrFail($checkpointId);
+        $checkpoint = JobCheckpoint::with('job')->findOrFail($checkpointId);
+
+        $this->authorize('view', $checkpoint->job);
 
         if (!$checkpoint->signature_path) {
             abort(404, 'Signature not found');
@@ -1287,13 +1058,15 @@ class LmsController extends Controller
     }
 
     /**
-     * Update job status
-     */
-    /**
      * Marks a field-reported issue as dealt with.
      */
     public function resolveJobIssue(JobIssue $issue): RedirectResponse
     {
+        // An orphaned issue has no job to authorize against, so nobody resolves it.
+        abort_unless($issue->job, 404);
+
+        $this->authorize('update', $issue->job);
+
         if ($issue->resolved_at) {
             return back()->with('error', 'That issue is already resolved.');
         }
@@ -1332,6 +1105,8 @@ class LmsController extends Controller
             abort(404, 'Job not found');
         }
 
+        $this->authorize('update', $job);
+
         $from = $job->status;
         $to = $validated['status'];
 
@@ -1339,61 +1114,11 @@ class LmsController extends Controller
             return response()->json(['success' => true, 'message' => "Job is already {$to}"]);
         }
 
-        if (!$job->canTransitionTo($to)) {
-            $allowed = JobOperation::TRANSITIONS[$from] ?? [];
-
-            return response()->json([
-                'success' => false,
-                'message' => $allowed === []
-                    ? "Job {$job->job_id} is {$from} and can no longer change status."
-                    : "Cannot move job {$job->job_id} from {$from} to {$to}. Allowed: " . implode(', ', $allowed) . '.',
-            ], 422);
+        try {
+            app(JobLifecycleService::class)->transitionStatus($job, $to, $request->user());
+        } catch (\RuntimeException $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 422);
         }
-
-        DB::transaction(function () use ($job, $from, $to) {
-            $attrs = ['status' => $to];
-
-            // Stamp the entry time for this status, but never overwrite one
-            // already recorded (e.g. a job re-entering a status).
-            $timestampColumn = JobOperation::STATUS_TIMESTAMPS[$to] ?? null;
-            if ($timestampColumn && !$job->{$timestampColumn}) {
-                $attrs[$timestampColumn] = now();
-            }
-
-            // Undoing an accidental start clears the evidence that it ever ran.
-            $isRevertToPending = $from === 'in-progress' && $to === 'pending';
-            if ($isRevertToPending) {
-                $attrs['started_at'] = null;
-            }
-
-            $job->update($attrs);
-
-            // Mirror onto the movement so the schedule reflects reality, not just the plan.
-            if ($job->movement) {
-                if ($to === 'in-progress' && !$job->movement->actual_departure) {
-                    $job->movement->update(['actual_departure' => now()]);
-                } elseif ($to === 'completed' && !$job->movement->actual_arrival) {
-                    $job->movement->update(['actual_arrival' => now()]);
-                } elseif ($isRevertToPending) {
-                    $job->movement->update(['actual_departure' => null]);
-                }
-            }
-
-            AuditLog::record(
-                action: match (true) {
-                    $to === 'dispatched' => 'Job dispatched',
-                    $to === 'in-progress' => 'Job started',
-                    $to === 'completed' => 'Job completed',
-                    $to === 'cancelled' => 'Job cancelled',
-                    $isRevertToPending => 'Job reverted to scheduled',
-                    default => 'Job status changed',
-                },
-                target: $job->job_id . ($job->team ? ' · ' . $job->team->team_name : ''),
-                meta: "{$from} → {$to}",
-                subject: $job,
-                eventId: $job->event_id,
-            );
-        });
 
         return response()->json([
             'success' => true,

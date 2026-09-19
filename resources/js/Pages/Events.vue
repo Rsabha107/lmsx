@@ -243,6 +243,54 @@
           <label class="form-label">Notes</label>
           <textarea v-model="form.notes" class="form-input" rows="2" />
         </div>
+
+        <div class="form-group">
+          <div class="picker-head">
+            <label class="form-label">Venues</label>
+            <div class="picker-actions">
+              <span class="picker-summary">{{ form.venue_ids.length }} of {{ venues.length }} selected</span>
+              <button v-if="form.venue_ids.length" type="button" class="link-btn" @click="form.venue_ids = []">Clear</button>
+              <button v-else-if="venues.length" type="button" class="link-btn" @click="form.venue_ids = venues.map(v => v.id)">
+                Select all
+              </button>
+            </div>
+          </div>
+
+          <div v-if="venues.length > 6" class="picker-search">
+            <svg-icon name="search" :size="13" />
+            <input v-model="eventVenueSearch" type="text" placeholder="Filter venues…" />
+          </div>
+
+          <div class="picker">
+            <button
+              v-for="v in filteredAllVenues"
+              :key="v.id"
+              type="button"
+              :class="['picker-tile', { 'picker-tile--on': form.venue_ids.includes(v.id) }]"
+              @click="toggleFormVenue(v.id)"
+            >
+              <span class="picker-check" aria-hidden="true">
+                <svg v-if="form.venue_ids.includes(v.id)" width="11" height="11" viewBox="0 0 12 12" fill="none"
+                  stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+                  <polyline points="2 6 5 9 10 3" />
+                </svg>
+              </span>
+              <span class="picker-body">
+                <span class="picker-name">{{ v.name }}</span>
+                <span class="picker-meta">
+                  <span v-if="v.type" :class="['venue-type-dot', `venue-type-dot--${v.type}`]" />
+                  {{ [formatVenueType(v.type), v.city, v.capacity ? `${v.capacity.toLocaleString()} cap` : null].filter(Boolean).join(' · ') || '—' }}
+                </span>
+              </span>
+            </button>
+            <span v-if="!venues.length" class="picker-empty">No venues defined yet.</span>
+            <span v-else-if="!filteredAllVenues.length" class="picker-empty">No venues match “{{ eventVenueSearch }}”.</span>
+          </div>
+          <p class="picker-note">
+            Set each venue's purpose from the event's Venues panel after saving.
+          </p>
+        </div>
+
         <div class="form-actions">
           <Button type="button" variant="secondary" size="sm" @click="showEventModal = false">Cancel</Button>
           <Button type="submit" variant="primary" size="sm" :disabled="processing">
@@ -253,20 +301,56 @@
     </Modal>
 
     <!-- Assign Venue Modal -->
-    <Modal :show="showVenueModal" @close="showVenueModal = false" max-width="480px">
-      <template #title>Assign Venue to Event</template>
+    <Modal :show="showVenueModal" @close="showVenueModal = false" max-width="560px">
+      <template #title>Assign Venues to Event</template>
       <form @submit.prevent="submitVenue" class="team-form">
         <div class="form-group">
-          <label class="form-label">Venue <span class="required">*</span></label>
-          <select v-model="venueForm.venue_id" class="form-select" required>
-            <option value="">— Select venue —</option>
-            <option v-for="v in availableVenues" :key="v.id" :value="v.id">
-              {{ v.name }}
-              <span v-if="v.city"> · {{ v.city }}</span>
-              <span v-if="v.type"> · {{ v.type }}</span>
-            </option>
-          </select>
+          <div class="picker-head">
+            <label class="form-label">Venues <span class="required">*</span></label>
+            <div class="picker-actions">
+              <span class="picker-summary">{{ venueForm.venue_ids.length }} selected</span>
+              <button v-if="venueForm.venue_ids.length" type="button" class="link-btn" @click="venueForm.venue_ids = []">
+                Clear
+              </button>
+            </div>
+          </div>
+
+          <div v-if="availableVenues.length > 6" class="picker-search">
+            <svg-icon name="search" :size="13" />
+            <input v-model="venueSearch" type="text" placeholder="Filter venues…" />
+          </div>
+
+          <div class="picker">
+            <button
+              v-for="v in filteredAvailableVenues"
+              :key="v.id"
+              type="button"
+              :class="['picker-tile', { 'picker-tile--on': venueForm.venue_ids.includes(v.id) }]"
+              @click="toggleVenue(v.id)"
+            >
+              <span class="picker-check" aria-hidden="true">
+                <svg v-if="venueForm.venue_ids.includes(v.id)" width="11" height="11" viewBox="0 0 12 12" fill="none"
+                  stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+                  <polyline points="2 6 5 9 10 3" />
+                </svg>
+              </span>
+              <span class="picker-body">
+                <span class="picker-name">{{ v.name }}</span>
+                <span class="picker-meta">
+                  <span v-if="v.type" :class="['venue-type-dot', `venue-type-dot--${v.type}`]" />
+                  {{ [formatVenueType(v.type), v.city, v.capacity ? `${v.capacity.toLocaleString()} cap` : null].filter(Boolean).join(' · ') || '—' }}
+                </span>
+              </span>
+            </button>
+            <span v-if="!availableVenues.length" class="picker-empty">
+              All venues are already assigned to this event.
+            </span>
+            <span v-else-if="!filteredAvailableVenues.length" class="picker-empty">
+              No venues match “{{ venueSearch }}”.
+            </span>
+          </div>
         </div>
+
         <div class="form-row">
           <div class="form-group">
             <label class="form-label">Purpose</label>
@@ -283,9 +367,14 @@
           <label class="form-label">Notes</label>
           <textarea v-model="venueForm.notes" class="form-input" rows="2" />
         </div>
+        <p v-if="venueForm.venue_ids.length > 1" class="picker-note">
+          The purpose and notes above apply to all {{ venueForm.venue_ids.length }} selected venues.
+        </p>
         <div class="form-actions">
           <Button type="button" variant="secondary" size="sm" @click="showVenueModal = false">Cancel</Button>
-          <Button type="submit" variant="primary" size="sm" :disabled="processing">Assign Venue</Button>
+          <Button type="submit" variant="primary" size="sm" :disabled="processing || !venueForm.venue_ids.length">
+            {{ venueForm.venue_ids.length > 1 ? `Assign ${venueForm.venue_ids.length} Venues` : 'Assign Venue' }}
+          </Button>
         </div>
       </form>
     </Modal>
@@ -554,10 +643,12 @@ const eventToDelete    = ref(null);
 const assigningVenueEvent = ref(null);
 
 const form = ref(emptyForm());
-const venueForm = ref({ venue_id: '', purpose: '', notes: '' });
+const venueForm = ref({ venue_ids: [], purpose: '', notes: '' });
+const venueSearch = ref('');
+const eventVenueSearch = ref('');
 
 function emptyForm() {
-  return { name: '', short_name: '', host_country: '', start_date: '', end_date: '', status: 'upcoming', notes: '' };
+  return { name: '', short_name: '', host_country: '', start_date: '', end_date: '', status: 'upcoming', notes: '', venue_ids: [] };
 }
 
 // ── Computed ───────────────────────────────────────────────────────────────
@@ -574,6 +665,26 @@ const availableVenues = computed(() => {
   if (!assigningVenueEvent.value) return props.venues;
   const assigned = new Set((assigningVenueEvent.value.venues || []).map(v => v.id));
   return props.venues.filter(v => !assigned.has(v.id));
+});
+
+const filteredAvailableVenues = computed(() => {
+  const q = venueSearch.value.trim().toLowerCase();
+  if (!q) return availableVenues.value;
+  return availableVenues.value.filter(v =>
+    v.name.toLowerCase().includes(q)
+    || (v.city ?? '').toLowerCase().includes(q)
+    || (v.type ?? '').toLowerCase().includes(q)
+  );
+});
+
+const filteredAllVenues = computed(() => {
+  const q = eventVenueSearch.value.trim().toLowerCase();
+  if (!q) return props.venues;
+  return props.venues.filter(v =>
+    v.name.toLowerCase().includes(q)
+    || (v.city ?? '').toLowerCase().includes(q)
+    || (v.type ?? '').toLowerCase().includes(q)
+  );
 });
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -597,6 +708,7 @@ function selectEvent(event) {
 function openAddModal() {
   editingEvent.value = null;
   form.value = emptyForm();
+  eventVenueSearch.value = '';
   showEventModal.value = true;
 }
 
@@ -610,7 +722,9 @@ function editEvent(event) {
     end_date:     event.end_date     ? String(event.end_date).substring(0, 10)   : '',
     status:       event.status       || 'upcoming',
     notes:        event.notes        || '',
+    venue_ids:    (event.venues || []).map(v => v.id),
   };
+  eventVenueSearch.value = '';
   showEventModal.value = true;
 }
 
@@ -619,7 +733,15 @@ function submitEvent() {
   const url    = editingEvent.value ? `/events/${editingEvent.value.id}` : '/events';
   const method = editingEvent.value ? 'put' : 'post';
   router[method](url, form.value, {
-    onFinish: () => { processing.value = false; showEventModal.value = false; },
+    onFinish: () => {
+      processing.value = false;
+      showEventModal.value = false;
+      // Keep the open detail panel in step with the venues just saved.
+      if (editingEvent.value && selectedEvent.value?.id === editingEvent.value.id) {
+        const updated = props.events.find(e => e.id === editingEvent.value.id);
+        if (updated) selectedEvent.value = updated;
+      }
+    },
   });
 }
 
@@ -648,8 +770,26 @@ function removeTeam(event, teamCode) {
 // ── Venue assignment ───────────────────────────────────────────────────────
 function openVenueModal(event) {
   assigningVenueEvent.value = event;
-  venueForm.value = { venue_id: '', purpose: '', notes: '' };
+  venueForm.value = { venue_ids: [], purpose: '', notes: '' };
+  venueSearch.value = '';
   showVenueModal.value = true;
+}
+
+function toggleVenue(id) {
+  const i = venueForm.value.venue_ids.indexOf(id);
+  if (i === -1) venueForm.value.venue_ids.push(id);
+  else venueForm.value.venue_ids.splice(i, 1);
+}
+
+function toggleFormVenue(id) {
+  const i = form.value.venue_ids.indexOf(id);
+  if (i === -1) form.value.venue_ids.push(id);
+  else form.value.venue_ids.splice(i, 1);
+}
+
+function formatVenueType(type) {
+  if (!type) return null;
+  return type.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 }
 
 function submitVenue() {
@@ -1027,6 +1167,66 @@ function fmtDT(dt) {
 .assigned-venue-row:last-child { border-bottom:none; }
 .assigned-venue-info { display:flex; align-items:center; gap:8px; flex:1; }
 .venue-purpose-badge { display:inline-block; padding:2px 7px; border-radius:10px; font-size:10px; font-weight:700; text-transform:uppercase; background:#EFF6FF; color:#1d4ed8; margin-right:6px; }
+
+/* Venue picker */
+.picker-head {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: 8px; margin-bottom: 6px;
+}
+.picker-head .form-label { margin: 0; }
+.picker-actions { display: flex; align-items: center; gap: 8px; }
+.picker-summary { font-size: 11.5px; color: var(--ink4); }
+.link-btn {
+  background: none; border: none; padding: 0; cursor: pointer;
+  font-size: 11.5px; font-weight: 600; color: var(--accent); font-family: inherit;
+}
+.link-btn:hover { text-decoration: underline; }
+
+.picker-search {
+  display: flex; align-items: center; gap: 7px;
+  border: 1px solid var(--border); border-radius: 8px;
+  padding: 6px 10px; margin-bottom: 6px; background: var(--surface);
+}
+.picker-search:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-ring); }
+.picker-search svg { color: var(--ink3); flex-shrink: 0; }
+.picker-search input {
+  border: none; outline: none; background: none; width: 100%;
+  font-size: 13px; color: var(--ink); font-family: inherit;
+}
+
+.picker {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 6px; border: 1px solid var(--border); border-radius: 8px;
+  padding: 8px; background: var(--bg);
+  max-height: 260px; overflow-y: auto;
+}
+.picker-tile {
+  display: flex; align-items: flex-start; gap: 9px; text-align: left;
+  padding: 8px 10px; border-radius: 7px; cursor: pointer;
+  border: 1px solid transparent; background: var(--surface);
+  font-family: inherit; transition: border-color 0.13s, background 0.13s;
+}
+.picker-tile:hover { border-color: var(--border-strong); }
+.picker-tile--on { border-color: var(--accent); background: var(--accent-soft); }
+
+.picker-check {
+  width: 16px; height: 16px; border-radius: 5px; flex-shrink: 0; margin-top: 1px;
+  border: 1.5px solid var(--border-strong); background: var(--surface);
+  display: flex; align-items: center; justify-content: center; color: #fff;
+}
+.picker-tile--on .picker-check { background: var(--accent); border-color: var(--accent); }
+
+.picker-body { display: flex; flex-direction: column; min-width: 0; }
+.picker-name { font-size: 13px; font-weight: 600; color: var(--ink); }
+.picker-meta { font-size: 11px; color: var(--ink3); display: inline-flex; align-items: center; gap: 5px; }
+.picker-empty { font-size: 12px; color: var(--ink4); font-style: italic; padding: 6px; grid-column: 1 / -1; }
+.picker-note { font-size: 11.5px; color: var(--ink4); margin: 8px 0 0; }
+
+.venue-type-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ink4); flex-shrink: 0; }
+.venue-type-dot--stadium { background: #2563EB; }
+.venue-type-dot--training_ground { background: #16A34A; }
+.venue-type-dot--hotel { background: #A855F7; }
+.venue-type-dot--conference { background: #F59E0B; }
 
 /* Empty state */
 .empty-state { font-size:12px; color:var(--ink3); padding:10px 0; text-align:center; }

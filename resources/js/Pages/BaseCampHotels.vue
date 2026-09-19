@@ -57,7 +57,7 @@
     </div>
 
     <!-- Add Hotel Modal -->
-    <div v-if="showAddModal" class="modal-backdrop" @click.self="closeModal">
+    <div v-if="showAddModal" v-dialog="closeModal" class="modal-backdrop" @click.self="closeModal">
       <div class="hotel-modal">
         <div class="modal-header">
           <h3 class="modal-title">Add Base Camp Hotel</h3>
@@ -94,7 +94,7 @@
     </div>
 
     <!-- Edit Hotel Modal -->
-    <div v-if="showEditModal" class="modal-backdrop" @click.self="closeEditModal">
+    <div v-if="showEditModal" v-dialog="closeEditModal" class="modal-backdrop" @click.self="closeEditModal">
       <div class="hotel-modal">
         <div class="modal-header">
           <h3 class="modal-title">Edit Base Camp Hotel</h3>

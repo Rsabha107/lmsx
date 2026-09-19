@@ -8,7 +8,8 @@
 use App\Http\Controllers\AnalyticsController;
 use Illuminate\Support\Facades\Route;
 
-Route::middleware('auth')->prefix('analytics')->name('analytics.')->group(function () {
+// Analytics reports across every event, so it is an oversight capability.
+Route::middleware(['auth', 'permission:analytics.view'])->prefix('analytics')->name('analytics.')->group(function () {
     Route::get('/', [AnalyticsController::class, 'index'])->name('index');
     Route::get('/export', [AnalyticsController::class, 'export'])->name('export');
 });

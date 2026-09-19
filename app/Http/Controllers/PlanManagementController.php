@@ -14,6 +14,7 @@ use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 
 /**
@@ -956,16 +957,27 @@ class PlanManagementController extends Controller
         if ($request->has('movement_template_id') && $request->filled('movement_template_id')) {
             $validated = $request->validate([
                 'team_id' => 'required|exists:teams,id',
-                'movement_template_id' => 'required|exists:movement_templates,id',
+                'movement_template_id' => [
+                    'required',
+                    Rule::exists('movement_templates', 'id')
+                        ->where(fn ($q) => $q->where('event_id', $plan->event_id)),
+                ],
+                'base_time' => 'nullable|date_format:H:i',
             ]);
 
             $template = MovementTemplate::with('legs.checkpointTemplate')->findOrFail($validated['movement_template_id']);
             $team = \App\Models\Team::findOrFail($validated['team_id']);
 
-            // Use the team's arrival time if available, otherwise default to 9:00 AM on the plan date
-            $baseTime = $team->arrival_date_time 
-                ? Carbon::parse($team->arrival_date_time)
-                : Carbon::parse($plan->date)->setTime(9, 0);
+            // An explicit base time wins; otherwise fall back to the team's
+            // arrival, then to 9:00 on the plan date.
+            if (! empty($validated['base_time'])) {
+                [$hours, $minutes] = array_map('intval', explode(':', $validated['base_time']));
+                $baseTime = Carbon::parse($plan->date)->setTime($hours, $minutes);
+            } else {
+                $baseTime = $team->arrival_date_time
+                    ? Carbon::parse($team->arrival_date_time)
+                    : Carbon::parse($plan->date)->setTime(9, 0);
+            }
 
             // Create movements from template legs
             $movementsCreated = 0;
@@ -1010,18 +1022,26 @@ class PlanManagementController extends Controller
 
         // Otherwise, add a single manual movement (existing functionality)
         $validated = $request->validate([
-            'team_id' => 'required|exists:teams,id',
+            'team_id' => [
+                'required',
+                Rule::exists('teams', 'id')->where(fn ($q) => $q->where('event_id', $plan->event_id)),
+            ],
             'flight_id' => 'nullable|exists:team_flights,id',
-            'checkpoint_template_id' => 'required|exists:checkpoint_templates,id',
+            'checkpoint_template_id' => [
+                'required',
+                Rule::exists('checkpoint_templates', 'id')
+                    ->where(fn ($q) => $q->where('event_id', $plan->event_id)),
+            ],
             'kind' => 'required|in:arrival,departure,transfer,training,match',
             'functional_area' => 'nullable|in:LOG,AND,MOB',
             'from_location' => 'required|string',
             'to_location' => 'required|string',
             'window_start' => 'required|date',
-            'window_end' => 'required|date',
+            'window_end' => 'required|date|after:window_start',
             'vehicle_id' => 'nullable|exists:vehicles,id',
             'driver_id' => 'nullable|exists:drivers,id',
-            'passengers' => 'required|integer|min:1',
+            // Movements routinely carry no manifest yet, so zero is legitimate.
+            'passengers' => 'nullable|integer|min:0',
         ]);
 
         $movement = Movement::create([
@@ -1029,13 +1049,17 @@ class PlanManagementController extends Controller
             'plan_id' => $plan->id,
             'event_id' => $plan->event_id,
             ...$validated,
+            'passengers' => $validated['passengers'] ?? 0,
             'status' => 'scheduled',
             'source' => 'manual',
         ]);
 
         $plan->increment('movements_count');
 
-        return back()->with('success', 'Movement added to plan');
+        $teamsInPlan = Movement::where('plan_id', $plan->id)->distinct('team_id')->count('team_id');
+        $plan->update(['teams_count' => $teamsInPlan]);
+
+        return back()->with('success', "Movement {$movement->code} added to plan");
     }
 
     /**
@@ -1083,15 +1107,20 @@ class PlanManagementController extends Controller
     public function getCheckpointTemplates(Request $request)
     {
         $type = $request->query('type');
+        $activeEventId = $request->session()->get('active_event_id');
 
-        $query = CheckpointTemplate::active()->with('checkpoints');
+        // Templates belong to an event; offering another event's would let a
+        // movement be built from checkpoints that don't apply to it.
+        $query = CheckpointTemplate::active()
+            ->with('checkpoints')
+            ->when($activeEventId, fn ($q) => $q->where('event_id', $activeEventId));
 
         if ($type) {
             $query->where('movement_type', $type);
         }
 
         return response()->json([
-            'templates' => $query->get(),
+            'templates' => $query->orderBy('name')->get(),
         ]);
     }
 

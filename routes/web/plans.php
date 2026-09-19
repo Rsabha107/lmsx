@@ -19,20 +19,24 @@ Route::middleware(['auth'])->group(function () {
     */
     
     Route::prefix('plans')->name('plans.')->group(function () {
-        // Plan CRUD
-        Route::get('/', [PlanManagementController::class, 'index'])->name('index');
-        Route::get('/create', [PlanManagementController::class, 'create'])->name('create');
-        Route::post('/bulk', [PlanManagementController::class, 'bulkStore'])->name('bulk-store');
-        Route::post('/bulk-matches', [PlanManagementController::class, 'bulkMatchStore'])->name('bulk-match-store');
-        Route::post('/', [PlanManagementController::class, 'store'])->name('store');
-        Route::get('/{plan}', [PlanManagementController::class, 'show'])->name('show');
-        Route::put('/{plan}', [PlanManagementController::class, 'update'])->name('update');
-        Route::delete('/{plan}', [PlanManagementController::class, 'destroy'])->name('destroy');
+        Route::middleware('permission:plans.view')->group(function () {
+            Route::get('/', [PlanManagementController::class, 'index'])->name('index');
+            Route::get('/create', [PlanManagementController::class, 'create'])->name('create');
+            Route::get('/{plan}', [PlanManagementController::class, 'show'])->name('show');
+        });
 
-        // Plan Actions
-        Route::post('/{plan}/generate-jobs', [PlanManagementController::class, 'generateJobs'])->name('generate-jobs');
-        Route::post('/{plan}/movements', [PlanManagementController::class, 'addMovement'])->name('add-movement');
-        Route::put('/{plan}/status', [PlanManagementController::class, 'updateStatus'])->name('update-status');
+        Route::middleware('permission:plans.manage')->group(function () {
+            Route::post('/bulk', [PlanManagementController::class, 'bulkStore'])->name('bulk-store');
+            Route::post('/bulk-matches', [PlanManagementController::class, 'bulkMatchStore'])->name('bulk-match-store');
+            Route::post('/', [PlanManagementController::class, 'store'])->name('store');
+            Route::put('/{plan}', [PlanManagementController::class, 'update'])->name('update');
+            Route::delete('/{plan}', [PlanManagementController::class, 'destroy'])->name('destroy');
+
+            // Plan Actions
+            Route::post('/{plan}/generate-jobs', [PlanManagementController::class, 'generateJobs'])->name('generate-jobs');
+            Route::post('/{plan}/movements', [PlanManagementController::class, 'addMovement'])->name('add-movement');
+            Route::put('/{plan}/status', [PlanManagementController::class, 'updateStatus'])->name('update-status');
+        });
     });
 
     /*
@@ -40,13 +44,18 @@ Route::middleware(['auth'])->group(function () {
     | Movement Management
     |--------------------------------------------------------------------------
     */
-    
+
     Route::prefix('movements')->name('movements.')->group(function () {
-        Route::delete('/bulk-delete', [PlanManagementController::class, 'deleteMovementsBulk'])->name('bulk-delete');
-        Route::get('/{movement}/checkpoints', [PlanManagementController::class, 'checkpoints'])->name('checkpoints');
-        Route::put('/{movement}/checkpoint-template', [PlanManagementController::class, 'updateCheckpointTemplate'])->name('update-checkpoint-template');
-        Route::put('/{movement}', [PlanManagementController::class, 'updateMovement'])->name('update');
-        Route::delete('/{movement}', [PlanManagementController::class, 'deleteMovement'])->name('delete');
+        Route::get('/{movement}/checkpoints', [PlanManagementController::class, 'checkpoints'])
+            ->middleware('permission:plans.view')
+            ->name('checkpoints');
+
+        Route::middleware('permission:plans.manage')->group(function () {
+            Route::delete('/bulk-delete', [PlanManagementController::class, 'deleteMovementsBulk'])->name('bulk-delete');
+            Route::put('/{movement}/checkpoint-template', [PlanManagementController::class, 'updateCheckpointTemplate'])->name('update-checkpoint-template');
+            Route::put('/{movement}', [PlanManagementController::class, 'updateMovement'])->name('update');
+            Route::delete('/{movement}', [PlanManagementController::class, 'deleteMovement'])->name('delete');
+        });
     });
 
     /*
@@ -54,8 +63,8 @@ Route::middleware(['auth'])->group(function () {
     | API Routes for Templates
     |--------------------------------------------------------------------------
     */
-    
-    Route::prefix('api')->name('api.')->group(function () {
+
+    Route::middleware('permission:plans.view')->prefix('api')->name('api.')->group(function () {
         // Duplicate Detection
         Route::post('/check-duplicate', [PlanManagementController::class, 'checkDuplicate'])->name('check-duplicate');
         Route::post('/check-duplicate-bulk', [PlanManagementController::class, 'checkDuplicateBulk'])->name('check-duplicate-bulk');

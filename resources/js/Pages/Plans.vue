@@ -3214,6 +3214,7 @@
     <teleport to="body">
       <div
         v-if="showNewPlan"
+        v-dialog="() => (showNewPlan = false)"
         class="modal-backdrop"
         @click.self="showNewPlan = false"
       >
@@ -4778,6 +4779,7 @@
       <!-- Edit Plan Modal -->
       <div
         v-if="showEditPlan"
+        v-dialog="() => (showEditPlan = false)"
         class="modal-backdrop"
         @click.self="showEditPlan = false"
       >
@@ -4939,6 +4941,7 @@
     <teleport to="body">
       <div
         v-if="showRefTimeInfoModal"
+        v-dialog="() => (showRefTimeInfoModal = false)"
         class="modal-backdrop"
         @click.self="showRefTimeInfoModal = false"
       >
@@ -4996,6 +4999,7 @@
     <teleport to="body">
       <div
         v-if="showJobInfoModal"
+        v-dialog="() => (showJobInfoModal = false)"
         class="modal-backdrop"
         @click.self="showJobInfoModal = false"
       >
@@ -5053,6 +5057,7 @@
     <teleport to="body">
       <div
         v-if="showGenerateJobs"
+        v-dialog="() => (showGenerateJobs = false)"
         class="modal-backdrop"
         @click.self="showGenerateJobs = false"
       >
@@ -5285,6 +5290,7 @@
     <teleport to="body">
       <div
         v-if="showGenProgress"
+        v-dialog="() => genDone && (showGenProgress = false)"
         class="modal-backdrop"
         @click.self="genDone ? (showGenProgress = false) : null"
       >
@@ -5381,6 +5387,7 @@
     <teleport to="body">
       <div
         v-if="showNewTeamPlan"
+        v-dialog="() => (showNewTeamPlan = false)"
         class="modal-backdrop"
         @click.self="showNewTeamPlan = false"
       >
@@ -5569,6 +5576,7 @@
     <teleport to="body">
       <div
         v-if="showGenSuccess"
+        v-dialog="() => (showGenSuccess = false)"
         class="modal-backdrop"
         @click.self="showGenSuccess = false"
       >
@@ -5678,6 +5686,7 @@
     <teleport to="body">
       <div
         v-if="showAddLeg"
+        v-dialog="() => (showAddLeg = false)"
         class="modal-backdrop"
         @click.self="showAddLeg = false"
       >
@@ -6038,6 +6047,7 @@
     <teleport to="body">
       <div
         v-if="showAddMovement"
+        v-dialog="() => (showAddMovement = false)"
         class="modal-backdrop"
         @click.self="showAddMovement = false"
       >
@@ -6046,13 +6056,13 @@
           <div class="modal-header" style="align-items: flex-start">
             <div>
               <div class="modal-eyebrow">
-                {{ selectedPlanObj?.code }} · {{ selectedPlanObj?.date }}
+                {{ selectedPlanObj?.code }} · {{ (selectedPlanObj?.date ?? '').slice(0, 10) }}
               </div>
               <div class="modal-title" style="font-size: 18px">
                 Add movement
               </div>
             </div>
-            <button class="modal-close" @click="showAddMovement = false">
+            <button class="modal-close" type="button" aria-label="Close" @click="showAddMovement = false">
               <svg-icon name="x" :size="16" />
             </button>
           </div>
@@ -6105,14 +6115,16 @@
 
           <!-- Form body -->
           <div class="modal-body" style="gap: 12px">
+            <p v-if="amError" class="am-error-banner" role="alert">{{ amError }}</p>
+
             <!-- Manual entry -->
             <template v-if="amMode === 'manual'">
               <div
                 style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px"
               >
                 <div class="form-field">
-                  <label>PHASE</label>
-                  <select v-model="amPhase">
+                  <label for="am-phase">PHASE</label>
+                  <select id="am-phase" v-model="amPhase">
                     <option value="arrival">Arrival</option>
                     <option value="departure">Departure</option>
                     <option value="transfer">Transfer</option>
@@ -6121,31 +6133,37 @@
                   </select>
                 </div>
                 <div class="form-field">
-                  <label>TEAM</label>
-                  <select v-model="amTeam">
+                  <label for="am-team">TEAM</label>
+                  <select id="am-team" v-model="amTeam" :class="{ 'field--invalid': amErrors.team_id }">
                     <option value="">Select team...</option>
-                    <option value="team-a">Team A</option>
-                    <option value="team-b">Team B</option>
-                    <option value="team-c">Team C</option>
+                    <option v-for="t in props.teams" :key="t.id" :value="t.id">
+                      {{ t.code }} · {{ t.team_name }}
+                    </option>
                   </select>
+                  <span v-if="amErrors.team_id" class="am-field-error">{{ amErrors.team_id }}</span>
                 </div>
               </div>
               <div
                 style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px"
               >
                 <div class="form-field">
-                  <label>FROM</label>
+                  <label for="am-from">FROM</label>
                   <input
+                    id="am-from"
                     type="text"
                     v-model="amFrom"
+                    :class="{ 'field--invalid': amErrors.from_location }"
                     placeholder="e.g. Hotel Aurora"
                   />
+                  <span v-if="amErrors.from_location" class="am-field-error">{{ amErrors.from_location }}</span>
                 </div>
                 <div class="form-field">
-                  <label>TO</label>
+                  <label for="am-to">TO</label>
                   <input
+                    id="am-to"
                     type="text"
                     v-model="amTo"
+                    :class="{ 'field--invalid': amErrors.to_location }"
                     placeholder="e.g. Stadium Azure"
                   />
                 </div>
@@ -6154,34 +6172,61 @@
                 style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px"
               >
                 <div class="form-field">
-                  <label>START</label>
-                  <input type="time" v-model="amStart" />
+                  <label for="am-start">START</label>
+                  <input id="am-start" type="time" v-model="amStart" />
                 </div>
                 <div class="form-field">
-                  <label>END (ETA)</label>
-                  <input type="time" v-model="amEnd" />
+                  <label for="am-end">END (ETA)</label>
+                  <input id="am-end" type="time" v-model="amEnd" :class="{ 'field--invalid': amErrors.window_end }" />
+                  <span v-if="amErrors.window_end" class="am-field-error">{{ amErrors.window_end }}</span>
                 </div>
               </div>
               <div
                 style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px"
               >
                 <div class="form-field">
-                  <label>VEHICLE</label>
-                  <select v-model="amVehicle">
+                  <label for="am-vehicle">VEHICLE</label>
+                  <select id="am-vehicle" v-model="amVehicle">
                     <option value="">Auto-assign...</option>
-                    <option value="bus-01">Bus 01</option>
-                    <option value="bus-02">Bus 02</option>
-                    <option value="van-01">Van 01</option>
+                    <option v-for="v in props.vehicles" :key="v.id" :value="v.id">
+                      {{ v.code }}{{ v.vehicle_type ? ` · ${v.vehicle_type}` : '' }}
+                    </option>
                   </select>
                 </div>
                 <div class="form-field">
-                  <label>PASSENGERS</label>
+                  <label for="am-pax">PASSENGERS</label>
                   <input
+                    id="am-pax"
                     type="number"
                     v-model="amPassengers"
                     placeholder="0"
-                    min="1"
+                    min="0"
                   />
+                </div>
+              </div>
+              <div
+                style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px"
+              >
+                <div class="form-field">
+                  <label for="am-fa">FUNCTIONAL AREA</label>
+                  <select id="am-fa" v-model="amFunctionalArea">
+                    <option value="">Unassigned</option>
+                    <option value="LOG">LOG</option>
+                    <option value="AND">AND</option>
+                    <option value="MOB">MOB</option>
+                  </select>
+                </div>
+                <div class="form-field">
+                  <label for="am-cpt">CHECKPOINT TEMPLATE</label>
+                  <select id="am-cpt" v-model="amCheckpointTemplate" :class="{ 'field--invalid': amErrors.checkpoint_template_id }">
+                    <option value="">
+                      {{ amTemplatesLoading ? 'Loading…' : 'Select template...' }}
+                    </option>
+                    <option v-for="t in amCheckpointTemplates" :key="t.id" :value="t.id">
+                      {{ t.name }}
+                    </option>
+                  </select>
+                  <span v-if="amErrors.checkpoint_template_id" class="am-field-error">{{ amErrors.checkpoint_template_id }}</span>
                 </div>
               </div>
 
@@ -6199,9 +6244,9 @@
                 >
                   Checkpoint Sequence
                 </div>
-                <div style="display: flex; flex-wrap: wrap; gap: 6px">
+                <div v-if="amCheckpointNames.length" style="display: flex; flex-wrap: wrap; gap: 6px">
                   <span
-                    v-for="(cp, i) in amCheckpoints"
+                    v-for="(cp, i) in amCheckpointNames"
                     :key="i"
                     class="am-cp-pill"
                   >
@@ -6211,17 +6256,15 @@
                 <div
                   style="font-size: 11px; color: var(--ink3); margin-top: 8px"
                 >
-                  Using default checkpoint library ·
-                  <a
-                    href="#"
-                    @click.prevent
-                    style="
-                      color: var(--accent);
-                      text-decoration: none;
-                      font-weight: 500;
-                    "
-                    >customize</a
-                  >
+                  <span v-if="amCheckpointNames.length">
+                    From <strong>{{ amCheckpointTemplateObj?.name }}</strong> ·
+                    {{ amCheckpointNames.length }} checkpoint{{ amCheckpointNames.length === 1 ? '' : 's' }}
+                  </span>
+                  <span v-else-if="amTemplatesLoading">Loading checkpoint templates…</span>
+                  <span v-else-if="amCheckpointTemplates.length === 0">
+                    No checkpoint template exists for a {{ amPhase }} movement. Create one in the Library first.
+                  </span>
+                  <span v-else>Pick a checkpoint template to see its sequence.</span>
                 </div>
               </div>
             </template>
@@ -6232,43 +6275,46 @@
                 style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px"
               >
                 <div class="form-field">
-                  <label>TEMPLATE</label>
-                  <select v-model="amTemplate">
+                  <label for="am-template">TEMPLATE</label>
+                  <select id="am-template" v-model="amTemplate" :class="{ 'field--invalid': amErrors.movement_template_id }">
+                    <option value="">Select template...</option>
                     <option
-                      v-for="t in movementTemplateLibrary"
+                      v-for="t in props.movementTemplates"
                       :key="t.id"
                       :value="t.id"
                     >
                       {{ t.name }}
                     </option>
                   </select>
+                  <span v-if="amErrors.movement_template_id" class="am-field-error">{{ amErrors.movement_template_id }}</span>
                 </div>
                 <div class="form-field">
-                  <label>TEAM</label>
-                  <select v-model="amTeam">
+                  <label for="am-template-team">TEAM</label>
+                  <select id="am-template-team" v-model="amTeam" :class="{ 'field--invalid': amErrors.team_id }">
                     <option value="">Select team...</option>
-                    <option value="fc-meridian">FC Meridian</option>
-                    <option value="team-a">Team A</option>
-                    <option value="team-b">Team B</option>
-                    <option value="team-c">Team C</option>
+                    <option v-for="t in props.teams" :key="t.id" :value="t.id">
+                      {{ t.code }} · {{ t.team_name }}
+                    </option>
                   </select>
+                  <span v-if="amErrors.team_id" class="am-field-error">{{ amErrors.team_id }}</span>
                 </div>
               </div>
               <div
                 style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px"
               >
                 <div class="form-field">
-                  <label>DATE</label>
-                  <input type="date" v-model="amDate" />
+                  <label for="am-date">DATE</label>
+                  <input id="am-date" type="date" v-model="amDate" readonly />
                 </div>
                 <div class="form-field">
-                  <label>BASE TIME (FIRST LEG)</label>
-                  <input type="time" v-model="amBaseTime" />
+                  <label for="am-base-time">BASE TIME (FIRST LEG)</label>
+                  <input id="am-base-time" type="time" v-model="amBaseTime" />
                 </div>
               </div>
 
               <!-- Template preview card -->
               <div
+                v-if="amTemplateObj"
                 style="
                   border: 1px solid var(--border);
                   border-radius: 10px;
@@ -6302,8 +6348,10 @@
                         margin-top: 2px;
                       "
                     >
-                      {{ amTemplateObj.legs }} legs · avg
-                      {{ amTemplateObj.avg }}
+                      {{ amTemplateLegs.length }} leg{{ amTemplateLegs.length === 1 ? '' : 's' }}
+                      <span v-if="amTemplateObj.estimated_duration_minutes">
+                        · approx {{ formatDurationMinutes(amTemplateObj.estimated_duration_minutes) }}
+                      </span>
                     </div>
                   </div>
                   <span
@@ -6316,7 +6364,7 @@
                       padding: 3px 8px;
                       border-radius: 6px;
                     "
-                    >{{ amTemplateObj.id }}</span
+                    >{{ amTemplateObj.code }}</span
                   >
                 </div>
 
@@ -6423,13 +6471,23 @@
               <Button
                 variant="secondary"
                 size="sm"
+                :disabled="amProcessing"
                 @click="showAddMovement = false"
                 >Cancel</Button
               >
-              <Button variant="secondary" size="sm" @click="saveMovement(true)"
+              <Button
+                variant="secondary"
+                size="sm"
+                :disabled="amProcessing"
+                @click="saveMovement(true)"
                 >Save &amp; add another</Button
               >
-              <Button variant="primary" size="sm" @click="saveMovement(false)"
+              <Button
+                variant="primary"
+                size="sm"
+                :disabled="amProcessing"
+                :processing="amProcessing"
+                @click="saveMovement(false)"
                 >Add to plan</Button
               >
             </div>
@@ -6442,6 +6500,7 @@
     <teleport to="body">
       <div
         v-if="showEditMovement"
+        v-dialog="() => (showEditMovement = false)"
         class="modal-backdrop"
         @click.self="showEditMovement = false"
       >
@@ -6848,6 +6907,7 @@
     <teleport to="body">
       <div
         v-if="showDeleteConfirmation && deletingPlan"
+        v-dialog="cancelDeletePlan"
         class="modal-backdrop"
         @click.self="cancelDeletePlan"
       >
@@ -6925,6 +6985,7 @@
     <teleport to="body">
       <div
         v-if="showDeleteMovementConfirmation && deletingMovement"
+        v-dialog="cancelDeleteMovement"
         class="modal-backdrop"
         @click.self="cancelDeleteMovement"
       >
@@ -7014,6 +7075,7 @@
     <teleport to="body">
       <div
         v-if="showBulkDeleteMovementsConfirmation"
+        v-dialog="cancelBulkDeleteMovements"
         class="modal-backdrop"
         @click.self="cancelBulkDeleteMovements"
       >
@@ -7084,6 +7146,7 @@
     <teleport to="body">
       <div
         v-if="showPreviewModal && selectedTemplate"
+        v-dialog="() => (showPreviewModal = false)"
         class="modal-backdrop"
         @click.self="showPreviewModal = false"
       >
@@ -7277,6 +7340,7 @@
       <!-- Add Team to Plan Modal -->
       <div
         v-if="showAddTeamModal"
+        v-dialog="() => (showAddTeamModal = false)"
         class="modal-backdrop"
         @click.self="showAddTeamModal = false"
       >
@@ -7853,115 +7917,16 @@ const emFlightNumber = ref("");
 const emNotes = ref("");
 const emMatchId = ref(null);
 
-const movementTemplateLibrary = [
-  {
-    id: "TPL-MATCH",
-    name: "Match-day Round-trip",
-    legs: 5,
-    avg: "5h 30m",
-    legs_def: [
-      {
-        phase: "Daily ops",
-        from: "Hotel",
-        to: "Training",
-        offsetMin: 0,
-        durMin: 30,
-      },
-      {
-        phase: "Daily ops",
-        from: "Training",
-        to: "Hotel",
-        offsetMin: 150,
-        durMin: 30,
-      },
-      {
-        phase: "Daily ops",
-        from: "Hotel",
-        to: "Stadium",
-        offsetMin: 360,
-        durMin: 45,
-      },
-      {
-        phase: "Daily ops",
-        from: "Stadium",
-        to: "Hotel",
-        offsetMin: 600,
-        durMin: 35,
-      },
-      {
-        phase: "Daily ops",
-        from: "Post-match press",
-        to: "",
-        offsetMin: 640,
-        durMin: 30,
-      },
-    ],
-  },
-  {
-    id: "TPL-ARR",
-    name: "Standard Arrival",
-    legs: 3,
-    avg: "2h 10m",
-    legs_def: [
-      {
-        phase: "Arrival",
-        from: "Airport",
-        to: "Hotel",
-        offsetMin: 0,
-        durMin: 45,
-      },
-      {
-        phase: "Arrival",
-        from: "Hotel",
-        to: "Training",
-        offsetMin: 60,
-        durMin: 40,
-      },
-      {
-        phase: "Arrival",
-        from: "Training",
-        to: "Hotel",
-        offsetMin: 180,
-        durMin: 30,
-      },
-    ],
-  },
-  {
-    id: "TPL-DEP",
-    name: "Standard Departure",
-    legs: 3,
-    avg: "2h 00m",
-    legs_def: [
-      {
-        phase: "Departure",
-        from: "Hotel",
-        to: "Stadium",
-        offsetMin: 0,
-        durMin: 40,
-      },
-      {
-        phase: "Departure",
-        from: "Stadium",
-        to: "Airport",
-        offsetMin: 90,
-        durMin: 45,
-      },
-      {
-        phase: "Departure",
-        from: "Airport",
-        to: "Departure Gate",
-        offsetMin: 180,
-        durMin: 30,
-      },
-    ],
-  },
-];
 
 const amTemplateObj = computed(
-  () =>
-    movementTemplateLibrary.find((t) => t.id === amTemplate.value) ??
-    movementTemplateLibrary[0]
+  () => props.movementTemplates.find((t) => t.id === amTemplate.value) ?? null
 );
+
+function formatDurationMinutes(total) {
+  const h = Math.floor(total / 60);
+  const m = total % 60;
+  return h ? `${h}h${m ? ` ${m}m` : ''}` : `${m}m`;
+}
 
 function addMinutesToTime(base, offset) {
   const [h, m] = base.split(":").map(Number);
@@ -7971,28 +7936,68 @@ function addMinutesToTime(base, offset) {
   ).padStart(2, "0")}`;
 }
 
+// Mirrors the server's expansion: each leg starts where the previous one ended.
 const amTemplateLegs = computed(() => {
   const tpl = amTemplateObj.value;
-  if (!tpl) return [];
-  // Calculate base from actual database movements count
+  if (!tpl?.legs?.length) return [];
+
   const base = props.movementsByTeam?.reduce((sum, group) => sum + (group.items?.length || 0), 0) || 0;
-  return tpl.legs_def.map((leg, i) => ({
-    ...leg,
-    dep: addMinutesToTime(amBaseTime.value, leg.offsetMin),
-    arr: addMinutesToTime(amBaseTime.value, leg.offsetMin + leg.durMin),
-    idx: base + i + 1,
-  }));
+  let cumulative = 0;
+
+  return tpl.legs.map((leg, i) => {
+    const duration = leg.estimated_duration_minutes ?? 30;
+    const row = {
+      phase: leg.leg_type ?? "transfer",
+      from: leg.from_location ?? "—",
+      to: leg.to_location ?? "—",
+      durMin: duration,
+      dep: addMinutesToTime(amBaseTime.value, cumulative),
+      arr: addMinutesToTime(amBaseTime.value, cumulative + duration),
+      idx: base + i + 1,
+    };
+    cumulative += duration;
+    return row;
+  });
 });
 
-const amCheckpoints = [
-  "Vehicle dispatch",
-  "Arrived at origin",
-  "Team on board",
-  "Bags loaded",
-  "Depart origin",
-  "Arrive at destination",
-  "Handoff complete",
-];
+// Checkpoint templates are filtered by movement type, so they reload with PHASE.
+const amCheckpointTemplates = ref([]);
+const amTemplatesLoading = ref(false);
+const amCheckpointTemplate = ref("");
+const amFunctionalArea = ref("");
+const amError = ref("");
+const amErrors = ref({});
+const amProcessing = ref(false);
+
+const amCheckpointTemplateObj = computed(
+  () => amCheckpointTemplates.value.find((t) => t.id === amCheckpointTemplate.value) ?? null
+);
+
+const amCheckpointNames = computed(
+  () => (amCheckpointTemplateObj.value?.checkpoints ?? []).map((c) => c.name)
+);
+
+async function loadCheckpointTemplates() {
+  amTemplatesLoading.value = true;
+  try {
+    const { data } = await axios.get("/api/checkpoint-templates", {
+      params: { type: amPhase.value },
+    });
+    amCheckpointTemplates.value = data.templates ?? [];
+    if (!amCheckpointTemplates.value.some((t) => t.id === amCheckpointTemplate.value)) {
+      amCheckpointTemplate.value = amCheckpointTemplates.value[0]?.id ?? "";
+    }
+  } catch (e) {
+    amCheckpointTemplates.value = [];
+    amError.value = "Could not load checkpoint templates.";
+  } finally {
+    amTemplatesLoading.value = false;
+  }
+}
+
+watch([amPhase, showAddMovement], ([, open]) => {
+  if (open) loadCheckpointTemplates();
+});
 
 const showAddLeg = ref(false);
 const alType = ref("transfer");
@@ -10562,30 +10567,73 @@ function addMovement() {
   amEnd.value = "15:45";
   amVehicle.value = "";
   amPassengers.value = "";
-  amTemplate.value = "TPL-MATCH";
-  amDate.value = selectedPlanObj.value?.date ?? "";
+  amTemplate.value = props.movementTemplates[0]?.id ?? "";
+  amFunctionalArea.value = "";
+  amCheckpointTemplate.value = "";
+  amError.value = "";
+  amErrors.value = {};
+  amProcessing.value = false;
+  amDate.value = (selectedPlanObj.value?.date ?? "").slice(0, 10);
   amBaseTime.value = "14:00";
   showAddMovement.value = true;
 }
 
+/** Plan date + a HH:mm field, as the datetime the API expects. */
+function planDateTime(time) {
+  const date = (selectedPlanObj.value?.date ?? "").slice(0, 10);
+  return date && time ? `${date} ${time}:00` : null;
+}
+
 function saveMovement(andAnother = false) {
-  console.log("Save movement:", {
-    phase: amPhase.value,
-    team: amTeam.value,
-    from: amFrom.value,
-    to: amTo.value,
-    start: amStart.value,
-    end: amEnd.value,
-    vehicle: amVehicle.value,
-    passengers: amPassengers.value,
-  });
-  if (andAnother) {
-    amFrom.value = "";
-    amTo.value = "";
-    amPassengers.value = "";
-  } else {
-    showAddMovement.value = false;
+  if (amProcessing.value) return;
+
+  if (!selectedPlanObj.value) {
+    amError.value = "Select a plan first.";
+    return;
   }
+
+  amError.value = "";
+  amErrors.value = {};
+  amProcessing.value = true;
+
+  const payload = amMode.value === "template"
+    ? {
+        team_id: amTeam.value || null,
+        movement_template_id: amTemplate.value || null,
+        base_time: amBaseTime.value || null,
+      }
+    : {
+        team_id: amTeam.value || null,
+        checkpoint_template_id: amCheckpointTemplate.value || null,
+        kind: amPhase.value,
+        functional_area: amFunctionalArea.value || null,
+        from_location: amFrom.value,
+        to_location: amTo.value,
+        window_start: planDateTime(amStart.value),
+        window_end: planDateTime(amEnd.value),
+        vehicle_id: amVehicle.value || null,
+        passengers: amPassengers.value === "" ? 0 : Number(amPassengers.value),
+      };
+
+  router.post(`/plans/${selectedPlanObj.value.id}/movements`, payload, {
+    preserveScroll: true,
+    onSuccess: () => {
+      if (andAnother) {
+        amFrom.value = "";
+        amTo.value = "";
+        amPassengers.value = "";
+      } else {
+        showAddMovement.value = false;
+      }
+    },
+    onError: (errors) => {
+      amErrors.value = errors;
+      amError.value = Object.values(errors)[0] ?? "Could not add the movement.";
+    },
+    onFinish: () => {
+      amProcessing.value = false;
+    },
+  });
 }
 
 function generateJobs() {
@@ -11849,6 +11897,28 @@ function statusLabel(s) {
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 12px 14px;
+}
+
+.am-error-banner {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--danger-soft);
+  color: var(--danger);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.am-field-error {
+  display: block;
+  margin-top: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--danger);
+}
+
+.field--invalid {
+  border-color: var(--danger) !important;
 }
 
 .am-cp-pill {

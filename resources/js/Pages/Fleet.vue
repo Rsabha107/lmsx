@@ -182,7 +182,7 @@
     </div>
 
     <!-- Vehicle Modal (add + edit) -->
-    <div v-if="showVehicleModal" class="modal-backdrop" @click.self="closeVehicleModal">
+    <div v-if="showVehicleModal" v-dialog="closeVehicleModal" class="modal-backdrop" @click.self="closeVehicleModal">
       <div class="vehicle-modal">
         <div class="modal-header">
           <h3 class="modal-title">{{ vehicleForm.id ? 'Edit Vehicle' : 'Add New Vehicle' }}</h3>
@@ -260,7 +260,7 @@
     </div>
 
     <!-- Driver Modal (add + edit) -->
-    <div v-if="showDriverModal" class="modal-backdrop" @click.self="closeDriverModal">
+    <div v-if="showDriverModal" v-dialog="closeDriverModal" class="modal-backdrop" @click.self="closeDriverModal">
       <div class="vehicle-modal">
         <div class="modal-header">
           <h3 class="modal-title">{{ driverForm.id ? 'Edit Driver' : 'Add New Driver' }}</h3>
@@ -311,7 +311,7 @@
     </div>
 
     <!-- Provider Modal (add + edit) -->
-    <div v-if="showProviderModal" class="modal-backdrop" @click.self="closeProviderModal">
+    <div v-if="showProviderModal" v-dialog="closeProviderModal" class="modal-backdrop" @click.self="closeProviderModal">
       <div class="vehicle-modal">
         <div class="modal-header">
           <h3 class="modal-title">{{ providerForm.id ? 'Edit Provider' : 'Add New Provider' }}</h3>
@@ -394,7 +394,7 @@
 
 
     <!-- Assign to job modal -->
-    <div v-if="showAssign" class="modal-backdrop" @click.self="showAssign = false">
+    <div v-if="showAssign" v-dialog="() => (showAssign = false)" class="modal-backdrop" @click.self="showAssign = false">
       <div class="assign-modal">
         <div class="modal-title">Assign Vehicle</div>
         <div class="modal-subtitle">Assign <strong>{{ selected?.code }}</strong> to a job</div>

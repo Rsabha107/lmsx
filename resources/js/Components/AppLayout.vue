@@ -10,11 +10,15 @@
     </transition>
 
     <!-- Sidebar -->
-    <aside :class="['sidebar', sidebarOpen ? 'sidebar--open' : '', !isMobile && sidebarMini ? 'sidebar--mini' : '']">
+    <aside
+      id="app-sidebar"
+      :class="['sidebar', sidebarOpen ? 'sidebar--open' : '', !isMobile && sidebarMini ? 'sidebar--mini' : '']"
+      :aria-hidden="isMobile && !sidebarOpen"
+    >
       <div class="sidebar-logo">
         <span class="sidebar-logo-mark">LMS</span>
         <span class="sidebar-logo-name">NAQLA LMS</span>
-        <button v-if="isMobile" class="sidebar-close-btn" @click="sidebarOpen = false">
+        <button v-if="isMobile" class="sidebar-close-btn" aria-label="Close menu" @click="sidebarOpen = false">
           <svg-icon name="x" />
         </button>
       </div>
@@ -55,7 +59,13 @@
 
       <!-- Topbar -->
       <header class="topbar">
-        <button class="topbar-menu-btn" @click="toggleSidebar">
+        <button
+          class="topbar-menu-btn"
+          :aria-label="isMobile ? (sidebarOpen ? 'Close menu' : 'Open menu') : 'Toggle sidebar'"
+          :aria-expanded="isMobile ? sidebarOpen : undefined"
+          aria-controls="app-sidebar"
+          @click="toggleSidebar"
+        >
           <svg-icon name="menu" />
         </button>
 
@@ -109,7 +119,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted, h } from 'vue';
+import { ref, computed, watch, onMounted, onUnmounted, h } from 'vue';
 import { Link, router, usePage } from '@inertiajs/vue3';
 import { icons } from '../Composables/useIcons.js';
 import Toast from './Toast.vue';
@@ -196,6 +206,15 @@ function onNavClick() {
   if (isMobile.value) sidebarOpen.value = false;
 }
 
+function onKeydown(e) {
+  if (e.key === 'Escape' && isMobile.value && sidebarOpen.value) sidebarOpen.value = false;
+}
+
+// The drawer floats over the page, so the page must not scroll behind it.
+watch([sidebarOpen, isMobile], ([open, mobile]) => {
+  document.body.style.overflow = open && mobile ? 'hidden' : '';
+});
+
 const mainWrapStyle = computed(() => {
   if (isMobile.value) return {};
   return {
@@ -204,42 +223,47 @@ const mainWrapStyle = computed(() => {
   };
 });
 
-function onResize() { windowWidth.value = window.innerWidth; }
+function onResize() {
+  windowWidth.value = window.innerWidth;
+  if (!isMobile.value) sidebarOpen.value = false;
+}
 onMounted(() => {
   window.addEventListener('resize', onResize);
   document.addEventListener('click', onDocClick);
-  if (!isMobile.value) sidebarOpen.value = true;
+  document.addEventListener('keydown', onKeydown);
 });
 onUnmounted(() => {
   window.removeEventListener('resize', onResize);
   document.removeEventListener('click', onDocClick);
+  document.removeEventListener('keydown', onKeydown);
+  document.body.style.overflow = '';
 });
 
-const navItems = [
-  { label: 'Dashboard',     route: 'dashboard',        icon: 'dashboard' },
-  { label: 'AI Copilot',    route: 'ai',                icon: 'ai' },
-  { label: 'Schedule',      route: 'schedule',          icon: 'schedule' },
-  { label: 'Planning',      route: 'plans',             icon: 'plans' },
-  { label: 'Jobs Queue',    route: 'jobs',              icon: 'jobs' },
-  { label: 'Jobs (Mobile)', route: 'jobs/mobile',       icon: 'phone' },
-  { label: 'Matches',       route: 'matches',           icon: 'trophy' },
-  { label: 'Notifications', route: 'notifications',     icon: 'bell' },
-  { label: 'Daily Email',   route: 'email',             icon: 'email' },
-  { label: 'Analytics',     route: 'analytics',         icon: 'chart' },
-  { label: 'Event Teams',   route: 'event-teams',       icon: 'team' },
+const allNavItems = [
+  { label: 'Dashboard',     route: 'dashboard',        icon: 'dashboard', can: 'console.view' },
+  { label: 'AI Copilot',    route: 'ai',                icon: 'ai',        can: 'ai.use' },
+  { label: 'Schedule',      route: 'schedule',          icon: 'schedule',  can: 'console.view' },
+  { label: 'Planning',      route: 'plans',             icon: 'plans',     can: 'plans.view' },
+  { label: 'Jobs Queue',    route: 'jobs',              icon: 'jobs',      can: 'console.view' },
+  { label: 'Jobs (Mobile)', route: 'jobs/mobile',       icon: 'phone',     can: 'jobs.view' },
+  { label: 'Matches',       route: 'matches',           icon: 'trophy',    can: 'fleet.view' },
+  { label: 'Notifications', route: 'notifications',     icon: 'bell',      can: 'console.view' },
+  { label: 'Daily Email',   route: 'email',             icon: 'email',     can: 'console.view' },
+  { label: 'Analytics',     route: 'analytics',         icon: 'chart',     can: 'analytics.view' },
+  { label: 'Event Teams',   route: 'event-teams',       icon: 'team',      can: 'fleet.view' },
   { 
     type: 'section', 
     label: 'Master', 
     expandable: true,
     items: [
-      { label: 'Library',       route: 'library',           icon: 'database' },
-      { label: 'Events',        route: 'events',            icon: 'trophy' },
-      { label: 'Venues',        route: 'venues',            icon: 'building' },
-      { label: 'Fleet',         route: 'fleet',             icon: 'fleet' },
-      { label: 'Movement Tracking', route: 'kit-truck',     icon: 'fleet' },
-      { label: 'Contacts',      route: 'contacts',          icon: 'contacts' },
-      { label: 'Base Camp Hotel', route: 'base-camp-hotels', icon: 'building' },
-      { label: 'Audit Trail',   route: 'audit',             icon: 'audit' },
+      { label: 'Library',       route: 'library',           icon: 'database', can: 'console.view' },
+      { label: 'Events',        route: 'events',            icon: 'trophy',   can: 'events.view' },
+      { label: 'Venues',        route: 'venues',            icon: 'building', can: 'console.view' },
+      { label: 'Fleet',         route: 'fleet',             icon: 'fleet',    can: 'fleet.view' },
+      { label: 'Movement Tracking', route: 'kit-truck',     icon: 'fleet',    can: 'fleet.view' },
+      { label: 'Contacts',      route: 'contacts',          icon: 'contacts', can: 'fleet.view' },
+      { label: 'Base Camp Hotel', route: 'base-camp-hotels', icon: 'building', can: 'fleet.view' },
+      { label: 'Audit Trail',   route: 'audit',             icon: 'audit',    can: 'audit.view' },
     ]
   },
   { 
@@ -247,20 +271,31 @@ const navItems = [
     label: 'Setups',
     expandable: true,
     items: [
-      { label: 'Users',         route: 'setups/users',       icon: 'user'   },
-      { label: 'Roles',         route: 'setups/roles',       icon: 'shield' },
-      { label: 'Permissions',   route: 'setups/permissions', icon: 'key'    },
-      { label: 'Settings',      route: 'setups/settings',    icon: 'settings' },
+      { label: 'Users',         route: 'setups/users',       icon: 'user',   can: 'setups' },
+      { label: 'Roles',         route: 'setups/roles',       icon: 'shield', can: 'setups' },
+      { label: 'Permissions',   route: 'setups/permissions', icon: 'key',    can: 'setups' },
+      { label: 'Settings',      route: 'setups/settings',    icon: 'settings', can: 'setups' },
     ]
   },
 ];
 
-const mobileNavItems = [
-  { label: 'Dashboard', route: 'dashboard',  icon: 'dashboard' },
-  { label: 'Schedule',  route: 'schedule',   icon: 'schedule' },
-  { label: 'Jobs',      route: 'jobs/mobile', icon: 'jobs' },
-  { label: 'Tracker',  route: 'tracker',    icon: 'tracker' },
+const allowed = (item) => !item.can || page.props.auth?.can?.[item.can] === true;
+
+// Hide what the user would only be 403'd on, and drop sections left empty.
+const navItems = computed(() =>
+  allNavItems
+    .map(item => item.type === 'section' ? { ...item, items: item.items.filter(allowed) } : item)
+    .filter(item => item.type === 'section' ? item.items.length > 0 : allowed(item))
+);
+
+const allMobileNavItems = [
+  { label: 'Dashboard', route: 'dashboard',  icon: 'dashboard', can: 'console.view' },
+  { label: 'Schedule',  route: 'schedule',   icon: 'schedule',  can: 'console.view' },
+  { label: 'Jobs',      route: 'jobs/mobile', icon: 'jobs',     can: 'jobs.view' },
+  { label: 'Tracker',  route: 'tracker',    icon: 'tracker',   can: 'console.view' },
 ];
+
+const mobileNavItems = computed(() => allMobileNavItems.filter(allowed));
 
 // Icon component
 const SvgIcon = (props) => h('svg', {
@@ -340,7 +375,7 @@ MobileNavItem.props = ['item'];
 <style scoped>
 /* Sidebar overlay */
 .sidebar-overlay {
-  position: fixed; inset: 0; background: rgba(0,0,0,0.45); z-index: 40;
+  position: fixed; inset: 0; background: rgba(0,0,0,0.45); z-index: 45;
 }
 .fade-enter-active, .fade-leave-active { transition: opacity 0.2s; }
 .fade-enter-from, .fade-leave-to { opacity: 0; }
@@ -348,7 +383,7 @@ MobileNavItem.props = ['item'];
 /* Sidebar */
 .sidebar {
   position: fixed; top: 0; left: 0; bottom: 0;
-  width: 220px;
+  width: min(82vw, 300px);
   background: var(--surface);
   border-right: 1px solid var(--border);
   display: flex; flex-direction: column;
@@ -356,10 +391,14 @@ MobileNavItem.props = ['item'];
   overflow: hidden;
   transform: translateX(-100%);
   transition: transform 0.22s ease, width 0.22s ease;
+  padding-bottom: env(safe-area-inset-bottom);
 }
 .sidebar--open { transform: translateX(0); }
 @media (min-width: 768px) {
-  .sidebar { transform: translateX(0); }
+  .sidebar { transform: translateX(0); width: 220px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sidebar { transition: none; }
 }
 
 /* Mini mode — icon rail */
@@ -384,11 +423,14 @@ MobileNavItem.props = ['item'];
 .sidebar--mini .sidebar-logo-name { display: none; }
 .sidebar-close-btn {
   background: none; border: none; cursor: pointer;
-  color: var(--ink3); padding: 2px; display: flex;
+  color: var(--ink3); padding: 8px; margin: -8px -8px -8px 0;
+  display: flex; border-radius: 8px;
 }
 
 .sidebar-nav {
   flex: 1; overflow-y: auto; overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
   padding: 8px 8px; display: flex; flex-direction: column; gap: 1px;
 }
 
@@ -461,6 +503,14 @@ MobileNavItem.props = ['item'];
 :deep(.sidebar-link:hover) { background: var(--panel); color: var(--ink); }
 :deep(.sidebar-link--active) { background: var(--accent-soft); color: var(--accent-fg); }
 
+/* Touch targets need more room than a pointer does. */
+@media (max-width: 767px) {
+  :deep(.sidebar-link) { min-height: 44px; padding: 11px 12px; font-size: 15px; gap: 12px; }
+  .nav-section-header, .nav-section-label { padding: 12px 12px 6px; }
+  .nav-section-header { min-height: 40px; }
+  .nav-section-header-label, .nav-section-label { font-size: 11.5px; }
+}
+
 .sidebar--mini :deep(.sidebar-link) {
   justify-content: center;
   padding: 9px 0;
@@ -472,6 +522,10 @@ MobileNavItem.props = ['item'];
   border-top: 1px solid var(--border);
   padding: 10px 12px;
   display: flex; align-items: center; gap: 8px; flex-shrink: 0;
+}
+@media (max-width: 767px) {
+  .sidebar-footer { padding: 12px; }
+  .sidebar-footer-btn, .logout-btn { min-height: 40px; }
 }
 .sidebar-footer-btn {
   display: flex; align-items: center; gap: 6px;
@@ -511,7 +565,7 @@ MobileNavItem.props = ['item'];
 }
 .topbar-menu-btn {
   background: none; border: none; cursor: pointer;
-  color: var(--ink3); padding: 4px; display: flex; border-radius: 6px;
+  color: var(--ink3); padding: 8px; margin: -4px; display: flex; border-radius: 8px;
 }
 .topbar-menu-btn:hover { background: var(--panel); color: var(--ink); }
 
@@ -533,7 +587,7 @@ MobileNavItem.props = ['item'];
 
 .event-dropdown {
   position: absolute; top: calc(100% + 6px); left: 0;
-  min-width: 240px; max-width: 320px;
+  min-width: 240px; max-width: min(320px, calc(100vw - 32px));
   background: var(--surface); border: 1px solid var(--border);
   border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,.12);
   z-index: 200; overflow: hidden;
@@ -573,7 +627,7 @@ MobileNavItem.props = ['item'];
 /* Page content */
 .page-content { flex: 1; padding: 20px 16px; }
 @media (min-width: 768px) { .page-content { padding: 24px 24px; } }
-@media (max-width: 767px) { .page-content { padding-bottom: 72px; } }
+@media (max-width: 767px) { .page-content { padding-bottom: calc(72px + env(safe-area-inset-bottom)); } }
 
 /* Mobile bottom nav */
 .mobile-bottom-nav {
@@ -581,11 +635,13 @@ MobileNavItem.props = ['item'];
   background: var(--surface);
   border-top: 1px solid var(--border);
   display: flex; z-index: 40;
+  padding-bottom: env(safe-area-inset-bottom);
 }
 @media (min-width: 768px) { .mobile-bottom-nav { display: none; } }
 
 :deep(.mobile-nav-item) {
   flex: 1; display: flex; flex-direction: column; align-items: center;
+  justify-content: center; min-height: 52px;
   gap: 3px; padding: 8px 4px 10px;
   font-size: 10px; color: var(--ink3); text-decoration: none;
   font-weight: 500;

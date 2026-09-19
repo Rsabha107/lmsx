@@ -122,14 +122,14 @@ defineEmits(['click'])
 }
 
 .btn--danger {
-  background: #ef4444;
+  background: var(--danger);
   color: #fff;
-  border-color: #ef4444;
+  border-color: var(--danger);
 }
 
 .btn--danger:hover:not(:disabled) {
-  background: #dc2626;
-  border-color: #dc2626;
+  background: var(--danger-strong);
+  border-color: var(--danger-strong);
 }
 
 .btn--danger .btn-spinner {

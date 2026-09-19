@@ -9,15 +9,20 @@ use App\Http\Controllers\LmsController;
 use Illuminate\Support\Facades\Route;
 
 Route::middleware('auth')->group(function () {
-    
-    // Job Listing & Detail
-    Route::get('/jobs', [LmsController::class, 'jobs'])->name('jobs');
-    Route::get('/job/{id}', [LmsController::class, 'jobDetail'])->name('job.detail');
-    
-    // Mobile Job Views
-    Route::get('/jobs/mobile', [LmsController::class, 'jobsMobile'])->name('jobs.mobile');
-    Route::get('/jobs/mobile/{id}', [LmsController::class, 'jobMobileDetail'])->name('jobs.mobile.detail');
-    
+
+    // Desktop console views.
+    Route::middleware('permission:console.view')->group(function () {
+        Route::get('/jobs', [LmsController::class, 'jobs'])->name('jobs');
+        Route::get('/job/{id}', [LmsController::class, 'jobDetail'])->name('job.detail');
+        Route::get('/tracker', [LmsController::class, 'tracker'])->name('tracker');
+    });
+
+    // The mobile job workflow, which field supervisors are limited to.
+    Route::middleware('permission:jobs.view')->group(function () {
+        Route::get('/jobs/mobile', [LmsController::class, 'jobsMobile'])->name('jobs.mobile');
+        Route::get('/jobs/mobile/{id}', [LmsController::class, 'jobMobileDetail'])->name('jobs.mobile.detail');
+    });
+
     // Job Status Management
     Route::post('/jobs/{jobId}/status', [LmsController::class, 'updateJobStatus'])->name('job.updateStatus');
 
@@ -31,7 +36,4 @@ Route::middleware('auth')->group(function () {
         Route::get('/photo', [LmsController::class, 'getCheckpointPhoto'])->name('checkpoint.photo');
         Route::get('/signature', [LmsController::class, 'getCheckpointSignature'])->name('checkpoint.signature');
     });
-    
-    // Tracker
-    Route::get('/tracker', [LmsController::class, 'tracker'])->name('tracker');
 });

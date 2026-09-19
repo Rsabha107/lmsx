@@ -36,7 +36,7 @@ class RoleController extends Controller
 
         Log::info("Role created: {$role->name}");
 
-        return redirect()->route('roles.index')->with('success', 'Role created.');
+        return redirect()->route('setups.roles.index')->with('success', 'Role created.');
     }
 
     public function update(Request $request, int $id): RedirectResponse
@@ -54,7 +54,7 @@ class RoleController extends Controller
 
         Log::info("Role updated: {$role->name}");
 
-        return redirect()->route('roles.index')->with('success', 'Role updated.');
+        return redirect()->route('setups.roles.index')->with('success', 'Role updated.');
     }
 
     public function destroy(int $id): RedirectResponse
@@ -65,6 +65,6 @@ class RoleController extends Controller
 
         Log::info("Role deleted: {$name}");
 
-        return redirect()->route('roles.index')->with('success', 'Role deleted.');
+        return redirect()->route('setups.roles.index')->with('success', 'Role deleted.');
     }
 }

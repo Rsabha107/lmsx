@@ -20,6 +20,33 @@ class RolePermissionSeeder extends Seeder
         'movements.view-all-functional-areas',
         'jobs.view',
         'jobs.view-all-functional-areas',
+        // Forging a completion record is an oversight action, not a field one.
+        'jobs.override',
+        // Reach events the user is not assigned to.
+        'events.access-all',
+        // Flip the global active_flag the mobile app reads as its default event.
+        'events.set-mobile-default',
+        'events.view',
+        'events.manage',
+        'fleet.view',
+        'fleet.manage',
+        'plans.view',
+        'plans.manage',
+        'analytics.view',
+        'audit.view',
+        // The desktop web console: dashboard, schedule, jobs queue, tracker, etc.
+        'console.view',
+        'ai.use',
+    ];
+
+    /** Read-only access every desk-based operational role needs. */
+    private const SCOPED_PERMISSIONS = [
+        'movements.view',
+        'jobs.view',
+        'events.view',
+        'fleet.view',
+        'plans.view',
+        'console.view',
         'ai.use',
     ];
 
@@ -35,23 +62,19 @@ class RolePermissionSeeder extends Seeder
 
         Role::findByName('admin')->syncPermissions(self::PERMISSIONS);
 
+        // Field supervisors: the mobile job workflow and nothing else. No
+        // console.view, so every desk page is closed to them, and no
+        // events.access-all, so their event assignments bind.
         Role::findByName('ground_control')->syncPermissions([
-            'movements.view',
-            'movements.view-all-functional-areas',
             'jobs.view',
             'jobs.view-all-functional-areas',
-            'ai.use',
         ]);
 
         // transport/team_services/venue_ops are scoped to their functional
         // area via the user_functional_areas pivot table, not by permission
         // name — they share the same base (non-"-all-") permissions.
         foreach (['transport', 'team_services', 'venue_ops'] as $scopedRole) {
-            Role::findByName($scopedRole)->syncPermissions([
-                'movements.view',
-                'jobs.view',
-                'ai.use',
-            ]);
+            Role::findByName($scopedRole)->syncPermissions(self::SCOPED_PERMISSIONS);
         }
     }
 }

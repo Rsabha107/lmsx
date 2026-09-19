@@ -21,6 +21,7 @@
           <div class="notif-body">{{ n.body }}</div>
         </div>
       </div>
+      <p v-if="!notifications.length" class="notif-empty">No alerts right now.</p>
     </div>
   </app-layout>
 </template>
@@ -56,4 +57,5 @@ defineProps({
 .notif-title { font-size: 14px; font-weight: 700; color: var(--ink); }
 .notif-time { font-size: 12px; color: var(--ink4); flex-shrink: 0; }
 .notif-body { font-size: 13px; color: var(--ink3); line-height: 1.5; }
+.notif-empty { font-size: 13px; color: var(--ink4); margin: 0; }
 </style>

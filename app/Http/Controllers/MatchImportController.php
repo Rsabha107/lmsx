@@ -4,40 +4,14 @@ namespace App\Http\Controllers;
 
 use App\Http\Controllers\Concerns\ReadsSpreadsheetRows;
 use App\Services\MatchImportService;
+use App\Services\MatchSheetReader;
 use Illuminate\Http\Request;
-use Illuminate\Http\UploadedFile;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class MatchImportController extends Controller
 {
+    // Only for buildTemplateResponse() - reading uploaded sheets lives in MatchSheetReader.
     use ReadsSpreadsheetRows;
-
-    /**
-     * Field aliases, keyed by normalized header text (letters/digits only, lowercased).
-     */
-    protected const HEADER_ALIASES = [
-        // My own template headers.
-        'matchnumber' => 'match_number',
-        'matchdate' => 'match_date',
-        'kickoff' => 'kick_off',
-        'team1code' => 'team1_code',
-        'team2code' => 'team2_code',
-        'venue' => 'venue',
-        'stage' => 'stage',
-
-        // Real-world fixtures sheet headers (e.g. FIFA-style exports).
-        'matchno' => 'match_number',
-        'ko' => 'kick_off',
-        // PMA1/PMA2 hold the actual team code (e.g. "QAT-17") - the reliable
-        // key, unlike the display-only "TEAM1"/"TEAM2" name columns, which
-        // aren't mapped at all.
-        'pma1' => 'team1_code',
-        'pma2' => 'team2_code',
-        'matchround' => 'stage',
-    ];
-
-    protected const DATE_FIELDS = ['match_date'];
-    protected const TIME_FIELDS = ['kick_off'];
 
     /**
      * Download a blank import template (with one example row and an instructions sheet).
@@ -58,44 +32,15 @@ class MatchImportController extends Controller
     /**
      * Import matches from an uploaded spreadsheet into one event.
      */
-    public function import(Request $request, int $eventId, MatchImportService $service)
+    public function import(Request $request, int $eventId, MatchImportService $service, MatchSheetReader $reader)
     {
         $request->validate([
             'file' => 'required|file|mimes:xlsx,xls,csv,txt|max:10240',
         ]);
 
-        $rows = $this->readRows($request->file('file'));
+        $rows = $reader->read($request->file('file'));
 
         return response()->json($service->import($rows, $eventId));
-    }
-
-    /**
-     * @return array<int, array<string, mixed>>
-     */
-    private function readRows(UploadedFile $file): array
-    {
-        $sheet = $this->loadSheet($file);
-        ['columnMap' => $columnMap, 'headerRowIndex' => $headerRowIndex] = $this->findHeaderRow($sheet, 'match_number', 'Match Number (or Match No.)');
-
-        $highestRow = $sheet->getHighestDataRow();
-        $rows = [];
-
-        for ($r = $headerRowIndex + 1; $r <= $highestRow; $r++) {
-            $matchNumberCol = $columnMap['match_number'][0];
-            $matchNumber = $this->cellValue($sheet->getCell([$matchNumberCol, $r]));
-            if ($matchNumber === null || $matchNumber === '') {
-                continue; // skip blank/spacer rows
-            }
-
-            $rowValues = [];
-            foreach ($columnMap as $field => $candidateCols) {
-                $rowValues[$field] = $this->firstNonBlank($sheet, $candidateCols, $r, $this->fieldKind($field));
-            }
-
-            $rows[] = $rowValues;
-        }
-
-        return $rows;
     }
 
     private function instructionRows(): array

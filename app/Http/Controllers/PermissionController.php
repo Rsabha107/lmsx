@@ -5,19 +5,10 @@ namespace App\Http\Controllers;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
-use Inertia\Inertia;
-use Inertia\Response;
 use Spatie\Permission\Models\Permission;
 
 class PermissionController extends Controller
 {
-    public function index(): Response
-    {
-        return Inertia::render('Setups/Permissions', [
-            'permissions' => Permission::withCount('roles')->orderBy('name')->get(),
-        ]);
-    }
-
     public function store(Request $request): RedirectResponse
     {
         $data = $request->validate([
@@ -28,7 +19,7 @@ class PermissionController extends Controller
 
         Log::info("Permission created: {$permission->name}");
 
-        return redirect()->route('setups.permissions.index')->with('success', 'Permission created.');
+        return redirect()->route('setups.access.index')->with('success', 'Permission created.');
     }
 
     public function update(Request $request, int $id): RedirectResponse
@@ -43,7 +34,7 @@ class PermissionController extends Controller
 
         Log::info("Permission updated: {$permission->name}");
 
-        return redirect()->route('setups.permissions.index')->with('success', 'Permission updated.');
+        return redirect()->route('setups.access.index')->with('success', 'Permission updated.');
     }
 
     public function destroy(int $id): RedirectResponse
@@ -54,6 +45,6 @@ class PermissionController extends Controller
 
         Log::info("Permission deleted: {$name}");
 
-        return redirect()->route('setups.permissions.index')->with('success', 'Permission deleted.');
+        return redirect()->route('setups.access.index')->with('success', 'Permission deleted.');
     }
 }

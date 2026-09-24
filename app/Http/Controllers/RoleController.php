@@ -5,24 +5,10 @@ namespace App\Http\Controllers;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
-use Inertia\Inertia;
-use Inertia\Response;
-use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 
 class RoleController extends Controller
 {
-    public function index(): Response
-    {
-        return Inertia::render('Setups/Roles', [
-            'roles'       => Role::with('permissions:id,name')
-                ->withCount('permissions')
-                ->orderBy('name')
-                ->get(),
-            'permissions' => Permission::orderBy('name')->get(['id', 'name']),
-        ]);
-    }
-
     public function store(Request $request): RedirectResponse
     {
         $data = $request->validate([
@@ -36,7 +22,7 @@ class RoleController extends Controller
 
         Log::info("Role created: {$role->name}");
 
-        return redirect()->route('setups.roles.index')->with('success', 'Role created.');
+        return redirect()->route('setups.access.index')->with('success', 'Role created.');
     }
 
     public function update(Request $request, int $id): RedirectResponse
@@ -54,7 +40,7 @@ class RoleController extends Controller
 
         Log::info("Role updated: {$role->name}");
 
-        return redirect()->route('setups.roles.index')->with('success', 'Role updated.');
+        return redirect()->route('setups.access.index')->with('success', 'Role updated.');
     }
 
     public function destroy(int $id): RedirectResponse
@@ -65,6 +51,6 @@ class RoleController extends Controller
 
         Log::info("Role deleted: {$name}");
 
-        return redirect()->route('setups.roles.index')->with('success', 'Role deleted.');
+        return redirect()->route('setups.access.index')->with('success', 'Role deleted.');
     }
 }

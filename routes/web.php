@@ -12,6 +12,7 @@
  * - web/analytics.php - Analytics and reporting
  * - web/admin.php     - User, role, permission management
  * - web/ai.php        - AI Operations Copilot
+ * - web/utilities.php - Standalone data tools (file conversion)
  * - EXAMPLE_ROUTES.php - Plan and template management (legacy)
  */
 
@@ -51,6 +52,7 @@ require __DIR__.'/web/analytics.php';
 require __DIR__.'/web/admin.php';
 require __DIR__.'/web/plans.php';
 require __DIR__.'/web/ai.php';
+require __DIR__.'/web/utilities.php';
 
 // Legacy routes (templates and admin - to be refactored)
 require __DIR__.'/EXAMPLE_ROUTES.php';

@@ -3,6 +3,7 @@
 namespace App\Http\Middleware;
 
 use App\Models\Event;
+use App\Services\SettingsService;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
 
@@ -40,7 +41,23 @@ class HandleInertiaRequests extends Middleware
                     ->toArray()
                 : [],
             'activeEventId' => $activeEventId ? (int) $activeEventId : null,
+            'ui' => $this->uiFlags(),
         ]);
+    }
+
+    /**
+     * Admin-controlled UI toggles (Setups > Settings), shared with every page
+     * so the sidebar can hide what an installation doesn't use.
+     *
+     * @return array<string, bool>
+     */
+    private function uiFlags(): array
+    {
+        $settings = app(SettingsService::class);
+
+        return [
+            'jobsMobileMenu' => $settings->getGlobalFlag(SettingsService::FLAG_JOBS_MOBILE_MENU),
+        ];
     }
 
     /**
@@ -58,6 +75,7 @@ class HandleInertiaRequests extends Middleware
             'jobs.override',
             'plans.view',
             'fleet.view',
+            'fleet.manage',
             'events.view',
             'analytics.view',
             'audit.view',

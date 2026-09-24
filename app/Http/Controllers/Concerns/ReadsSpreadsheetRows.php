@@ -32,9 +32,19 @@ trait ReadsSpreadsheetRows
     /** Excel's own error-value strings - never usable data, always treated as blank. */
     private const EXCEL_ERROR_VALUES = ['#VALUE!', '#REF!', '#NAME?', '#N/A', '#DIV/0!', '#NULL!', '#NUM!'];
 
-    protected function loadSheet(UploadedFile $file): Worksheet
+    /**
+     * @param UploadedFile|string $file an uploaded file, or an absolute path to a local file
+     */
+    protected function loadSheet(UploadedFile|string $file): Worksheet
     {
-        $extension = strtolower($file->getClientOriginalExtension());
+        if (is_string($file)) {
+            $path = $file;
+            $extension = strtolower(pathinfo($path, PATHINFO_EXTENSION));
+        } else {
+            $path = $file->getRealPath();
+            $extension = strtolower($file->getClientOriginalExtension());
+        }
+
         $readerType = match ($extension) {
             'csv', 'txt' => 'Csv',
             'xls' => 'Xls',
@@ -45,7 +55,7 @@ trait ReadsSpreadsheetRows
         $reader = IOFactory::createReader($readerType);
         $reader->setReadDataOnly(true);
 
-        return $reader->load($file->getRealPath())->getActiveSheet();
+        return $reader->load($path)->getActiveSheet();
     }
 
     /**
@@ -63,7 +73,7 @@ trait ReadsSpreadsheetRows
         for ($candidateRow = 1; $candidateRow <= min($maxScanRows, $highestRow); $candidateRow++) {
             $headerRow = [];
             for ($c = 1; $c <= $highestColumn; $c++) {
-                $headerRow[$c] = $this->normalizeHeader((string) $sheet->getCell([$c, $candidateRow])->getValue());
+                $headerRow[$c] = $this->normalizeHeader((string) ($this->cellValue($sheet->getCell([$c, $candidateRow])) ?? ''));
             }
 
             $columnMap = $this->resolveColumnMap($headerRow);
@@ -220,6 +230,31 @@ trait ReadsSpreadsheetRows
         array $instructionRows,
         string $downloadFilename,
     ): StreamedResponse {
+        $spreadsheet = $this->buildTemplateSpreadsheet($sheetTitle, $headers, [$exampleRow], $instructionRows);
+
+        $writer = new Xlsx($spreadsheet);
+
+        return response()->streamDownload(function () use ($writer) {
+            $writer->save('php://output');
+        }, $downloadFilename, [
+            'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        ]);
+    }
+
+    /**
+     * Builds the template workbook itself: a styled header row, the given data rows,
+     * and an optional second "Instructions" sheet describing each column.
+     *
+     * @param array<int, string> $headers
+     * @param array<int, array<int, mixed>> $dataRows
+     * @param array<int, array{0: string, 1: string}> $instructionRows
+     */
+    protected function buildTemplateSpreadsheet(
+        string $sheetTitle,
+        array $headers,
+        array $dataRows,
+        array $instructionRows = [],
+    ): Spreadsheet {
         $lastColumn = Coordinate::stringFromColumnIndex(count($headers));
 
         $spreadsheet = new Spreadsheet();
@@ -230,30 +265,29 @@ trait ReadsSpreadsheetRows
             'font' => ['bold' => true, 'color' => ['rgb' => 'FFFFFF']],
             'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => '7A1836']],
         ]);
-        $sheet->fromArray($exampleRow, null, 'A2');
+
+        if ($dataRows !== []) {
+            $sheet->fromArray($dataRows, null, 'A2');
+        }
 
         foreach (range(1, count($headers)) as $columnIndex) {
             $sheet->getColumnDimensionByColumn($columnIndex)->setAutoSize(true);
         }
 
-        $instructions = $spreadsheet->createSheet();
-        $instructions->setTitle('Instructions');
-        $instructions->fromArray($instructionRows, null, 'A1');
-        $instructions->getStyle('A1:B1')->getFont()->setBold(true);
-        $instructions->getColumnDimension('A')->setWidth(26);
-        $instructions->getColumnDimension('B')->setWidth(100);
-        foreach ($instructions->getRowIterator() as $row) {
-            $instructions->getStyle("B{$row->getRowIndex()}")->getAlignment()->setWrapText(true);
+        if ($instructionRows !== []) {
+            $instructions = $spreadsheet->createSheet();
+            $instructions->setTitle('Instructions');
+            $instructions->fromArray($instructionRows, null, 'A1');
+            $instructions->getStyle('A1:B1')->getFont()->setBold(true);
+            $instructions->getColumnDimension('A')->setWidth(26);
+            $instructions->getColumnDimension('B')->setWidth(100);
+            foreach ($instructions->getRowIterator() as $row) {
+                $instructions->getStyle("B{$row->getRowIndex()}")->getAlignment()->setWrapText(true);
+            }
         }
 
         $spreadsheet->setActiveSheetIndex(0);
 
-        $writer = new Xlsx($spreadsheet);
-
-        return response()->streamDownload(function () use ($writer) {
-            $writer->save('php://output');
-        }, $downloadFilename, [
-            'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        ]);
+        return $spreadsheet;
     }
 }

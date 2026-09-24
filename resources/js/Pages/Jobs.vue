@@ -761,10 +761,21 @@ function getInitials(name) {
 
 function formatDate(dateString) {
   if (!dateString) return '';
+
+  // Parsed from the string rather than via Date(), which reads a bare
+  // 'YYYY-MM-DD' as UTC midnight and can render the previous day.
+  const match = String(dateString).match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (match) {
+    const [, year, month, day] = match;
+    return `${day}/${month}/${year}`;
+  }
+
   const date = new Date(dateString);
-  const month = String(date.getMonth() + 1).padStart(2, '0');
+  if (isNaN(date)) return '';
+
   const day = String(date.getDate()).padStart(2, '0');
-  return `${month}/${day}`;
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  return `${day}/${month}/${date.getFullYear()}`;
 }
 
 function formatDateLong(dateString) {
@@ -1708,6 +1719,7 @@ function submitOverride() {
   padding: 1px 4px;
   border-radius: 3px;
   font-family: var(--font-mono, monospace);
+  white-space: nowrap;
 }
 
 .jl-col-stage {

@@ -21,6 +21,9 @@ use Illuminate\Support\Facades\Cache;
  */
 class SettingsService
 {
+    /** Keys of the admin-controlled UI toggles. */
+    public const FLAG_JOBS_MOBILE_MENU = 'ui.jobs_mobile_menu';
+
     /**
      * Per-request memoization of resolved setting values, keyed by cache
      * key. Settings are looked up per checkpoint per movement (dozens to
@@ -176,6 +179,16 @@ class SettingsService
         unset($this->localCache[$newCacheKey]);
 
         return $setting;
+    }
+
+    /**
+     * Read a global on/off setting, e.g. a UI feature toggle. Returns the
+     * default when no row exists, so a fresh install behaves sensibly.
+     */
+    public function getGlobalFlag(string $key, bool $default = true): bool    {
+        $value = $this->getSetting($key, Setting::SCOPE_GLOBAL);
+
+        return $value === null ? $default : filter_var($value, FILTER_VALIDATE_BOOLEAN);
     }
 
     /**

@@ -8,6 +8,7 @@ use App\Models\MovementTemplate;
 use App\Models\Plan;
 use App\Models\Movement;
 use App\Models\Event;
+use App\Models\Venue;
 use App\Services\ConflictDetectionService;
 use App\Services\JobGenerationService;
 use Carbon\Carbon;
@@ -361,6 +362,9 @@ class PlanManagementController extends Controller
             'drivers' => $drivers,
             'supervisors' => $supervisors,
             'matches' => $matches,
+            // Venues aren't reliably linked to an event yet, so the prerequisite
+            // check counts what exists system-wide.
+            'venueCount' => Venue::count(),
             'nextMovementNumber' => $nextMovementNumber,
             'conflicts' => app(ConflictDetectionService::class)->forEvent($activeEventId),
             'schedule' => LmsData::schedule(), // For backward compatibility - will be removed

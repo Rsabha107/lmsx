@@ -26,6 +26,7 @@ use App\Models\Movement;
 use App\Services\JobLifecycleService;
 use App\Services\DailySummaryService;
 use App\Services\NotificationFeedService;
+use App\Services\SettingsService;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\JsonResponse;
@@ -45,6 +46,14 @@ class LmsController extends Controller
     public function dashboard(Request $request, NotificationFeedService $notifications): Response|RedirectResponse
     {
         if (! $request->user()->can('console.view')) {
+            // Their only screen; say so plainly rather than redirecting them
+            // into a 403 they can't act on.
+            abort_unless(
+                app(SettingsService::class)->getGlobalFlag(SettingsService::FLAG_JOBS_MOBILE_MENU),
+                403,
+                'The mobile jobs view has been turned off by an administrator. Ask them to re-enable it in Setups > Settings.',
+            );
+
             return redirect()->route('jobs.mobile');
         }
 

@@ -4,62 +4,14 @@ namespace App\Http\Controllers;
 
 use App\Http\Controllers\Concerns\ReadsSpreadsheetRows;
 use App\Services\TeamImportService;
+use App\Services\TeamSheetReader;
 use Illuminate\Http\Request;
-use Illuminate\Http\UploadedFile;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class TeamImportController extends Controller
 {
+    // Only for buildTemplateResponse() - reading uploaded sheets lives in TeamSheetReader.
     use ReadsSpreadsheetRows;
-
-    /**
-     * Field aliases, keyed by normalized header text (letters/digits only, lowercased).
-     * A value can be a single field key (unambiguous - always wins outright) or a list
-     * of candidate field keys tried in order (used for headers that appear more than once
-     * in real-world sheets, e.g. "Flight Number" / "Total Passengers" showing up for both
-     * the inbound and outbound legs - see resolveColumnMap() for how these are split).
-     */
-    protected const HEADER_ALIASES = [
-        // Unambiguous - my own template headers, and single-occurrence real-sheet headers.
-        'trigram' => 'trigram',
-        'teamname' => 'team_name',
-        'country' => 'team_name',
-        'countrycode' => 'country_code',
-        'group' => 'group',
-        'grouppool' => 'group',
-        'hotelname' => 'hotel_name',
-        'allocatedhotel' => 'hotel_name',
-        'roomcount' => 'room_count',
-        'additionalrooms' => 'room_count',
-        'airportcode' => 'airport_code',
-        'arrivaldate' => 'arrival_date',
-        'arrivaldatetodoha' => 'arrival_date',
-        'arrivaltime' => 'arrival_time',
-        'arrivaltimeindoha' => 'arrival_time',
-        'arrivalflightnumber' => 'arrival_flight_number',
-        'arrivalpassengers' => 'arrival_passengers',
-        'departureflightnumber' => 'departure_flight_number',
-        'departuredate' => 'departure_date',
-        'departuredatefromdoha' => 'departure_date',
-        'departuretime' => 'departure_time',
-        'departuretimefromdoha' => 'departure_time',
-        'departurepassengers' => 'departure_passengers',
-        'notes' => 'notes',
-        'pmadetails' => 'notes',
-        'accommodationnotes' => 'notes',
-        'travelnotes' => 'notes',
-        'itinerary' => 'itinerary',
-
-        // Ambiguous - the same header text is reused for both legs in the real PMA
-        // sheet (e.g. two "Flight Number" columns, one per leg). Resolved by
-        // left-to-right occurrence order in resolveColumnMap(): 1st -> arrival,
-        // 2nd -> departure.
-        'flightnumber' => ['arrival_flight_number', 'departure_flight_number'],
-        'totalpassengers' => ['arrival_passengers', 'departure_passengers'],
-    ];
-
-    protected const DATE_FIELDS = ['arrival_date', 'departure_date'];
-    protected const TIME_FIELDS = ['arrival_time', 'departure_time'];
 
     /**
      * Download a blank import template (with one example row and an instructions sheet).
@@ -80,75 +32,15 @@ class TeamImportController extends Controller
     /**
      * Import teams (with flights and accommodation) from an uploaded spreadsheet into one event.
      */
-    public function import(Request $request, int $eventId, TeamImportService $service)
+    public function import(Request $request, int $eventId, TeamImportService $service, TeamSheetReader $reader)
     {
         $request->validate([
             'file' => 'required|file|mimes:xlsx,xls,csv,txt|max:10240',
         ]);
 
-        $rows = $this->readRows($request->file('file'));
+        $rows = $reader->read($request->file('file'));
 
         return response()->json($service->import($rows, $eventId));
-    }
-
-    /**
-     * @return array<int, array<string, mixed>>
-     */
-    private function readRows(UploadedFile $file): array
-    {
-        $sheet = $this->loadSheet($file);
-        ['columnMap' => $columnMap, 'headerRowIndex' => $headerRowIndex] = $this->findHeaderRow($sheet, 'trigram', 'Trigram (or Code)');
-
-        // "Notes" can be sourced from several different columns at once (PMA
-        // Details, Accommodation Notes, Travel Notes, ...) and concatenated,
-        // unlike every other field which just takes the first non-blank value.
-        $noteColumns = $columnMap['notes'] ?? [];
-        unset($columnMap['notes']);
-
-        $highestRow = $sheet->getHighestDataRow();
-        $rows = [];
-
-        for ($r = $headerRowIndex + 1; $r <= $highestRow; $r++) {
-            $trigramCol = $columnMap['trigram'][0];
-            $trigram = $this->cellValue($sheet->getCell([$trigramCol, $r]));
-            if ($trigram === null || $trigram === '') {
-                continue; // skip blank/spacer rows
-            }
-
-            $rowValues = [];
-            foreach ($columnMap as $field => $candidateCols) {
-                $rowValues[$field] = $this->firstNonBlank($sheet, $candidateCols, $r, $this->fieldKind($field));
-            }
-
-            // A dedicated "Airport Code" column is often left blank in real sheets,
-            // but the "Itinerary" column (e.g. "TAS-DOH-TAS": home -> venue -> home)
-            // usually isn't - offer both legs of that route as soft hints (not the
-            // strict, validated "Airport Code" field), so an airport missing from
-            // our Airports list just leaves this row's airport blank instead of
-            // failing the row.
-            if (!empty($rowValues['itinerary']) && preg_match('/^([A-Za-z]{3})-([A-Za-z]{3})/', (string) $rowValues['itinerary'], $matches)) {
-                $rowValues['airport_code_hint'] = strtoupper($matches[1]);
-                $rowValues['venue_airport_code_hint'] = strtoupper($matches[2]);
-            }
-            unset($rowValues['itinerary']);
-
-            if ($noteColumns !== []) {
-                $noteParts = [];
-                foreach ($noteColumns as $col) {
-                    $text = $this->cellValue($sheet->getCell([$col, $r]));
-                    if ($text !== null && $text !== '') {
-                        $noteParts[] = $text;
-                    }
-                }
-                if ($noteParts !== []) {
-                    $rowValues['notes'] = implode(' / ', array_unique($noteParts));
-                }
-            }
-
-            $rows[] = $rowValues;
-        }
-
-        return $rows;
     }
 
     private function instructionRows(): array

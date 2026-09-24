@@ -232,11 +232,11 @@
         <div class="form-row">
           <div class="form-group">
             <label class="form-label">Start Date</label>
-            <input v-model="form.start_date" type="date" class="form-input" />
+            <FormDateField v-model="form.start_date" display-format="d/m/Y" value-format="Y-m-d" placeholder="dd/mm/yyyy" />
           </div>
           <div class="form-group">
             <label class="form-label">End Date</label>
-            <input v-model="form.end_date" type="date" class="form-input" />
+            <FormDateField v-model="form.end_date" display-format="d/m/Y" value-format="Y-m-d" placeholder="dd/mm/yyyy" />
           </div>
         </div>
         <div class="form-group">
@@ -504,7 +504,13 @@
         <div class="form-row">
           <div class="form-group">
             <label class="form-label">Scheduled Date/Time</label>
-            <input v-model="flightForm.scheduled_at" type="datetime-local" class="form-input" />
+            <FormDateField
+              v-model="flightForm.scheduled_at"
+              mode="datetime"
+              display-format="d/m/Y H:i"
+              value-format="Y-m-d H:i"
+              placeholder="dd/mm/yyyy HH:mm"
+            />
           </div>
           <div class="form-group">
             <label class="form-label">Gate</label>
@@ -559,11 +565,11 @@
         <div class="form-row">
           <div class="form-group">
             <label class="form-label">Check-in</label>
-            <input v-model="stayForm.check_in" type="date" class="form-input" />
+            <FormDateField v-model="stayForm.check_in" display-format="d/m/Y" value-format="Y-m-d" placeholder="dd/mm/yyyy" />
           </div>
           <div class="form-group">
             <label class="form-label">Check-out</label>
-            <input v-model="stayForm.check_out" type="date" class="form-input" />
+            <FormDateField v-model="stayForm.check_out" display-format="d/m/Y" value-format="Y-m-d" placeholder="dd/mm/yyyy" />
           </div>
           <div class="form-group">
             <label class="form-label">Rooms</label>
@@ -619,6 +625,7 @@ import ConfirmModal from '../Components/ConfirmModal.vue';
 import TableActions    from '../Components/TableActions.vue';
 import RefreshButton   from '../Components/RefreshButton.vue';
 import FlagIcon        from '../Components/FlagIcon.vue';
+import FormDateField   from '../Components/FormDateField.vue';
 
 const props = defineProps({
   events:          { type: Array, required: true },
@@ -925,7 +932,7 @@ function openFlightForm(fl) {
         flight_number: fl.flight_number || '', 
         origin_airport_id: fl.origin_airport_id || '', 
         destination_airport_id: fl.destination_airport_id || '', 
-        scheduled_at: fl.scheduled_at ? String(fl.scheduled_at).substring(0, 16) : '', 
+        scheduled_at: fl.scheduled_at ? String(fl.scheduled_at).replace('T', ' ').substring(0, 16) : '', 
         gate: fl.gate || '', 
         party_size_total: fl.party_size_total || '', 
         party_size_players: fl.party_size_players || '', 

@@ -11,14 +11,18 @@ return [
     | default for AI operations when no explicit provider is provided
     | for the operation. This should be any provider defined below.
     |
+    | Anthropic has no image, audio, or embedding endpoints, so those fall back
+    | to a provider that does - set the matching env var (and that provider's
+    | API key) before using one of those capabilities.
+    |
     */
 
-    'default' => 'openai',
-    'default_for_images' => 'gemini',
-    'default_for_audio' => 'openai',
-    'default_for_transcription' => 'openai',
-    'default_for_embeddings' => 'openai',
-    'default_for_reranking' => 'cohere',
+    'default' => env('AI_PROVIDER', 'anthropic'),
+    'default_for_images' => env('AI_PROVIDER_IMAGES', 'gemini'),
+    'default_for_audio' => env('AI_PROVIDER_AUDIO', 'openai'),
+    'default_for_transcription' => env('AI_PROVIDER_TRANSCRIPTION', 'openai'),
+    'default_for_embeddings' => env('AI_PROVIDER_EMBEDDINGS', 'openai'),
+    'default_for_reranking' => env('AI_PROVIDER_RERANKING', 'cohere'),
 
     /*
     |--------------------------------------------------------------------------

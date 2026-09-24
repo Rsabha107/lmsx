@@ -281,15 +281,15 @@
               <h4 class="detail-section-title">Schedule</h4>
               <div class="detail-row">
                 <span class="detail-label">Match Date</span>
-                <span class="detail-value mono">{{ formatDate(selectedMatch.match_date) }}</span>
+                <span class="detail-value mono">{{ formatDateDMY(selectedMatch.match_date) }}</span>
               </div>
               <div class="detail-row">
                 <span class="detail-label">Gates Opening</span>
-                <span class="detail-value mono">{{ formatDate(selectedMatch.gates_opening) }}</span>
+                <span class="detail-value mono">{{ formatTime(selectedMatch.gates_opening) || '—' }}</span>
               </div>
               <div class="detail-row">
                 <span class="detail-label">Kick Off</span>
-                <span class="detail-value mono">{{ formatDate(selectedMatch.kick_off) }}</span>
+                <span class="detail-value mono">{{ formatTime(selectedMatch.kick_off) || '—' }}</span>
               </div>
             </div>
           </div>
@@ -387,18 +387,23 @@
         <div class="form-row">
           <div class="form-group">
             <label class="form-label">Match Date</label>
-            <input ref="matchDateInput" v-model="formData.match_date" type="text" class="form-input" placeholder="YYYY-MM-DD" />
+            <FormDateField
+              v-model="formData.match_date"
+              display-format="d/m/Y"
+              value-format="Y-m-d"
+              placeholder="dd/mm/yyyy"
+            />
           </div>
 
           <div class="form-group">
             <label class="form-label">Gates Opening</label>
-            <input ref="gatesOpeningInput" v-model="formData.gates_opening" type="text" class="form-input" placeholder="HH:MM" />
+            <FormDateField v-model="formData.gates_opening" mode="time" placeholder="HH:MM" />
           </div>
         </div>
 
         <div class="form-group">
           <label class="form-label">Kick Off</label>
-          <input ref="kickOffInput" v-model="formData.kick_off" type="text" class="form-input" placeholder="HH:MM" />
+          <FormDateField v-model="formData.kick_off" mode="time" placeholder="HH:MM" />
         </div>
       </form>
 
@@ -493,18 +498,23 @@
         <div class="form-row">
           <div class="form-group">
             <label class="form-label">Match Date</label>
-            <input ref="matchDateInput" v-model="formData.match_date" type="text" class="form-input" placeholder="YYYY-MM-DD" />
+            <FormDateField
+              v-model="formData.match_date"
+              display-format="d/m/Y"
+              value-format="Y-m-d"
+              placeholder="dd/mm/yyyy"
+            />
           </div>
 
           <div class="form-group">
             <label class="form-label">Gates Opening</label>
-            <input ref="gatesOpeningInput" v-model="formData.gates_opening" type="text" class="form-input" placeholder="HH:MM" />
+            <FormDateField v-model="formData.gates_opening" mode="time" placeholder="HH:MM" />
           </div>
         </div>
 
         <div class="form-group">
           <label class="form-label">Kick Off</label>
-          <input ref="kickOffInput" v-model="formData.kick_off" type="text" class="form-input" placeholder="HH:MM" />
+          <FormDateField v-model="formData.kick_off" mode="time" placeholder="HH:MM" />
         </div>
       </form>
 
@@ -633,10 +643,8 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue';
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
 import { router, usePage } from '@inertiajs/vue3';
-import flatpickr from 'flatpickr';
-import 'flatpickr/dist/flatpickr.min.css';
 import AppLayout from '../Components/AppLayout.vue';
 import MiniStat from '../Components/MiniStat.vue';
 import SvgIcon from '../Components/SvgIcon.vue';
@@ -647,6 +655,7 @@ import ColumnToggle from '../Components/ColumnToggle.vue';
 import TableActions from '../Components/TableActions.vue';
 import RefreshButton from '../Components/RefreshButton.vue';
 import FlagIcon from '../Components/FlagIcon.vue';
+import FormDateField from '../Components/FormDateField.vue';
 
 const props = defineProps({
   matches: {
@@ -693,12 +702,6 @@ const processing = ref(false);
 const deleting = ref(false);
 const validationErrors = ref({});
 const matchToDelete = ref(null);
-const matchDateInput = ref(null);
-const gatesOpeningInput = ref(null);
-const kickOffInput = ref(null);
-let matchDatePicker = null;
-let gatesOpeningPicker = null;
-let kickOffPicker = null;
 
 const formData = ref({
   id: null,
@@ -807,53 +810,30 @@ const availableTeams = computed(() => {
   return selectedEvent.teams;
 });
 
-// Watch for modal opening to initialize flatpickr
-watch(showAddModal, async (newVal) => {
-  if (newVal) {
-    await nextTick();
-    destroyFlatpickr();
-    setTimeout(initializeFlatpickr, 50);
-  } else {
-    destroyFlatpickr();
-    validationErrors.value = {};
-  }
+watch(showAddModal, (newVal) => {
+  if (!newVal) validationErrors.value = {};
 });
 
-watch(showEditModal, async (newVal) => {
-  if (newVal) {
-    await nextTick();
-    destroyFlatpickr();
-    setTimeout(initializeFlatpickr, 50);
-  } else {
-    destroyFlatpickr();
-    validationErrors.value = {};
-  }
+watch(showEditModal, (newVal) => {
+  if (!newVal) validationErrors.value = {};
 });
 
-// Watch for event changes to reset venue if not available
+// Clear a selection the newly-picked event can't offer. Checked against the
+// availableVenues/availableTeams lists rather than the event's own relations:
+// those fall back to the full list when an event has nothing attached, so
+// testing the empty relation directly would wipe a perfectly valid selection.
 watch(() => formData.value.event_id, (newEventId) => {
-  if (newEventId) {
-    const selectedEvent = props.events.find(e => e.id === parseInt(newEventId));
-    
-    // Reset venue if not available in the selected event
-    if (formData.value.venue_id && selectedEvent && selectedEvent.venues) {
-      const isVenueAvailable = selectedEvent.venues.some(v => v.id === parseInt(formData.value.venue_id));
-      if (!isVenueAvailable) {
-        formData.value.venue_id = '';
-      }
-    }
-    
-    // Reset teams if not available in the selected event
-    if (selectedEvent && selectedEvent.teams) {
-      const availableTeamIds = selectedEvent.teams.map(t => t.id);
+  if (!newEventId) return;
 
-      if (formData.value.team1_id && !availableTeamIds.includes(formData.value.team1_id)) {
-        formData.value.team1_id = '';
-      }
+  const stillOffered = (list, value) => list.some(item => item.id === Number(value));
 
-      if (formData.value.team2_id && !availableTeamIds.includes(formData.value.team2_id)) {
-        formData.value.team2_id = '';
-      }
+  if (formData.value.venue_id && !stillOffered(availableVenues.value, formData.value.venue_id)) {
+    formData.value.venue_id = '';
+  }
+
+  for (const key of ['team1_id', 'team2_id']) {
+    if (formData.value[key] && !stillOffered(availableTeams.value, formData.value[key])) {
+      formData.value[key] = '';
     }
   }
 });
@@ -978,65 +958,6 @@ function submitMatch() {
   });
 }
 
-function initializeFlatpickr() {
-  if (matchDateInput.value) {
-    matchDatePicker = flatpickr(matchDateInput.value, {
-      enableTime: false,
-      dateFormat: 'Y-m-d',
-      allowInput: true,
-    });
-  }
-  
-  if (gatesOpeningInput.value) {
-    gatesOpeningPicker = flatpickr(gatesOpeningInput.value, {
-      enableTime: true,
-      noCalendar: true,
-      time_24hr: true,
-      dateFormat: 'H:i',
-      allowInput: true,
-    });
-  }
-  
-  if (kickOffInput.value) {
-    kickOffPicker = flatpickr(kickOffInput.value, {
-      enableTime: true,
-      noCalendar: true,
-      time_24hr: true,
-      dateFormat: 'H:i',
-      allowInput: true,
-    });
-  }
-}
-
-function destroyFlatpickr() {
-  if (matchDatePicker) {
-    matchDatePicker.destroy();
-    matchDatePicker = null;
-  }
-  if (gatesOpeningPicker) {
-    gatesOpeningPicker.destroy();
-    gatesOpeningPicker = null;
-  }
-  if (kickOffPicker) {
-    kickOffPicker.destroy();
-    kickOffPicker = null;
-  }
-}
-
-function formatDate(dateString) {
-  if (!dateString) return '—';
-  
-  // Parse string directly to avoid timezone conversion issues
-  const match = dateString.match(/^(\d{4})-(\d{2})-(\d{2})[\sT](\d{2}):(\d{2})(?::\d{2})?/);
-  if (match) {
-    const [, year, month, day, hours, minutes] = match;
-    return `${year}-${month}-${day} ${hours}:${minutes}`;
-  }
-  
-  // If format doesn't match, return original
-  return dateString;
-}
-
 function formatTime(dateString) {
   if (!dateString) return '';
   
@@ -1063,6 +984,17 @@ function formatDateOnly(dateString) {
   return '—';
 }
 
+// e.g. "03/11/2025" — date-only display, no time component
+function formatDateDMY(dateString) {
+  if (!dateString) return '—';
+
+  const match = String(dateString).match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!match) return '—';
+
+  const [, year, month, day] = match;
+  return `${day}/${month}/${year}`;
+}
+
 // e.g. "Mon, 03-Nov-25" — used for the Matches table's Match Date column
 function formatMatchDateWeekday(dateString) {
   if (!dateString) return '—';
@@ -1083,7 +1015,6 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
-  destroyFlatpickr();
   window.removeEventListener('resize', onResize);
 });
 
@@ -1792,35 +1723,6 @@ select.form-input {
   .form-row {
     grid-template-columns: 1fr;
   }
-}
-
-/* Flatpickr custom styling */
-:deep(.flatpickr-calendar) {
-  font-family: inherit;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-}
-
-:deep(.flatpickr-day.selected) {
-  background: var(--accent);
-  border-color: var(--accent);
-}
-
-:deep(.flatpickr-day.today) {
-  border-color: var(--accent);
-}
-
-:deep(.flatpickr-day:hover) {
-  background: var(--panel);
-}
-
-:deep(.flatpickr-time input) {
-  font-size: 13px;
-}
-
-:deep(.flatpickr-current-month) {
-  font-size: 14px;
 }
 
 /* Matches Container & Detail Card Styles */

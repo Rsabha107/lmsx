@@ -489,11 +489,10 @@
         <div class="form-row">
           <div class="form-group">
             <label class="form-label">Scheduled Date/Time</label>
-            <input
-              ref="scheduledAtInput"
+            <FormDateField
               v-model="flightForm.scheduled_at"
-              type="text"
-              class="form-input"
+              mode="datetime"
+              display-format="d/m/Y H:i"
               placeholder="dd/mm/yyyy HH:mm"
             />
           </div>
@@ -1033,10 +1032,8 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, nextTick, onUnmounted } from "vue";
+import { ref, computed, watch, nextTick } from "vue";
 import { router } from "@inertiajs/vue3";
-import flatpickr from 'flatpickr';
-import 'flatpickr/dist/flatpickr.min.css';
 import AppLayout from "@/Components/AppLayout.vue";
 import Modal from "@/Components/Modal.vue";
 import Button from "@/Components/Button.vue";
@@ -1045,6 +1042,7 @@ import MiniStat from "@/Components/MiniStat.vue";
 import SvgIcon from "@/Components/SvgIcon.vue";
 import ConfirmModal from "@/Components/ConfirmModal.vue";
 import FlagIcon from "@/Components/FlagIcon.vue";
+import FormDateField from "@/Components/FormDateField.vue";
 import Select from "primevue/select";
 
 const props = defineProps({
@@ -1342,8 +1340,6 @@ function confirmDelete() {
 const showFlightForm = ref(false);
 const editingFlight = ref(null);
 const flightForm = ref(emptyFlightForm());
-const scheduledAtInput = ref(null);
-let scheduledAtPicker = null;
 
 // Auto-calculate total party size from Players/Staff - suppressed while the form
 // is being populated from an existing record, so an imported total-only party
@@ -1358,39 +1354,6 @@ watch(
     flightForm.value.party_size_total = playersNum + staffNum || '';
   }
 );
-
-// Watch for modal opening to initialize flatpickr
-watch(showFlightForm, async (newVal) => {
-  if (newVal) {
-    await nextTick();
-    destroyScheduledAtPicker();
-    setTimeout(initializeScheduledAtPicker, 50);
-  } else {
-    destroyScheduledAtPicker();
-  }
-});
-
-function initializeScheduledAtPicker() {
-  if (scheduledAtInput.value) {
-    scheduledAtPicker = flatpickr(scheduledAtInput.value, {
-      enableTime: true,
-      dateFormat: 'd/m/Y H:i',
-      time_24hr: true,
-      allowInput: true,
-    });
-  }
-}
-
-function destroyScheduledAtPicker() {
-  if (scheduledAtPicker) {
-    scheduledAtPicker.destroy();
-    scheduledAtPicker = null;
-  }
-}
-
-onUnmounted(() => {
-  destroyScheduledAtPicker();
-});
 
 function emptyFlightForm() {
   return {

@@ -5,6 +5,7 @@
  * Routes for user management, roles, permissions, and system settings
  */
 
+use App\Http\Controllers\AccessController;
 use App\Http\Controllers\PermissionController;
 use App\Http\Controllers\RoleController;
 use App\Http\Controllers\SettingsController;
@@ -23,17 +24,20 @@ Route::middleware(['auth', 'role:admin'])->prefix('setups')->name('setups.')->gr
         Route::delete('/{id}', [UserController::class, 'destroy'])->name('destroy');
     });
     
+// Roles and permissions share one screen; the CRUD endpoints below back it.
+    Route::get('/access', [AccessController::class, 'index'])->name('access.index');
+
     // Role Management
     Route::prefix('roles')->name('roles.')->group(function () {
-        Route::get('/', [RoleController::class, 'index'])->name('index');
+        Route::get('/', fn () => redirect()->route('setups.access.index'))->name('index');
         Route::post('/', [RoleController::class, 'store'])->name('store');
         Route::put('/{id}', [RoleController::class, 'update'])->name('update');
         Route::delete('/{id}', [RoleController::class, 'destroy'])->name('destroy');
     });
-    
+
     // Permission Management
     Route::prefix('permissions')->name('permissions.')->group(function () {
-        Route::get('/', [PermissionController::class, 'index'])->name('index');
+        Route::get('/', fn () => redirect()->route('setups.access.index'))->name('index');
         Route::post('/', [PermissionController::class, 'store'])->name('store');
         Route::put('/{id}', [PermissionController::class, 'update'])->name('update');
         Route::delete('/{id}', [PermissionController::class, 'destroy'])->name('destroy');
@@ -44,6 +48,7 @@ Route::middleware(['auth', 'role:admin'])->prefix('setups')->name('setups.')->gr
         Route::get('/', [SettingsController::class, 'index'])->name('index');
         Route::post('/global', [SettingsController::class, 'updateGlobal'])->name('update-global');
         Route::post('/event', [SettingsController::class, 'updateEvent'])->name('update-event');
+        Route::post('/ui-flag', [SettingsController::class, 'updateUiFlag'])->name('update-ui-flag');
         Route::delete('/{id}', [SettingsController::class, 'destroy'])->name('destroy');
         Route::post('/preview', [SettingsController::class, 'preview'])->name('preview');
         Route::post('/preview-impact', [SettingsController::class, 'previewImpact'])->name('preview-impact');

@@ -174,6 +174,58 @@
       </div>
     </div>
 
+    <!-- Menu Visibility Section -->
+    <div class="settings-card" style="margin-bottom: 24px;">
+      <div class="card-header">
+        <h2 class="card-title">
+          <svg-icon name="menu" :size="18" style="color: #6B7280;" />
+          Optional Features
+        </h2>
+        <p class="card-subtitle">Turn parts of the app on or off for everyone</p>
+      </div>
+      <div class="flag-row">
+        <div class="flag-body">
+          <span class="flag-label">Jobs (Mobile)</span>
+          <span class="flag-desc">
+            The touch-friendly jobs view for staff working on their phones. Turning it off hides the menu
+            <em>and</em> closes <code>/jobs/mobile</code> — anyone who opens it gets a 403.
+          </span>
+          <span v-if="mobileOnlyUsers > 0" class="flag-warn">
+            {{ mobileOnlyUsers }} user{{ mobileOnlyUsers !== 1 ? 's have' : ' has' }} no other screen — turning this
+            off locks {{ mobileOnlyUsers !== 1 ? 'them' : 'them' }} out of the app entirely.
+          </span>
+        </div>
+        <label class="switch" :class="{ 'switch--on': jobsMobileMenu, 'switch--busy': savingFlag }">
+          <input
+            type="checkbox"
+            :checked="jobsMobileMenu"
+            :disabled="savingFlag"
+            @change.prevent="requestToggle($event.target.checked)"
+          />
+          <span class="switch-track"><span class="switch-thumb" /></span>
+          <span class="switch-text">{{ jobsMobileMenu ? 'On' : 'Off' }}</span>
+        </label>
+      </div>
+    </div>
+
+    <!-- Confirm turning the mobile view off -->
+    <Modal :show="showFlagConfirm" @close="cancelToggle" max-width="440px">
+      <template #title>Turn off Jobs (Mobile)?</template>
+      <p class="confirm-text">
+        This hides the menu and closes <code>/jobs/mobile</code> for everyone.
+      </p>
+      <p v-if="mobileOnlyUsers > 0" class="confirm-warn">
+        {{ mobileOnlyUsers }} user{{ mobileOnlyUsers !== 1 ? 's' : '' }} can only use that screen. They will be
+        locked out of the app until it is turned back on — including anyone mid-shift right now.
+      </p>
+      <template #footer>
+        <Button variant="secondary" size="sm" @click="cancelToggle">Cancel</Button>
+        <Button variant="danger" size="sm" :processing="savingFlag" @click="confirmToggleOff">
+          Turn it off
+        </Button>
+      </template>
+    </Modal>
+
     <!-- Event Overrides Section -->
     <div class="settings-card" style="margin-bottom: 24px;">
       <div class="card-header">
@@ -423,7 +475,33 @@ const props = defineProps({
   globalOverrides: Array,
   activeEvent: Object,
   checkpoints: Array,
+  uiFlags: { type: Object, default: () => ({}) },
+  mobileOnlyUsers: { type: Number, default: 0 },
 });
+
+const savingFlag = ref(false);
+const showFlagConfirm = ref(false);
+const jobsMobileMenu = computed(() => props.uiFlags?.jobsMobileMenu !== false);
+
+function requestToggle(enabled) {
+  enabled ? setJobsMobileMenu(true) : (showFlagConfirm.value = true);
+}
+
+function cancelToggle() {
+  showFlagConfirm.value = false;
+}
+
+function confirmToggleOff() {
+  setJobsMobileMenu(false);
+}
+
+function setJobsMobileMenu(enabled) {
+  savingFlag.value = true;
+  router.post('/setups/settings/ui-flag', { key: 'ui.jobs_mobile_menu', enabled }, {
+    preserveScroll: true,
+    onFinish: () => { savingFlag.value = false; showFlagConfirm.value = false; },
+  });
+}
 
 // Flash message toasts
 const page = usePage();
@@ -801,6 +879,37 @@ function getCheckpointName(checkpointId) {
   color: #6B7280;
   margin: 4px 0 0 0;
 }
+
+.flag-row {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 24px; padding: 18px 24px; flex-wrap: wrap;
+}
+.flag-body { flex: 1 1 320px; min-width: 0; }
+.flag-label { display: block; font-size: 14px; font-weight: 600; color: #111827; }
+.flag-desc { display: block; font-size: 12.5px; line-height: 1.55; color: #6B7280; margin-top: 4px; max-width: 620px; }
+.flag-desc code { font-size: 11.5px; background: #F3F4F6; padding: 1px 4px; border-radius: 3px; }
+.flag-warn { display: block; font-size: 12.5px; color: #B45309; margin-top: 8px; }
+
+.confirm-text { font-size: 13.5px; color: #111827; margin: 0; }
+.confirm-text code { font-size: 12px; background: #F3F4F6; padding: 1px 4px; border-radius: 3px; }
+.confirm-warn { font-size: 12.5px; line-height: 1.55; color: #B45309; margin: 10px 0 0; }
+
+.switch { display: flex; align-items: center; gap: 10px; cursor: pointer; flex: 0 0 auto; }
+.switch input { position: absolute; opacity: 0; width: 0; height: 0; }
+.switch-track {
+  width: 42px; height: 24px; border-radius: 999px;
+  background: #D1D5DB; position: relative; transition: background .15s;
+}
+.switch-thumb {
+  position: absolute; top: 3px; left: 3px;
+  width: 18px; height: 18px; border-radius: 50%;
+  background: white; box-shadow: 0 1px 2px rgba(0,0,0,.25);
+  transition: transform .15s;
+}
+.switch--on .switch-track { background: var(--accent, #7A1836); }
+.switch--on .switch-thumb { transform: translateX(18px); }
+.switch--busy { opacity: .6; cursor: progress; }
+.switch-text { font-size: 12.5px; font-weight: 600; color: #6B7280; min-width: 46px; }
 
 .settings-table-container {
   overflow-x: auto;

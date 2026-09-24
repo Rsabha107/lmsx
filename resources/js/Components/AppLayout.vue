@@ -245,12 +245,12 @@ const allNavItems = [
   { label: 'Schedule',      route: 'schedule',          icon: 'schedule',  can: 'console.view' },
   { label: 'Planning',      route: 'plans',             icon: 'plans',     can: 'plans.view' },
   { label: 'Jobs Queue',    route: 'jobs',              icon: 'jobs',      can: 'console.view' },
-  { label: 'Jobs (Mobile)', route: 'jobs/mobile',       icon: 'phone',     can: 'jobs.view' },
+  { label: 'Jobs (Mobile)', route: 'jobs/mobile',       icon: 'phone',     can: 'jobs.view', flag: 'jobsMobileMenu' },
   { label: 'Matches',       route: 'matches',           icon: 'trophy',    can: 'fleet.view' },
+  { label: 'Event Teams',   route: 'event-teams',       icon: 'team',      can: 'fleet.view' },
   { label: 'Notifications', route: 'notifications',     icon: 'bell',      can: 'console.view' },
   { label: 'Daily Email',   route: 'email',             icon: 'email',     can: 'console.view' },
   { label: 'Analytics',     route: 'analytics',         icon: 'chart',     can: 'analytics.view' },
-  { label: 'Event Teams',   route: 'event-teams',       icon: 'team',      can: 'fleet.view' },
   { 
     type: 'section', 
     label: 'Master', 
@@ -272,14 +272,16 @@ const allNavItems = [
     expandable: true,
     items: [
       { label: 'Users',         route: 'setups/users',       icon: 'user',   can: 'setups' },
-      { label: 'Roles',         route: 'setups/roles',       icon: 'shield', can: 'setups' },
-      { label: 'Permissions',   route: 'setups/permissions', icon: 'key',    can: 'setups' },
+      { label: 'Roles & Permissions', route: 'setups/access', icon: 'shield', can: 'setups' },
+      { label: 'Utilities',     route: 'utilities',          icon: 'columns', can: 'fleet.manage' },
       { label: 'Settings',      route: 'setups/settings',    icon: 'settings', can: 'setups' },
     ]
   },
 ];
 
-const allowed = (item) => !item.can || page.props.auth?.can?.[item.can] === true;
+const allowed = (item) =>
+  (!item.can || page.props.auth?.can?.[item.can] === true)
+  && (!item.flag || page.props.ui?.[item.flag] !== false);
 
 // Hide what the user would only be 403'd on, and drop sections left empty.
 const navItems = computed(() =>
@@ -291,7 +293,7 @@ const navItems = computed(() =>
 const allMobileNavItems = [
   { label: 'Dashboard', route: 'dashboard',  icon: 'dashboard', can: 'console.view' },
   { label: 'Schedule',  route: 'schedule',   icon: 'schedule',  can: 'console.view' },
-  { label: 'Jobs',      route: 'jobs/mobile', icon: 'jobs',     can: 'jobs.view' },
+  { label: 'Jobs',      route: 'jobs/mobile', icon: 'jobs',     can: 'jobs.view', flag: 'jobsMobileMenu' },
   { label: 'Tracker',  route: 'tracker',    icon: 'tracker',   can: 'console.view' },
 ];
 

@@ -502,22 +502,24 @@
           <!-- New plan footer -->
           <div style="border-top: 1px solid #f3f4f6; padding: 10px 14px">
             <button
+              :disabled="!canCreatePlan"
+              :title="prerequisiteHint"
               @click="
                 showNewPlan = true;
                 showPlanDropdown = false;
               "
-              style="
-                background: none;
-                border: none;
-                color: #3b82f6;
-                font-size: 13px;
-                font-weight: 600;
-                cursor: pointer;
-                padding: 0;
-                display: flex;
-                align-items: center;
-                gap: 5px;
-              "
+              :style="{
+                background: 'none',
+                border: 'none',
+                color: canCreatePlan ? '#3b82f6' : 'var(--ink4)',
+                fontSize: '13px',
+                fontWeight: 600,
+                cursor: canCreatePlan ? 'pointer' : 'not-allowed',
+                padding: 0,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '5px',
+              }"
             >
               <span style="font-size: 17px; line-height: 1; margin-top: -1px"
                 >+</span
@@ -707,7 +709,13 @@
                   </button>
                 </div>
               </div>
-              <Button variant="primary" size="sm" @click="showNewPlan = true">
+              <Button
+                variant="primary"
+                size="sm"
+                :disabled="!canCreatePlan"
+                :title="prerequisiteHint"
+                @click="showNewPlan = true"
+              >
                 <template #icon><svg-icon name="plus" :size="14" /></template>
                 New Plan
               </Button>
@@ -809,7 +817,15 @@
                 <span class="step-number">1</span>
                 <div class="step-content">
                   <strong>Set Up Prerequisites</strong>
-                  <p>Ensure you have teams, venues, and movement templates configured</p>
+                  <ul class="prereq-list">
+                    <li v-for="item in prerequisites" :key="item.label" class="prereq-item">
+                      <span class="prereq-mark" :class="item.met ? 'prereq-mark--ok' : (item.required ? 'prereq-mark--missing' : 'prereq-mark--optional')">
+                        <svg-icon :name="item.met ? 'check' : 'x'" :size="11" />
+                      </span>
+                      <a :href="item.href" class="prereq-label" :class="{ 'prereq-label--met': item.met }">{{ item.label }}</a>
+                      <span v-if="!item.required" class="prereq-optional">optional</span>
+                    </li>
+                  </ul>
                 </div>
               </div>
               <div class="instruction-step">
@@ -836,10 +852,17 @@
             </div>
             
             <div class="empty-state-actions">
-              <Button variant="primary" size="sm" @click="showNewPlan = true">
+              <Button
+                variant="primary"
+                size="sm"
+                :disabled="!canCreatePlan"
+                :title="prerequisiteHint"
+                @click="showNewPlan = true"
+              >
                 <template #icon><svg-icon name="plus" :size="14" /></template>
                 Create Your First Plan
               </Button>
+              <p v-if="!canCreatePlan" class="prereq-blocked">{{ prerequisiteHint }}</p>
             </div>
           </div>
           
@@ -6173,11 +6196,17 @@
               >
                 <div class="form-field">
                   <label for="am-start">START</label>
-                  <input id="am-start" type="time" v-model="amStart" />
+                  <FormDateField id="am-start" v-model="amStart" mode="time" input-class="" placeholder="HH:MM" />
                 </div>
                 <div class="form-field">
                   <label for="am-end">END (ETA)</label>
-                  <input id="am-end" type="time" v-model="amEnd" :class="{ 'field--invalid': amErrors.window_end }" />
+                  <FormDateField
+                    id="am-end"
+                    v-model="amEnd"
+                    mode="time"
+                    placeholder="HH:MM"
+                    :input-class="amErrors.window_end ? 'field--invalid' : ''"
+                  />
                   <span v-if="amErrors.window_end" class="am-field-error">{{ amErrors.window_end }}</span>
                 </div>
               </div>
@@ -6304,11 +6333,18 @@
               >
                 <div class="form-field">
                   <label for="am-date">DATE</label>
-                  <input id="am-date" type="date" v-model="amDate" readonly />
+                  <FormDateField
+                    id="am-date"
+                    v-model="amDate"
+                    display-format="d/m/Y"
+                    value-format="Y-m-d"
+                    input-class=""
+                    disabled
+                  />
                 </div>
                 <div class="form-field">
                   <label for="am-base-time">BASE TIME (FIRST LEG)</label>
-                  <input id="am-base-time" type="time" v-model="amBaseTime" />
+                  <FormDateField id="am-base-time" v-model="amBaseTime" mode="time" input-class="" placeholder="HH:MM" />
                 </div>
               </div>
 
@@ -7581,6 +7617,7 @@ import Badge from "../Components/Badge.vue";
 import InfoIcon from "../Components/InfoIcon.vue";
 import FlagIcon from "../Components/FlagIcon.vue";
 import ConfirmModal from "../Components/ConfirmModal.vue";
+import FormDateField from "../Components/FormDateField.vue";
 
 const { success: showSuccessToast, error: showErrorToast } = useToast();
 
@@ -7596,9 +7633,32 @@ const props = defineProps({
   drivers: { type: Array, default: () => [] },
   supervisors: { type: Array, default: () => [] },
   matches: { type: Array, default: () => [] },
+  venueCount: { type: Number, default: 0 },
   conflicts: { type: Array, default: () => [] },
   nextMovementNumber: { type: Number, default: 1 },
 });
+
+// A plan can't be built without these, so the New Plan actions stay disabled
+// until they exist. Venues are listed for completeness but aren't required —
+// a movement can be created with free-text locations.
+const prerequisites = computed(() => [
+  { label: 'Teams', met: props.teams.length > 0, required: true, href: '/event-teams' },
+  { label: 'Matches', met: props.matches.length > 0, required: true, href: '/matches' },
+  { label: 'Movement templates', met: props.movementTemplates.length > 0, required: true, href: '/library' },
+  { label: 'Venues', met: props.venueCount > 0, required: false, href: '/venues' },
+]);
+
+const missingPrerequisites = computed(() =>
+  prerequisites.value.filter(p => p.required && !p.met)
+);
+
+const canCreatePlan = computed(() => missingPrerequisites.value.length === 0);
+
+const prerequisiteHint = computed(() =>
+  canCreatePlan.value
+    ? ''
+    : `Add ${missingPrerequisites.value.map(p => p.label.toLowerCase()).join(', ')} for this event first`
+);
 
 const view = ref("day");
 const showNewPlan = ref(false);
@@ -11078,6 +11138,58 @@ function statusLabel(s) {
   display: flex;
   justify-content: center;
   gap: 8px;
+  flex-direction: column;
+  align-items: center;
+}
+
+.prereq-blocked {
+  margin: 0;
+  font-size: 12px;
+  color: #b45309;
+}
+
+.prereq-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.prereq-item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+}
+
+.prereq-mark {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+  color: #fff;
+}
+.prereq-mark--ok { background: var(--ok, #16a34a); }
+.prereq-mark--missing { background: var(--danger, #b91c1c); }
+.prereq-mark--optional { background: var(--ink4, #9ca3af); }
+
+.prereq-label {
+  color: var(--ink3);
+  text-decoration: none;
+  border-bottom: 1px dotted var(--border);
+}
+.prereq-label:hover { color: var(--accent); }
+.prereq-label--met { color: var(--ink); }
+
+.prereq-optional {
+  font-size: 10.5px;
+  color: var(--ink4);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
 @media (max-width: 768px) {

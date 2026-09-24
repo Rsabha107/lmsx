@@ -6,6 +6,7 @@ use App\Models\Checkpoint;
 use App\Models\Event;
 use App\Models\Movement;
 use App\Models\Setting;
+use App\Models\User;
 use App\Services\JobGenerationService;
 use App\Services\SettingsService;
 use Illuminate\Http\Request;
@@ -88,7 +89,45 @@ class SettingsController extends Controller
             'globalOverrides' => $globalOverrides,
             'activeEvent' => $activeEvent,
             'checkpoints' => $checkpoints,
+            'uiFlags' => [
+                'jobsMobileMenu' => $this->settingsService->getGlobalFlag(SettingsService::FLAG_JOBS_MOBILE_MENU),
+            ],
+            'mobileOnlyUsers' => $this->mobileOnlyUserCount(),
         ]);
+    }
+
+    /**
+     * Users whose only screen is the mobile jobs view - they have jobs.view but
+     * no console access, so turning that view off locks them out of the app.
+     */
+    private function mobileOnlyUserCount(): int
+    {
+        return User::permission('jobs.view')->get()
+            ->filter(fn (User $user) => ! $user->can('console.view'))
+            ->count();
+    }
+
+    /**
+     * Toggle a menu on or off for everyone. Purely cosmetic - hiding a menu
+     * never removes the permission behind it, so the route stays reachable
+     * by direct URL for anyone who already had access.
+     */
+    public function updateUiFlag(Request $request)
+    {
+        $validated = $request->validate([
+            'key' => 'required|string|in:' . SettingsService::FLAG_JOBS_MOBILE_MENU,
+            'enabled' => 'required|boolean',
+        ]);
+
+        $this->settingsService->setSetting(
+            $validated['key'],
+            $validated['enabled'] ? '1' : '0',
+            Setting::SCOPE_GLOBAL,
+            null,
+            'Show the Jobs (Mobile) menu in the sidebar',
+        );
+
+        return back()->with('success', 'Menu visibility updated.');
     }
 
     /**

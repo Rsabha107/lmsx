@@ -90,7 +90,8 @@ class UtilitiesController extends Controller
         $converter = $this->definition($type);
 
         $request->validate([
-            'file' => 'required|file|mimes:xlsx,xls,csv,txt|max:10240',
+            // See TeamImportController: extension beats sniffed MIME for xlsx.
+            'file' => ['required', 'file', 'extensions:xlsx,xls,csv,txt', 'max:10240'],
             'use_ai' => 'sometimes|boolean',
         ]);
 

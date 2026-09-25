@@ -35,10 +35,18 @@ class TeamImportController extends Controller
     public function import(Request $request, int $eventId, TeamImportService $service, TeamSheetReader $reader)
     {
         $request->validate([
-            'file' => 'required|file|mimes:xlsx,xls,csv,txt|max:10240',
+            // Checked by extension, not sniffed MIME: an .xlsx is a ZIP container and
+            // some libmagic builds report it as application/zip, which makes a
+            // mimes:xlsx rule reject perfectly valid files on some hosts. Content is
+            // still proven by the reader, which fails loudly on anything unparseable.
+            'file' => ['required', 'file', 'extensions:xlsx,xls,csv,txt', 'max:10240'],
         ]);
 
-        $rows = $reader->read($request->file('file'));
+        try {
+            $rows = $reader->read($request->file('file'));
+        } catch (\Throwable $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
 
         return response()->json($service->import($rows, $eventId));
     }

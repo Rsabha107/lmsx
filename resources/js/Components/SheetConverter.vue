@@ -181,11 +181,24 @@ function onDrop(event) {
   setFile(event.dataTransfer?.files?.[0]);
 }
 
+// Matches the server's own 'max:10240' rule, so an oversized file is named
+// here rather than coming back as a generic upload failure.
+const MAX_BYTES = 10 * 1024 * 1024;
+
 function setFile(picked) {
   if (!picked) return;
+
+  result.value = null;
+
+  if (picked.size > MAX_BYTES) {
+    file.value = null;
+    error.value = `That file is ${(picked.size / 1024 / 1024).toFixed(1)} MB. `
+      + 'The limit is 10 MB — copy just the sheet you need into a new file (see the guide above).';
+    return;
+  }
+
   file.value = picked;
   error.value = '';
-  result.value = null;
 }
 
 async function convert() {

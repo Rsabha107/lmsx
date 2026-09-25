@@ -35,10 +35,15 @@ class MatchImportController extends Controller
     public function import(Request $request, int $eventId, MatchImportService $service, MatchSheetReader $reader)
     {
         $request->validate([
-            'file' => 'required|file|mimes:xlsx,xls,csv,txt|max:10240',
+            // See TeamImportController: extension beats sniffed MIME for xlsx.
+            'file' => ['required', 'file', 'extensions:xlsx,xls,csv,txt', 'max:10240'],
         ]);
 
-        $rows = $reader->read($request->file('file'));
+        try {
+            $rows = $reader->read($request->file('file'));
+        } catch (\Throwable $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
 
         return response()->json($service->import($rows, $eventId));
     }

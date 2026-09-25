@@ -135,6 +135,38 @@ class SheetConverterTest extends TestCase
         $this->assertStringContainsString($expected, $response->headers->get('content-disposition'));
     }
 
+    public function test_the_filename_follows_the_event_switched_to_after_converting(): void
+    {
+        $first = \App\Models\Event::create([
+            'name' => 'GFF U17 Gulf Cup Qatar 2026',
+            'short_name' => 'GFFU1726',
+            'start_date' => '2026-10-28',
+            'end_date' => '2026-11-05',
+        ]);
+        $second = \App\Models\Event::create([
+            'name' => 'FIFA U-17 World Cup Qatar 2026',
+            'short_name' => 'FU17WC26',
+            'start_date' => '2026-11-10',
+            'end_date' => '2026-12-02',
+        ]);
+
+        $admin = $this->admin();
+        $rows = [array_fill(0, 16, '')];
+
+        $this->actingAs($admin)->withSession(['active_event_id' => $first->id])
+            ->post('/utilities/converters/teams/download', ['rows' => $rows]);
+
+        // Switching the active event must rename the next download, not reuse
+        // the name minted during the earlier preview.
+        $response = $this->actingAs($admin)->withSession(['active_event_id' => $second->id])
+            ->post('/utilities/converters/teams/download', ['rows' => $rows]);
+
+        $this->assertStringContainsString(
+            "PMA_FU17WC26_{$this->today()}_TEAMS.xlsx",
+            $response->headers->get('content-disposition'),
+        );
+    }
+
     private function today(): string
     {
         return now()->format('dmY');

@@ -23,6 +23,13 @@ class SettingsService
 {
     /** Keys of the admin-controlled UI toggles. */
     public const FLAG_JOBS_MOBILE_MENU = 'ui.jobs_mobile_menu';
+    public const FLAG_UTILITIES = 'ui.utilities';
+
+    /** Every UI toggle, with the description stored alongside its setting row. */
+    public const UI_FLAGS = [
+        self::FLAG_JOBS_MOBILE_MENU => 'Show the Jobs (Mobile) menu in the sidebar',
+        self::FLAG_UTILITIES => 'Show the Utilities menu and allow its sheet converters',
+    ];
 
     /**
      * Per-request memoization of resolved setting values, keyed by cache

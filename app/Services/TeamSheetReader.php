@@ -110,6 +110,14 @@ class TeamSheetReader extends AbstractSheetReader
             - "trigram" is the team's short code (3 letters, e.g. QAT, BRA). Do not
               confuse it with a country code column or the full team name.
             - "itinerary" is a routing string such as "TAS-DOH-TAS".
+            - "arrival_date" is the day the team travels in, from a column such as
+              "Arrival Date", "Arrival Date to Doha" or "Inbound Date". Likewise
+              "departure_date" comes from "Departure Date" / "Departure Date from
+              Doha". Never take either from a fixture column - "First Match",
+              "Last Match", "Match Date" - even when it sits right next to it; a
+              match date is not a travel date. Put match dates in "notes" instead.
+            - A team arrives before its first match, so an arrival date that equals
+              or follows the first match date means you read the wrong column.
             GUIDANCE;
     }
 

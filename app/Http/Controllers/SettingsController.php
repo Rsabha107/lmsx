@@ -91,6 +91,7 @@ class SettingsController extends Controller
             'checkpoints' => $checkpoints,
             'uiFlags' => [
                 'jobsMobileMenu' => $this->settingsService->getGlobalFlag(SettingsService::FLAG_JOBS_MOBILE_MENU),
+                'utilities' => $this->settingsService->getGlobalFlag(SettingsService::FLAG_UTILITIES),
             ],
             'mobileOnlyUsers' => $this->mobileOnlyUserCount(),
         ]);
@@ -108,14 +109,13 @@ class SettingsController extends Controller
     }
 
     /**
-     * Toggle a menu on or off for everyone. Purely cosmetic - hiding a menu
-     * never removes the permission behind it, so the route stays reachable
-     * by direct URL for anyone who already had access.
+     * Toggle an optional feature on or off for everyone. Each flag both hides
+     * its menu and closes its routes (see EnsureUiFlagEnabled).
      */
     public function updateUiFlag(Request $request)
     {
         $validated = $request->validate([
-            'key' => 'required|string|in:' . SettingsService::FLAG_JOBS_MOBILE_MENU,
+            'key' => 'required|string|in:' . implode(',', array_keys(SettingsService::UI_FLAGS)),
             'enabled' => 'required|boolean',
         ]);
 
@@ -124,10 +124,10 @@ class SettingsController extends Controller
             $validated['enabled'] ? '1' : '0',
             Setting::SCOPE_GLOBAL,
             null,
-            'Show the Jobs (Mobile) menu in the sidebar',
+            SettingsService::UI_FLAGS[$validated['key']],
         );
 
-        return back()->with('success', 'Menu visibility updated.');
+        return back()->with('success', 'Feature visibility updated.');
     }
 
     /**

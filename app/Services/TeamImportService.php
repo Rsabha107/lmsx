@@ -4,7 +4,9 @@ namespace App\Services;
 
 use App\Models\Airport;
 use App\Models\Country;
+use App\Models\Movement;
 use App\Models\Team;
+use App\Models\TeamFlight;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
@@ -39,9 +41,16 @@ class TeamImportService
         'Notes',
     ];
 
+    /** Flight changes made by the row being processed; kept only if the row commits. */
+    private array $rowFlightChanges = [];
+
+    public function __construct(private JobGenerationService $jobs)
+    {
+    }
+
     /**
      * @param array<int, array<string, mixed>> $rows
-     * @return array{total: int, created: int, updated: int, unchanged: int, incomplete: array, failed: array}
+     * @return array{total: int, created: int, updated: int, unchanged: int, incomplete: array, failed: array, flight_changes: array, not_in_file: array<int, string>}
      */
     public function import(array $rows, int $eventId): array
     {
@@ -50,12 +59,15 @@ class TeamImportService
         $unchanged = 0;
         $incomplete = [];
         $failed = [];
+        $flightChanges = [];
 
         foreach ($rows as $index => $row) {
             $rowNumber = $index + 2; // header occupies row 1
+            $this->rowFlightChanges = [];
 
             try {
                 $result = DB::transaction(fn () => $this->processRow($row, $eventId));
+                array_push($flightChanges, ...$this->rowFlightChanges);
 
                 match ($result['status']) {
                     'created' => $created++,
@@ -86,7 +98,34 @@ class TeamImportService
             'unchanged' => $unchanged,
             'incomplete' => $incomplete,
             'failed' => $failed,
+            'flight_changes' => $flightChanges,
+            'not_in_file' => $this->teamsNotInFile($rows, $eventId),
         ];
+    }
+
+    /**
+     * Active teams the file doesn't mention. Reported, never deleted: a file may
+     * legitimately cover only some teams.
+     *
+     * @return array<int, string>
+     */
+    private function teamsNotInFile(array $rows, int $eventId): array
+    {
+        $codes = array_filter(array_map(
+            fn (array $row) => strtoupper(trim((string) ($row['trigram'] ?? ''))),
+            $rows,
+        ));
+
+        if ($codes === []) {
+            return [];
+        }
+
+        return Team::where('event_id', $eventId)
+            ->where('is_active', true)
+            ->whereNotIn('code', $codes)
+            ->orderBy('code')
+            ->pluck('code')
+            ->all();
     }
 
     /**
@@ -174,12 +213,12 @@ class TeamImportService
         }
 
         $arrivalChanged = $this->upsertFlight(
-            $team, $eventId, 'arrival', $row,
+            $team, $eventId, 'arrival', $row, $code,
             'arrival_flight_number', 'arrival_date', 'arrival_time', 'arrival_passengers',
             originAirportId: $airportId, destinationAirportId: $venueAirportId,
         );
         $departureChanged = $this->upsertFlight(
-            $team, $eventId, 'departure', $row,
+            $team, $eventId, 'departure', $row, $code,
             'departure_flight_number', 'departure_date', 'departure_time', 'departure_passengers',
             originAirportId: $venueAirportId, destinationAirportId: $airportId,
         );
@@ -204,19 +243,19 @@ class TeamImportService
     }
 
     /**
-     * Creates/updates the flight record for one leg. When a flight number is given,
-     * the record is only touched if that number differs from what's already saved -
-     * this protects any manual corrections (actual times, gate, delay) made after a
-     * previous import, and lets the same file be re-uploaded safely once a flight
-     * number is filled in. Some source sheets never track an outbound flight number
-     * at all (only date/time/passengers) - in that case, falls back to comparing
-     * those fields instead of skipping the leg entirely.
+     * Creates/updates the flight record for one leg, writing only the values the
+     * file gives that differ from what is saved - so a re-upload picks up a
+     * retimed or rebooked flight, and a blank cell never wipes known data. Live
+     * tracking fields (estimated/actual times, delay, gate) are never written
+     * here; they are only cleared when the file points the leg at a different
+     * flight, because they then describe the old one.
      */
     private function upsertFlight(
         Team $team,
         int $eventId,
         string $direction,
         array $row,
+        string $code,
         string $numberKey,
         string $dateKey,
         string $timeKey,
@@ -234,50 +273,172 @@ class TeamImportService
 
         $existing = $team->flights()->where('event_id', $eventId)->where('direction', $direction)->first();
 
-        // Newly-resolved airport info (e.g. from a re-import after adding an
-        // airport, or after the itinerary-parsing fix) always counts as a change,
-        // even if the flight number/schedule/passengers this file provides match
-        // what's already saved - otherwise it would never get backfilled.
-        $airportsChanged = $existing !== null && (
-            ($originAirportId !== null && $existing->origin_airport_id !== $originAirportId)
-            || ($destinationAirportId !== null && $existing->destination_airport_id !== $destinationAirportId)
-        );
-
-        if ($existing && !$airportsChanged) {
-            if ($flightNumber !== '') {
-                if ($existing->flight_number === $flightNumber) {
-                    return false;
-                }
-            } else {
-                $sameSchedule = $scheduledAt === null
-                    || $existing->scheduled_at?->format('Y-m-d H:i:s') === $scheduledAt;
-                $samePax = $partySize === null || $existing->party_size_total === $partySize;
-                if ($sameSchedule && $samePax) {
-                    return false;
-                }
-            }
+        // A date with no time ("TBC") would otherwise land on midnight and
+        // overwrite a time we already know.
+        $timeGiven = trim((string) ($row[$timeKey] ?? '')) !== '';
+        if ($scheduledAt !== null && !$timeGiven && $existing?->scheduled_at) {
+            $scheduledAt = substr($scheduledAt, 0, 10) . ' ' . $existing->scheduled_at->format('H:i:s');
         }
 
         $attrs = array_filter([
             'flight_number' => $flightNumber !== '' ? $flightNumber : null,
             'scheduled_at' => $scheduledAt,
             'party_size_total' => $partySize,
+            'origin_airport_id' => $originAirportId,
+            'destination_airport_id' => $destinationAirportId,
         ], fn ($value) => $value !== null);
 
-        if ($originAirportId !== null) {
-            $attrs['origin_airport_id'] = $originAirportId;
-        }
-        if ($destinationAirportId !== null) {
-            $attrs['destination_airport_id'] = $destinationAirportId;
+        if (!$existing) {
+            $team->flights()->create([...$attrs, 'event_id' => $eventId, 'direction' => $direction]);
+
+            return true;
         }
 
-        if ($existing) {
-            $existing->update($attrs);
-        } else {
-            $team->flights()->create([...$attrs, 'event_id' => $eventId, 'direction' => $direction]);
+        $changes = array_filter(
+            $attrs,
+            fn ($value, $key) => $key === 'scheduled_at'
+                ? $existing->scheduled_at?->format('Y-m-d H:i:s') !== $value
+                : $existing->{$key} !== $value,
+            ARRAY_FILTER_USE_BOTH,
+        );
+
+        if ($changes === []) {
+            return false;
+        }
+
+        $before = [
+            'flight_number' => $existing->flight_number,
+            'scheduled_at' => $existing->scheduled_at?->copy(),
+            'party_size_total' => $existing->party_size_total,
+        ];
+
+        $numberChanged = isset($changes['flight_number']) && $before['flight_number'] !== null;
+        $dateChanged = isset($changes['scheduled_at'])
+            && $before['scheduled_at']?->format('Y-m-d') !== substr($changes['scheduled_at'], 0, 10);
+
+        if ($numberChanged || $dateChanged) {
+            $changes += [
+                'estimated_at' => null,
+                'actual_at' => null,
+                'delay_minutes' => null,
+                'flight_status' => null,
+                'flight_synced_at' => null,
+            ];
+        }
+
+        $existing->update($changes);
+
+        if (isset($changes['flight_number']) || isset($changes['scheduled_at']) || isset($changes['party_size_total'])) {
+            $this->rowFlightChanges[] = $this->syncMovements($existing->fresh(), $before, $code);
         }
 
         return true;
+    }
+
+    /**
+     * Carries a flight change through to the movements planned against it.
+     * Movements not yet turned into a job are rescheduled; ones that already
+     * have a job are left alone and reported, since the job's checkpoints were
+     * snapshotted and a crew may already be working to them.
+     *
+     * @param array{flight_number: ?string, scheduled_at: ?Carbon, party_size_total: ?int} $before
+     * @return array<string, mixed>
+     */
+    private function syncMovements(TeamFlight $flight, array $before, string $code): array
+    {
+        $timeMoved = $before['scheduled_at']?->format('Y-m-d H:i') !== $flight->scheduled_at?->format('Y-m-d H:i');
+        $paxChanged = $flight->party_size_total !== null && $before['party_size_total'] !== $flight->party_size_total;
+        $numberChanged = $before['flight_number'] !== null && $before['flight_number'] !== $flight->flight_number;
+
+        $movements = Movement::where('event_id', $flight->event_id)
+            ->where('team_id', $flight->team_id)
+            ->where(function ($query) use ($flight) {
+                $query->where('flight_id', $flight->id)
+                    // Planned before this team had a flight on record.
+                    ->orWhere(fn ($q) => $q->where('kind', $flight->direction)->whereNull('flight_id'));
+                // Transfers are timed off the team's arrival flight without linking it.
+                if ($flight->direction === 'arrival') {
+                    $query->orWhere('kind', 'transfer');
+                }
+            })
+            ->with(['flight', 'plan', 'checkpointTemplate.checkpoints'])
+            ->orderBy('window_start')
+            ->get();
+
+        $results = [];
+
+        foreach ($movements as $movement) {
+            $entry = [
+                'id' => $movement->id,
+                'code' => $movement->code,
+                'kind' => $movement->kind,
+                'plan' => $movement->plan?->name,
+                'from' => $movement->window_start?->format('D j M H:i'),
+                'to' => null,
+                'status' => 'unchanged',
+                'notes' => [],
+            ];
+
+            if ($movement->hasJob()) {
+                if ($timeMoved || $paxChanged || $numberChanged) {
+                    $entry['status'] = 'needs_review';
+                    $entry['notes'][] = "Job {$movement->job_id} was already issued - update it by hand.";
+                    $results[] = $entry;
+                }
+                continue;
+            }
+
+            $attrs = [];
+            if ($movement->kind === $flight->direction && $movement->flight_id === null) {
+                $attrs['flight_id'] = $flight->id;
+            }
+            // Only follow the flight when the movement's count came from it, not a manual edit.
+            if ($paxChanged && in_array($movement->passengers, [null, 0, $before['party_size_total']], true)) {
+                $attrs['passengers'] = $flight->party_size_total;
+            }
+            if ($numberChanged && $movement->flight_number === $before['flight_number']) {
+                $attrs['flight_number'] = $flight->flight_number;
+            }
+            if ($attrs !== []) {
+                $movement->update($attrs);
+                $movement->load('flight');
+            }
+
+            $rescheduled = $timeMoved && $this->jobs->recomputeMovementWindow($movement);
+
+            if (!$rescheduled && $attrs === []) {
+                continue;
+            }
+
+            $movement->refresh();
+            $entry['status'] = 'updated';
+            $entry['to'] = $movement->window_start?->format('D j M H:i');
+
+            if (isset($attrs['passengers'])) {
+                $entry['notes'][] = "Passengers {$before['party_size_total']} → {$flight->party_size_total}.";
+            }
+            if ($rescheduled && ($movement->vehicle_id || $movement->driver_id)) {
+                $entry['notes'][] = 'Vehicle/driver kept - check they are still free at the new time.';
+            }
+            if ($rescheduled && $movement->plan?->date && $movement->window_start
+                && !$movement->plan->date->isSameDay($movement->window_start)) {
+                $entry['notes'][] = "Plan is dated {$movement->plan->date->format('D j M')}; this movement is now on {$movement->window_start->format('D j M')}.";
+            }
+
+            $results[] = $entry;
+        }
+
+        return [
+            'code' => $code,
+            'direction' => $flight->direction,
+            'flight_before' => $before['flight_number'],
+            'flight_after' => $flight->flight_number,
+            'time_before' => $before['scheduled_at']?->format('D j M H:i'),
+            'time_after' => $flight->scheduled_at?->format('D j M H:i'),
+            'pax_before' => $before['party_size_total'],
+            'pax_after' => $flight->party_size_total,
+            'movements' => $results,
+        ];
     }
 
     private function upsertStay(Team $team, int $eventId, string $hotelName, ?int $roomCount): bool

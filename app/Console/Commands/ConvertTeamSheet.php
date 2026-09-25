@@ -11,22 +11,23 @@ use Throwable;
 
 /**
  * Converts an arbitrary event-teams spreadsheet (an organiser's own PMA sheet,
- * a travel agent's export, ...) into our standard team import template, showing
- * the result for review before anything is written.
+ * a travel agent's export, ...) or a PDF printout of one into our standard team
+ * import template, showing the result for review before anything is written.
  */
 class ConvertTeamSheet extends Command
 {
     use ReadsSpreadsheetRows;
 
     protected $signature = 'teams:convert
-        {source : Path to the source spreadsheet, e.g. docs/GFFVC26/PMA event teams.xlsx}
+        {source : Path to the source spreadsheet or PDF, e.g. docs/GFFVC26/PMA event teams.xlsx}
         {--output= : Where to write the converted file (default: alongside the source, "<name> - import.xlsx")}
         {--rows=15 : How many converted rows to show in the preview (0 = all)}
         {--no-ai : Match columns using the built-in alias list only, never the AI mapper}
+        {--context= : Event details for a PDF source, e.g. "GFF Veterans Gulf Cup, 30 Oct - 5 Nov 2026"}
         {--provider= : AI provider for the column mapper (defaults to the app\'s configured provider)}
         {--force : Skip the confirmation prompt and write the file straight away}';
 
-    protected $description = 'Convert a team spreadsheet into the team import template, previewing it first';
+    protected $description = 'Convert a team spreadsheet or PDF into the team import template, previewing it first';
 
     public function handle(TeamSheetReader $reader): int
     {
@@ -41,7 +42,12 @@ class ConvertTeamSheet extends Command
         $this->info("Reading {$source} ...");
 
         try {
-            $rows = $reader->read($source, allowAi: !$this->option('no-ai'), provider: $this->option('provider'));
+            $rows = $reader->read(
+                $source,
+                allowAi: !$this->option('no-ai'),
+                provider: $this->option('provider'),
+                context: (string) $this->option('context'),
+            );
         } catch (Throwable $e) {
             $this->error($e->getMessage());
 
@@ -108,16 +114,25 @@ class ConvertTeamSheet extends Command
     }
 
     /**
-     * @param array{header_row: int, columns: array<int, array<string, mixed>>, ai_notes: ?string, used_ai: bool} $report
+     * @param array{source_kind: string, header_row: int, columns: array<int, array<string, mixed>>, ai_notes: ?string, used_ai: bool} $report
      */
     private function showMapping(array $report): void
     {
+        $isPdf = $report['source_kind'] === 'pdf';
+
         $this->newLine();
-        $this->line("Header row: <comment>{$report['header_row']}</comment>"
-            . ($report['used_ai'] ? '   Column matching: <comment>aliases + AI</comment>' : '   Column matching: <comment>aliases</comment>'));
+
+        if ($isPdf) {
+            $this->line('Source: <comment>PDF, read by AI</comment> - check every value against the document before importing.');
+        } else {
+            $this->line("Header row: <comment>{$report['header_row']}</comment>"
+                . ($report['used_ai'] ? '   Column matching: <comment>aliases + AI</comment>' : '   Column matching: <comment>aliases</comment>'));
+        }
 
         $this->table(
-            ['Source column', 'Source header', 'Template field', 'Matched by', 'Confidence'],
+            $isPdf
+                ? ['Source', 'Rows filled', 'Template field', 'Matched by', 'Coverage']
+                : ['Source column', 'Source header', 'Template field', 'Matched by', 'Confidence'],
             array_map(fn (array $c) => [
                 $c['column'],
                 $c['header'],

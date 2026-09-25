@@ -9,9 +9,15 @@
  */
 
 use App\Http\Controllers\UtilitiesController;
+use App\Services\SettingsService;
 use Illuminate\Support\Facades\Route;
 
-Route::middleware(['auth', 'permission:fleet.manage'])->prefix('utilities')->name('utilities.')->group(function () {
+// Can be switched off entirely in Setups > Settings.
+Route::middleware([
+    'auth',
+    'permission:fleet.manage',
+    'ui_flag:' . SettingsService::FLAG_UTILITIES . ',Utilities',
+])->prefix('utilities')->name('utilities.')->group(function () {
     Route::get('/', [UtilitiesController::class, 'index'])->name('index');
 
     Route::prefix('converters/{type}')->name('converters.')->group(function () {

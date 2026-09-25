@@ -551,7 +551,7 @@
           Download import template
         </a>
 
-        <div style="padding: 10px 12px; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; font-size: 12px; line-height: 1.55; color: var(--ink3);">
+        <div v-if="$page.props.ui?.utilities !== false" style="padding: 10px 12px; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; font-size: 12px; line-height: 1.55; color: var(--ink3);">
           <strong style="color: var(--ink);">Working from the LOG PMA Scheduler?</strong>
           A workbook like "LOG PMA Scheduler 2026 20260915.xlsx" won't import directly — it holds dozens of
           sheets and its columns differ from this template. Convert the

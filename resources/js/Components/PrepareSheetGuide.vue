@@ -7,12 +7,33 @@
     </button>
 
     <div v-if="open" class="guide-body" @mouseenter="pause" @mouseleave="resume">
-      <p class="guide-intro">
+      <div class="guide-modes" role="tablist" aria-label="File type">
+        <button
+          v-for="option in modes"
+          :key="option.value"
+          type="button"
+          role="tab"
+          class="guide-mode"
+          :class="{ 'guide-mode--active': mode === option.value }"
+          :aria-selected="mode === option.value"
+          @click="mode = option.value"
+        >
+          <svg-icon :name="option.icon" :size="13" />
+          {{ option.label }}
+        </button>
+      </div>
+
+      <p v-if="mode === 'sheet'" class="guide-intro">
         The LOG PMA Scheduler holds <strong>70+ sheets</strong>, but only <strong>one</strong> is read — whichever
         was selected when the workbook was last saved. Copy the sheet you need into its own file first.
       </p>
+      <p v-else class="guide-intro">
+        A PDF has no columns to match, so <strong>AI reads the values themselves</strong>. It works, but a
+        spreadsheet is always more reliable — use a PDF only when that is all you have, and keep it to
+        <strong>one table</strong>.
+      </p>
 
-      <div class="guide-stage">
+      <div v-if="mode === 'sheet'" class="guide-stage">
         <svg viewBox="0 0 400 232" class="guide-svg" role="img" :aria-label="steps[current].title">
           <!-- Window -->
           <rect x="6" y="6" width="388" height="220" rx="7" class="win" />
@@ -133,6 +154,109 @@
         </svg>
       </div>
 
+      <div v-else class="guide-stage">
+        <svg viewBox="0 0 400 232" class="guide-svg" role="img" :aria-label="steps[current].title">
+          <!-- Viewer window -->
+          <rect x="6" y="6" width="388" height="220" rx="7" class="win" />
+          <path d="M6 13a7 7 0 0 1 7-7h374a7 7 0 0 1 7 7v13H6z" fill="#b3261e" />
+          <circle cx="18" cy="16" r="3" fill="#ffffff" opacity=".55" />
+          <circle cx="28" cy="16" r="3" fill="#ffffff" opacity=".55" />
+          <circle cx="38" cy="16" r="3" fill="#ffffff" opacity=".55" />
+          <text x="200" y="20" class="win-title">{{ pdfName }}</text>
+          <rect x="6" y="26" width="388" height="13" fill="#f1f3f4" />
+          <text x="230" y="35" class="col-letter">Page 1 of {{ pdfThumbs }}</text>
+
+          <!-- Page thumbnails -->
+          <rect x="6" y="39" width="60" height="187" fill="#e8eaed" />
+          <g v-for="t in pdfThumbs" :key="`t${t}`">
+            <rect x="16" :y="thumbY(t - 1)" width="40" height="28" fill="#ffffff" stroke="#c9cdd2" stroke-width=".6" />
+            <rect x="20" :y="thumbY(t - 1) + 5" width="32" height="3" :fill="t > 3 ? '#1a73e8' : '#8A1538'" />
+            <rect v-for="l in 3" :key="l" x="20" :y="thumbY(t - 1) + 9 + l * 4" width="32" height="1.5" fill="#d6d9dc" />
+          </g>
+
+          <!-- Current page -->
+          <rect x="66" y="39" width="328" height="187" fill="#dadce0" />
+          <rect x="96" y="46" width="268" height="174" fill="#ffffff" class="menu-shadow" />
+          <rect x="110" y="56" width="110" height="5" rx="2" fill="#d6d9dc" />
+          <rect x="110" y="70" width="240" height="14" fill="#8A1538" />
+          <text
+            v-for="(head, i) in preview.headers"
+            :key="`ph${head}`"
+            :x="pdfColX(i) + 3"
+            y="79.5"
+            class="head-text"
+          >{{ head }}</text>
+          <g v-for="(row, r) in preview.rows" :key="`pr${r}`">
+            <line x1="110" :y1="98 + r * 14" x2="350" :y2="98 + r * 14" stroke="#e3e5e8" stroke-width=".6" />
+            <text
+              v-for="(cell, c) in row"
+              :key="`pc${c}`"
+              :x="pdfColX(c) + 3"
+              :y="94 + r * 14"
+              class="cell-text"
+            >{{ cell }}</text>
+          </g>
+          <rect v-for="l in 6" :key="`pl${l}`" x="110" :y="130 + l * 13" width="240" height="4" rx="2" fill="#f1f3f4" />
+
+          <!-- Step 1: print to PDF -->
+          <g class="layer" :class="{ 'layer--on': current === 0 }">
+            <rect x="120" y="66" width="180" height="112" rx="8" fill="#ffffff" stroke="#c9cdd2" class="menu-shadow" />
+            <text x="210" y="84" class="dialog-title">Print</text>
+            <g v-for="(opt, i) in printOptions" :key="opt[0]">
+              <text x="134" :y="104 + i * 20" class="menu-item">{{ opt[0] }}</text>
+              <rect x="200" :y="94 + i * 20" width="86" height="14" rx="3" fill="#f1f3f4" stroke="#c9cdd2" />
+              <text x="205" :y="104 + i * 20" class="dialog-input">{{ opt[1] }}</text>
+            </g>
+            <rect x="238" y="156" width="48" height="16" rx="4" fill="#1a73e8" />
+            <text x="262" y="167" class="dialog-btn">Save</text>
+          </g>
+
+          <!-- Step 2: columns that spilled onto later pages -->
+          <g class="layer" :class="{ 'layer--on': current === 1 }">
+            <rect x="66" y="39" width="328" height="187" fill="#dadce0" />
+            <g v-for="(page, p) in spillPages" :key="page.label">
+              <rect :x="82 + p * 166" y="50" width="130" height="144" fill="#ffffff" class="menu-shadow" />
+              <rect :x="90 + p * 166" y="62" width="114" height="12" :fill="page.color" />
+              <text :x="93 + p * 166" y="70.5" class="head-text">{{ page.label }}</text>
+              <g v-for="r in 7" :key="r">
+                <rect :x="90 + p * 166" :y="72 + r * 14" width="114" height="4" rx="2" fill="#e3e5e8" />
+                <text v-if="p === 0" :x="80" :y="76 + r * 14" class="row-num">{{ r }}</text>
+              </g>
+            </g>
+            <path d="M216 122 L242 122 M234 115 L242 122 L234 129" fill="none" stroke="#2f7d32" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
+            <rect x="130" y="200" width="200" height="18" rx="5" fill="#2f7d32" />
+            <text x="230" y="212" class="badge-text badge-text--sm">Same rows, more columns — keep in order</text>
+          </g>
+
+          <!-- Step 3: pages from another table -->
+          <g class="layer" :class="{ 'layer--on': current === 2 }">
+            <rect x="13" :y="thumbY(0) - 3" width="46" height="104" rx="4" fill="none" stroke="#2f7d32" stroke-width="1.8" />
+            <g v-for="t in [3, 4]" :key="`x${t}`">
+              <rect x="16" :y="thumbY(t)" width="40" height="28" fill="#b91c1c" opacity=".18" />
+              <path :d="`M28 ${thumbY(t) + 6} L44 ${thumbY(t) + 22} M44 ${thumbY(t) + 6} L28 ${thumbY(t) + 22}`" stroke="#b91c1c" stroke-width="2.5" stroke-linecap="round" />
+            </g>
+            <rect x="80" y="150" width="150" height="40" rx="6" fill="#ffffff" stroke="#b91c1c" stroke-width="1.5" class="menu-shadow" />
+            <text x="155" y="167" class="callout-text">A different table</text>
+            <text x="155" y="180" class="callout-text callout-text--muted">Delete these pages first</text>
+          </g>
+
+          <!-- Step 4: selectable text, not a scan -->
+          <g class="layer" :class="{ 'layer--on': current === 3 }">
+            <rect x="110" y="86" width="240" height="12" fill="#1a73e8" opacity=".28" />
+            <path d="M318 100 v14 M314 100 h8 M314 114 h8" stroke="#202124" stroke-width="1.3" stroke-linecap="round" />
+            <rect x="216" y="150" width="134" height="24" rx="6" fill="#2f7d32" />
+            <text x="283" y="166" class="badge-text badge-text--sm">Text selects — not a scan</text>
+          </g>
+
+          <!-- Step 5: upload -->
+          <g class="layer" :class="{ 'layer--on': current === 4 }">
+            <rect x="126" y="86" width="208" height="80" rx="8" fill="#ffffff" stroke="#b3261e" stroke-dasharray="5 4" />
+            <path d="M230 142 L230 106 M218 118 L230 106 L242 118" fill="none" stroke="#b3261e" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
+            <text x="230" y="158" class="dialog-title">Drop it below — AI turns on</text>
+          </g>
+        </svg>
+      </div>
+
       <ol class="guide-steps">
         <li
           v-for="(step, i) in steps"
@@ -161,7 +285,7 @@
 </template>
 
 <script setup>
-import { ref, watch, onBeforeUnmount } from 'vue';
+import { ref, computed, watch, onBeforeUnmount } from 'vue';
 import SvgIcon from './SvgIcon.vue';
 
 const props = defineProps({
@@ -187,7 +311,31 @@ function colX(index) {
   return 22 + colWidths.slice(0, index).reduce((sum, w) => sum + w, 0);
 }
 
-const steps = [
+const pdfColWidths = [30, 40, 62, 56, 52];
+const pdfThumbs = 5;
+const pdfName = computed(() => props.saveName.replace(/\.\w+$/, '.pdf'));
+const printOptions = [['Destination', 'Save as PDF'], ['Pages', 'All'], ['Layout', 'Landscape']];
+const spillPages = [
+  { label: 'Page 1 — first columns', color: '#8A1538' },
+  { label: 'Page 4 — the rest', color: '#8A1538' },
+];
+
+function pdfColX(index) {
+  return 110 + pdfColWidths.slice(0, index).reduce((sum, w) => sum + w, 0);
+}
+
+function thumbY(index) {
+  return 46 + index * 35;
+}
+
+const modes = [
+  { value: 'sheet', label: 'Spreadsheet', icon: 'columns' },
+  { value: 'pdf', label: 'PDF', icon: 'audit' },
+];
+
+const mode = ref('sheet');
+
+const sheetSteps = [
   {
     title: 'Find the right sheet',
     text: `Scroll the tabs to the one holding ${props.sheetLabel} — named like "${props.sheetTab}".`,
@@ -210,6 +358,31 @@ const steps = [
   },
 ];
 
+const pdfSteps = [
+  {
+    title: 'Print the table to PDF',
+    text: `Open the report holding ${props.sheetLabel} and use Print → Save as PDF, landscape. Export it straight from the source — never scan or photograph a printout.`,
+  },
+  {
+    title: 'Keep every column',
+    text: 'A wide table spills its extra columns onto later pages. That is fine — keep those pages, in their original order, and the AI joins them back onto the right rows.',
+  },
+  {
+    title: 'Remove pages you don\'t need',
+    text: 'Delete cover pages, dashboards and any other table. A second table in the same PDF is flagged for you rather than merged, and just slows the read down.',
+  },
+  {
+    title: 'Check it is real text',
+    text: 'Try selecting a word in the PDF. If you can\'t, it is a scanned image and the values will be unreliable. Keep it under 10 MB.',
+  },
+  {
+    title: 'Upload it here',
+    text: 'Drop the PDF below — AI switches on by itself. Reading takes 1–3 minutes; then check every row against the PDF before you download.',
+  },
+];
+
+const steps = computed(() => (mode.value === 'pdf' ? pdfSteps : sheetSteps));
+
 const open = ref(false);
 const current = ref(0);
 const playing = ref(true);
@@ -223,7 +396,7 @@ function stop() {
 function start() {
   stop();
   timer = setInterval(() => {
-    current.value = (current.value + 1) % steps.length;
+    current.value = (current.value + 1) % steps.value.length;
   }, STEP_MS);
 }
 
@@ -247,6 +420,8 @@ watch(open, (isOpen) => {
   isOpen && playing.value ? start() : stop();
 });
 
+watch(mode, () => goTo(0));
+
 onBeforeUnmount(stop);
 </script>
 
@@ -266,6 +441,18 @@ onBeforeUnmount(stop);
 
 .guide-body { padding: 14px; display: flex; flex-direction: column; gap: 12px; }
 .guide-intro { margin: 0; font-size: 12.5px; line-height: 1.55; color: var(--ink3); }
+
+.guide-modes {
+  display: inline-flex; align-self: flex-start; gap: 2px; padding: 2px;
+  border: 1px solid var(--border); border-radius: 8px; background: var(--panel);
+}
+.guide-mode {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 5px 12px; border: 0; border-radius: 6px; cursor: pointer;
+  background: transparent; color: var(--ink3); font-size: 12px; font-weight: 600;
+}
+.guide-mode:hover { color: var(--ink); }
+.guide-mode--active { background: var(--surface); color: var(--ink); box-shadow: 0 1px 2px rgba(0, 0, 0, .08); }
 
 .guide-stage { display: flex; justify-content: center; }
 /* The mock keeps Excel's own colours in both themes - it depicts another
@@ -299,6 +486,9 @@ onBeforeUnmount(stop);
 .menu-item--hl { fill: #ffffff; font-weight: 600; }
 
 .badge-text { fill: #ffffff; font-size: 9px; font-weight: 700; text-anchor: middle; font-family: inherit; }
+.badge-text--sm { font-size: 7.5px; }
+.callout-text { fill: #b91c1c; font-size: 8px; font-weight: 700; text-anchor: middle; font-family: inherit; }
+.callout-text--muted { fill: #5f6368; font-weight: 500; font-size: 7px; }
 .dialog-title { fill: #202124; font-size: 9px; font-weight: 700; text-anchor: middle; font-family: inherit; }
 .dialog-input { fill: #202124; font-size: 7.5px; font-family: inherit; }
 .dialog-btn { fill: #ffffff; font-size: 7.5px; font-weight: 600; text-anchor: middle; font-family: inherit; }

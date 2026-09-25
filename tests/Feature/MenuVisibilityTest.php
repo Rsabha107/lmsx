@@ -89,4 +89,41 @@ class MenuVisibilityTest extends TestCase
             ->post('/setups/settings/ui-flag', ['key' => SettingsService::FLAG_JOBS_MOBILE_MENU, 'enabled' => false])
             ->assertForbidden();
     }
+
+    public function test_utilities_are_shown_by_default(): void
+    {
+        $admin = $this->createUserWithRole('admin');
+
+        $this->actingAs($admin)->get('/utilities')->assertOk();
+        $this->actingAs($admin)->get('/setups/settings')
+            ->assertInertia(fn ($page) => $page->where('uiFlags.utilities', true)->where('ui.utilities', true));
+    }
+
+    public function test_hiding_utilities_closes_every_utilities_route(): void
+    {
+        $admin = $this->createUserWithRole('admin');
+
+        $this->actingAs($admin)
+            ->post('/setups/settings/ui-flag', ['key' => SettingsService::FLAG_UTILITIES, 'enabled' => false])
+            ->assertRedirect();
+
+        $this->assertDatabaseHas('pma_settings', [
+            'key' => SettingsService::FLAG_UTILITIES,
+            'scope' => Setting::SCOPE_GLOBAL,
+            'value' => '0',
+        ]);
+
+        $this->actingAs($admin)->get('/setups/settings')
+            ->assertInertia(fn ($page) => $page->where('ui.utilities', false));
+
+        $this->actingAs($admin)->get('/utilities')->assertForbidden();
+        $this->actingAs($admin)->get('/utilities/converters/teams')->assertForbidden();
+        $this->actingAs($admin)->postJson('/utilities/converters/teams/preview')->assertForbidden();
+        $this->actingAs($admin)->postJson('/utilities/converters/teams/download')->assertForbidden();
+
+        $this->actingAs($admin)
+            ->post('/setups/settings/ui-flag', ['key' => SettingsService::FLAG_UTILITIES, 'enabled' => true]);
+
+        $this->actingAs($admin)->get('/utilities')->assertOk();
+    }
 }

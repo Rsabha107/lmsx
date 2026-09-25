@@ -24,6 +24,10 @@ use Throwable;
  * The sheet converters turn an organiser's own spreadsheet into one of our
  * import templates. Nothing here writes to the database - the output is a file
  * the user reviews and then uploads through the normal import screens.
+ *
+ * A PDF can be converted too, but only by AI: there are no columns to match, so
+ * the rows themselves come back from a model and must be checked on screen
+ * before they are downloaded.
  */
 class UtilitiesController extends Controller
 {
@@ -39,7 +43,7 @@ class UtilitiesController extends Controller
             'title' => 'Team Sheet Converter',
             'reader' => TeamSheetReader::class,
             'headers' => TeamImportService::HEADERS,
-            'blurb' => "Convert an organiser's team spreadsheet into the Event Teams import template.",
+            'blurb' => "Convert an organiser's team spreadsheet or PDF report into the Event Teams import template.",
             'importHint' => 'Download this file, then upload it on the Event Teams page to import. Rows are matched by Trigram, so importing the same file twice updates rather than duplicates.',
             'suffix' => 'TEAMS',
         ],
@@ -47,7 +51,7 @@ class UtilitiesController extends Controller
             'title' => 'Match Sheet Converter',
             'reader' => MatchSheetReader::class,
             'headers' => MatchImportService::HEADERS,
-            'blurb' => "Convert an organiser's fixtures spreadsheet into the Matches import template.",
+            'blurb' => "Convert an organiser's fixtures spreadsheet or PDF report into the Matches import template.",
             'importHint' => 'Download this file, then upload it on the Matches page to import. Rows are matched by Match Number, so importing the same file twice updates rather than duplicates.',
             'suffix' => 'MATCHES',
         ],
@@ -91,7 +95,7 @@ class UtilitiesController extends Controller
 
         $request->validate([
             // See TeamImportController: extension beats sniffed MIME for xlsx.
-            'file' => ['required', 'file', 'extensions:xlsx,xls,csv,txt', 'max:10240'],
+            'file' => ['required', 'file', 'extensions:xlsx,xls,csv,txt,pdf', 'max:10240'],
             'use_ai' => 'sometimes|boolean',
         ]);
 
@@ -101,7 +105,11 @@ class UtilitiesController extends Controller
         $reader = app($converter['reader']);
 
         try {
-            $rows = $reader->read($request->file('file'), allowAi: $allowAi);
+            $rows = $reader->read(
+                $request->file('file'),
+                allowAi: $allowAi,
+                context: $this->eventContext($request),
+            );
         } catch (Throwable $e) {
             return response()->json(['ok' => false, 'message' => $e->getMessage()], 422);
         }
@@ -118,6 +126,7 @@ class UtilitiesController extends Controller
             'headers' => $headers,
             'rows' => array_map(fn (array $row) => $this->toTemplateRow($row, $headers), $rows),
             'mapping' => $report['columns'],
+            'sourceKind' => $report['source_kind'],
             'headerRow' => $report['header_row'],
             'usedAi' => $report['used_ai'],
             'aiNotes' => $report['ai_notes'],
@@ -193,6 +202,27 @@ class UtilitiesController extends Controller
     private function fieldKey(string $header): string
     {
         return str_replace(' ', '_', strtolower($header));
+    }
+
+    /**
+     * What the active event is and when it runs. A PDF prints dates without a
+     * year ("28-Oct"), so the extraction agent needs one to work from.
+     */
+    private function eventContext(Request $request): string
+    {
+        $eventId = $request->session()->get('active_event_id');
+        $event = $eventId ? Event::find($eventId) : null;
+
+        if ($event === null) {
+            return '';
+        }
+
+        return sprintf(
+            'Event: %s. It runs from %s to %s, so any date printed without a year belongs to that window.',
+            $event->name,
+            $event->start_date?->format('j M Y') ?? 'an unknown date',
+            $event->end_date?->format('j M Y') ?? 'an unknown date',
+        );
     }
 
     /**

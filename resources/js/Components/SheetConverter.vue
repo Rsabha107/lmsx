@@ -25,16 +25,16 @@
       >
         <svg-icon name="upload" :size="24" />
         <div v-if="file" class="dropzone-file">{{ file.name }}</div>
-        <div v-else class="dropzone-hint">Drop a spreadsheet here, or click to browse (.xlsx, .xls, .csv)</div>
+        <div v-else class="dropzone-hint">Drop a spreadsheet or PDF here, or click to browse (.xlsx, .xls, .csv, .pdf)</div>
       </div>
-      <input ref="fileInput" type="file" class="sr-only" accept=".xlsx,.xls,.csv,.txt" @change="onFileSelected" />
+      <input ref="fileInput" type="file" class="sr-only" accept=".xlsx,.xls,.csv,.txt,.pdf" @change="onFileSelected" />
 
       <div class="card-actions">
         <label v-if="canUseAi" class="ai-toggle">
           <input v-model="useAi" type="checkbox" />
           <span>
             Use AI to match unknown columns
-            <span class="ai-toggle-hint">Only runs when the built-in column names don't fit the file.</span>
+            <span class="ai-toggle-hint">Only runs when the built-in column names don't fit the file. Always required for a PDF.</span>
           </span>
         </label>
         <span v-else class="ai-toggle-hint">AI column matching needs the <code>ai.use</code> permission.</span>
@@ -47,28 +47,94 @@
       <div v-if="error" class="alert alert--error">{{ error }}</div>
     </div>
 
+    <Modal :show="progressOpen" :closeable="progressState !== 'running'" max-width="520px" @close="closeProgress">
+      <template #title>{{ progressTitle }}</template>
+
+      <div class="progress-file">
+        <svg-icon :name="runIsPdf ? 'audit' : 'columns'" :size="16" />
+        <span>{{ runFileName }}</span>
+      </div>
+
+      <div
+        class="progress-track"
+        role="progressbar"
+        aria-valuemin="0"
+        aria-valuemax="100"
+        :aria-valuenow="Math.round(progress)"
+        :aria-valuetext="currentStage?.label"
+      >
+        <div
+          class="progress-fill"
+          :class="{ 'progress-fill--done': progressState === 'done', 'progress-fill--error': progressState === 'error' }"
+          :style="{ width: `${progress}%` }"
+        />
+      </div>
+      <div class="progress-meta">
+        <span>{{ Math.round(progress) }}%</span>
+        <span>{{ formatElapsed(elapsed) }} elapsed<template v-if="progressState === 'running'"> · {{ runIsPdf ? 'a PDF usually takes 1–3 minutes' : 'usually a few seconds' }}</template></span>
+      </div>
+
+      <ol class="stage-list">
+        <li
+          v-for="(stage, i) in runStages"
+          :key="stage.label"
+          class="stage"
+          :class="`stage--${stageStatus(i)}`"
+        >
+          <span class="stage-icon">
+            <svg-icon v-if="stageStatus(i) === 'done'" name="check" :size="13" :stroke-width="2.4" />
+            <svg-icon v-else-if="stageStatus(i) === 'error'" name="x" :size="13" :stroke-width="2.4" />
+            <span v-else-if="stageStatus(i) === 'active'" class="stage-spinner" />
+          </span>
+          <span class="stage-text">
+            <span class="stage-label">{{ stage.label }}</span>
+            <span v-if="stageStatus(i) === 'active' || stageStatus(i) === 'error'" class="stage-detail">{{ stage.detail }}</span>
+          </span>
+        </li>
+      </ol>
+
+      <div v-if="progressState === 'done'" class="alert alert--ok">
+        Read <strong>{{ result?.rows.length }}</strong> {{ rowNoun }}{{ result?.rows.length === 1 ? '' : 's' }}.
+        <template v-if="runIsPdf">The AI read these values from the PDF - check them against the document before you download.</template>
+        <template v-else>Review the column mapping and rows before you download.</template>
+      </div>
+      <div v-else-if="progressState === 'error'" class="alert alert--error">{{ error }}</div>
+
+      <template #footer>
+        <Button v-if="progressState === 'running'" variant="secondary" size="sm" @click="cancelConvert">Cancel</Button>
+        <Button v-else-if="progressState === 'error'" variant="secondary" size="sm" @click="closeProgress">Close</Button>
+        <Button v-else variant="primary" size="sm" autofocus @click="closeProgress">Review result</Button>
+      </template>
+    </Modal>
+
     <!-- Step 2: review -->
     <template v-if="result">
-      <div class="card">
+      <div ref="resultEl" class="card">
         <div class="card-head">
-          <h2 class="card-title">Column mapping</h2>
+          <h2 class="card-title">{{ isPdfResult ? 'What the AI read from the PDF' : 'Column mapping' }}</h2>
           <div class="chips">
-            <span class="chip">Header row {{ result.headerRow }}</span>
+            <span v-if="!isPdfResult" class="chip">Header row {{ result.headerRow }}</span>
             <span class="chip" :class="result.usedAi ? 'chip--ai' : 'chip--plain'">
-              {{ result.usedAi ? 'Matched by column names + AI' : 'Matched by column names' }}
+              {{ pdfOrMatchLabel }}
             </span>
           </div>
+        </div>
+
+        <div v-if="isPdfResult" class="alert alert--warn">
+          A PDF has no columns to match, so the AI read the values themselves rather than
+          just naming the columns. <strong>Check every row below against the PDF before you
+          import it</strong> — especially dates, times and passenger counts.
         </div>
 
         <div class="table-scroll">
           <table class="data-table">
             <thead>
               <tr>
-                <th>Source column</th>
-                <th>Source header</th>
+                <th>{{ isPdfResult ? 'Source' : 'Source column' }}</th>
+                <th>{{ isPdfResult ? 'Rows filled' : 'Source header' }}</th>
                 <th>Template field</th>
                 <th>Matched by</th>
-                <th>Confidence</th>
+                <th>{{ isPdfResult ? 'Coverage' : 'Confidence' }}</th>
               </tr>
             </thead>
             <tbody>
@@ -89,7 +155,8 @@
         </div>
 
         <div v-if="result.unmappedFields.length" class="alert alert--warn">
-          No source column found for: <strong>{{ result.unmappedFields.join(', ') }}</strong>. These will be blank.
+          {{ isPdfResult ? 'Nothing was found in the PDF for' : 'No source column found for' }}:
+          <strong>{{ result.unmappedFields.join(', ') }}</strong>. These will be blank.
         </div>
 
         <div v-if="result.aiNotes" class="ai-notes">
@@ -126,8 +193,9 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue';
+import { ref, computed, nextTick, onUnmounted } from 'vue';
 import Button from './Button.vue';
+import Modal from './Modal.vue';
 import SvgIcon from './SvgIcon.vue';
 import PrepareSheetGuide from './PrepareSheetGuide.vue';
 
@@ -147,10 +215,28 @@ const converting = ref(false);
 const downloading = ref(false);
 const error = ref('');
 const result = ref(null);
+const resultEl = ref(null);
+
+const progressOpen = ref(false);
+const progressState = ref('running'); // 'running' | 'done' | 'error'
+const progress = ref(0);
+const elapsed = ref(0);
+const runIsPdf = ref(false);
+const runFileName = ref('');
+const runStages = ref([]);
+let runStartedAt = 0;
+let ticker = null;
+let abortController = null;
 
 const csrf = () => document.querySelector('meta[name="csrf-token"]')?.content ?? '';
 
 const isMatches = computed(() => props.type === 'matches');
+const isPdfResult = computed(() => result.value?.sourceKind === 'pdf');
+
+const pdfOrMatchLabel = computed(() => {
+  if (isPdfResult.value) return 'Read from the PDF by AI';
+  return result.value?.usedAi ? 'Matched by column names + AI' : 'Matched by column names';
+});
 
 // Real column names and sample values from the scheduler's own sheets, so the
 // guide's mock looks like the file the user is about to open.
@@ -199,7 +285,111 @@ function setFile(picked) {
 
   file.value = picked;
   error.value = '';
+
+  // A PDF can only be read by the extraction agent, so the toggle isn't optional
+  // there - flip it rather than letting the server reject the upload.
+  if (picked.name.toLowerCase().endsWith('.pdf') && props.canUseAi) {
+    useAi.value = true;
+  }
 }
+
+const rowNoun = computed(() => (isMatches.value ? 'match' : 'team'));
+const keyLabel = computed(() => (isMatches.value ? 'Match Number' : 'Trigram'));
+
+// The server reports nothing until it is finished, so each stage's `until` is
+// where it sits on an estimated timeline, not a measured step.
+function buildStages(isPdf, withAi) {
+  if (isPdf) {
+    return [
+      { label: 'Uploading the PDF', detail: 'Sending the file to the server.', until: 3 },
+      { label: 'Handing the PDF to the AI', detail: 'The whole document goes to the model in one request.', until: 8 },
+      { label: 'Reading every page', detail: 'The AI reads the table on each page and joins columns that were printed onto later pages back onto their rows.', until: 70 },
+      { label: `Writing out one row per ${rowNoun.value}`, detail: 'Dates are written as YYYY-MM-DD and times as HH:MM; anything unclear is noted for you to check.', until: 93 },
+      { label: 'Checking the result', detail: `Dropping rows without a ${keyLabel.value} and re-checking every date and time the AI returned.`, until: 100 },
+    ];
+  }
+
+  return [
+    { label: 'Uploading the file', detail: 'Sending the spreadsheet to the server.', until: 15 },
+    { label: 'Finding the header row', detail: 'Skipping title and grouping rows to find the row that names the columns.', until: 35 },
+    withAi
+      ? { label: 'Matching columns', detail: 'Known column names are matched first; the AI is asked only about the ones left over.', until: 80 }
+      : { label: 'Matching columns', detail: 'Matching each column against the built-in list of known column names.', until: 60 },
+    { label: 'Converting rows', detail: 'Reading every row and converting dates, times and countries into the template format.', until: 100 },
+  ];
+}
+
+const currentStageIndex = computed(() => {
+  const index = runStages.value.findIndex((stage) => progress.value < stage.until);
+  return index === -1 ? runStages.value.length - 1 : index;
+});
+
+const currentStage = computed(() => runStages.value[currentStageIndex.value]);
+
+const progressTitle = computed(() => ({
+  running: runIsPdf.value ? 'Reading the PDF…' : 'Converting the sheet…',
+  done: 'Conversion complete',
+  error: 'Conversion failed',
+}[progressState.value]));
+
+function stageStatus(i) {
+  if (progressState.value === 'done' || i < currentStageIndex.value) return 'done';
+  if (i > currentStageIndex.value) return 'pending';
+  return progressState.value === 'error' ? 'error' : 'active';
+}
+
+function formatElapsed(seconds) {
+  const s = Math.floor(seconds);
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+}
+
+function startProgress() {
+  runIsPdf.value = file.value.name.toLowerCase().endsWith('.pdf');
+  runFileName.value = file.value.name;
+  runStages.value = buildStages(runIsPdf.value, useAi.value);
+  progressState.value = 'running';
+  progress.value = 0;
+  elapsed.value = 0;
+  progressOpen.value = true;
+  runStartedAt = Date.now();
+
+  const expectedSeconds = runIsPdf.value ? 120 : (useAi.value ? 12 : 3);
+
+  // Eases toward 95% and never reaches it, so the bar keeps moving on a slow run
+  // but only the real response can finish it.
+  ticker = setInterval(() => {
+    elapsed.value = (Date.now() - runStartedAt) / 1000;
+    progress.value = 95 * (1 - Math.exp(-2.5 * elapsed.value / expectedSeconds));
+  }, 250);
+}
+
+function stopProgress(state) {
+  clearInterval(ticker);
+  ticker = null;
+  elapsed.value = (Date.now() - runStartedAt) / 1000;
+  progressState.value = state;
+  if (state === 'done') progress.value = 100;
+}
+
+async function closeProgress() {
+  if (progressState.value === 'running') return;
+
+  progressOpen.value = false;
+
+  if (progressState.value === 'done') {
+    await nextTick();
+    resultEl.value?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+}
+
+function cancelConvert() {
+  abortController?.abort();
+}
+
+onUnmounted(() => {
+  clearInterval(ticker);
+  abortController?.abort();
+});
 
 async function convert() {
   if (!file.value || converting.value) return;
@@ -207,6 +397,8 @@ async function convert() {
   converting.value = true;
   error.value = '';
   result.value = null;
+  abortController = new AbortController();
+  startProgress();
 
   try {
     const body = new FormData();
@@ -217,27 +409,47 @@ async function convert() {
       method: 'POST',
       headers: { 'X-CSRF-TOKEN': csrf(), Accept: 'application/json' },
       body,
+      signal: abortController.signal,
     });
 
     const data = await response.json();
 
     if (!response.ok || data.ok === false) {
       error.value = data.message || 'Could not convert that file.';
+      stopProgress('error');
       return;
     }
 
     result.value = data;
+    stopProgress('done');
   } catch (e) {
+    if (e.name === 'AbortError') {
+      stopProgress('error');
+      progressOpen.value = false;
+      return;
+    }
+
     console.error('Sheet conversion failed:', e);
     error.value = 'Could not reach the server. Please try again.';
+    stopProgress('error');
   } finally {
     converting.value = false;
+    abortController = null;
   }
+}
+
+function filenameFrom(response) {
+  const header = response.headers.get('Content-Disposition') ?? '';
+
+  const encoded = header.match(/filename\*=UTF-8''([^;]+)/i);
+  if (encoded) return decodeURIComponent(encoded[1]);
+
+  const plain = header.match(/filename="?([^";]+)"?/i);
+  return plain ? plain[1] : (result.value?.suggestedFilename || 'converted.xlsx');
 }
 
 async function download() {
   if (!result.value || downloading.value) return;
-
   downloading.value = true;
 
   try {
@@ -260,7 +472,9 @@ async function download() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = result.value.suggestedFilename || 'converted.xlsx';
+    // Taken from the response, not the preview: the active event can be switched
+    // after converting, and the server names the file for the current one.
+    link.download = filenameFrom(response);
     document.body.appendChild(link);
     link.click();
     link.remove();
@@ -341,6 +555,42 @@ async function download() {
 .alert { margin-top: 14px; padding: 10px 12px; border-radius: 8px; font-size: 12.5px; }
 .alert--error { background: rgba(185, 28, 28, .1); color: #b91c1c; }
 .alert--warn { background: rgba(180, 83, 9, .1); color: #b45309; }
+.alert--ok { background: rgba(21, 128, 61, .1); color: #15803d; }
+
+.progress-file {
+  display: flex; align-items: center; gap: 8px; margin-bottom: 14px;
+  font-size: 13px; font-weight: 600; color: var(--ink); word-break: break-all;
+}
+.progress-track { height: 8px; border-radius: 999px; background: var(--panel); border: 1px solid var(--border); overflow: hidden; }
+.progress-fill { height: 100%; background: var(--accent); border-radius: 999px; transition: width .25s linear; }
+.progress-fill--done { background: #15803d; }
+.progress-fill--error { background: #b91c1c; }
+.progress-meta {
+  display: flex; justify-content: space-between; gap: 12px; margin-top: 6px;
+  font-size: 11.5px; color: var(--ink3); font-variant-numeric: tabular-nums;
+}
+
+.stage-list { list-style: none; margin: 16px 0 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.stage { display: flex; align-items: flex-start; gap: 10px; font-size: 13px; }
+.stage-icon {
+  flex: none; display: inline-flex; align-items: center; justify-content: center;
+  width: 20px; height: 20px; border-radius: 50%;
+  border: 1.5px solid var(--border); color: var(--ink3); background: var(--surface);
+}
+.stage--done .stage-icon { border-color: #15803d; background: #15803d; color: #fff; }
+.stage--active .stage-icon { border-color: var(--accent); }
+.stage--error .stage-icon { border-color: #b91c1c; background: #b91c1c; color: #fff; }
+.stage-spinner {
+  width: 10px; height: 10px; border-radius: 50%;
+  border: 2px solid color-mix(in srgb, var(--accent) 30%, transparent); border-top-color: var(--accent);
+  animation: stage-spin .7s linear infinite;
+}
+@keyframes stage-spin { to { transform: rotate(360deg); } }
+.stage-text { display: flex; flex-direction: column; gap: 2px; padding-top: 1px; }
+.stage-label { color: var(--ink3); }
+.stage--done .stage-label, .stage--active .stage-label { color: var(--ink); }
+.stage--active .stage-label { font-weight: 600; }
+.stage-detail { font-size: 12px; line-height: 1.5; color: var(--ink3); }
 
 .ai-notes { margin-top: 14px; padding: 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel); }
 .ai-notes-head {

@@ -195,15 +195,35 @@
             off locks {{ mobileOnlyUsers !== 1 ? 'them' : 'them' }} out of the app entirely.
           </span>
         </div>
-        <label class="switch" :class="{ 'switch--on': jobsMobileMenu, 'switch--busy': savingFlag }">
+        <label class="switch" :class="{ 'switch--on': jobsMobileMenu, 'switch--busy': savingFlag === 'ui.jobs_mobile_menu' }">
           <input
             type="checkbox"
             :checked="jobsMobileMenu"
-            :disabled="savingFlag"
+            :disabled="!!savingFlag"
             @change.prevent="requestToggle($event.target.checked)"
           />
           <span class="switch-track"><span class="switch-thumb" /></span>
           <span class="switch-text">{{ jobsMobileMenu ? 'On' : 'Off' }}</span>
+        </label>
+      </div>
+      <div class="flag-row">
+        <div class="flag-body">
+          <span class="flag-label">Utilities</span>
+          <span class="flag-desc">
+            The Team and Match sheet converters, including AI reading of PDFs. Turning it off hides the menu and
+            the converter links on the Event Teams and Matches pages, <em>and</em> closes <code>/utilities</code>
+            — anyone who opens it gets a 403. Importing teams and matches is not affected.
+          </span>
+        </div>
+        <label class="switch" :class="{ 'switch--on': utilitiesEnabled, 'switch--busy': savingFlag === 'ui.utilities' }">
+          <input
+            type="checkbox"
+            :checked="utilitiesEnabled"
+            :disabled="!!savingFlag"
+            @change.prevent="setFlag('ui.utilities', $event.target.checked)"
+          />
+          <span class="switch-track"><span class="switch-thumb" /></span>
+          <span class="switch-text">{{ utilitiesEnabled ? 'On' : 'Off' }}</span>
         </label>
       </div>
     </div>
@@ -220,7 +240,7 @@
       </p>
       <template #footer>
         <Button variant="secondary" size="sm" @click="cancelToggle">Cancel</Button>
-        <Button variant="danger" size="sm" :processing="savingFlag" @click="confirmToggleOff">
+        <Button variant="danger" size="sm" :processing="savingFlag === 'ui.jobs_mobile_menu'" @click="confirmToggleOff">
           Turn it off
         </Button>
       </template>
@@ -479,12 +499,13 @@ const props = defineProps({
   mobileOnlyUsers: { type: Number, default: 0 },
 });
 
-const savingFlag = ref(false);
+const savingFlag = ref(null); // key of the flag being saved
 const showFlagConfirm = ref(false);
 const jobsMobileMenu = computed(() => props.uiFlags?.jobsMobileMenu !== false);
+const utilitiesEnabled = computed(() => props.uiFlags?.utilities !== false);
 
 function requestToggle(enabled) {
-  enabled ? setJobsMobileMenu(true) : (showFlagConfirm.value = true);
+  enabled ? setFlag('ui.jobs_mobile_menu', true) : (showFlagConfirm.value = true);
 }
 
 function cancelToggle() {
@@ -492,14 +513,14 @@ function cancelToggle() {
 }
 
 function confirmToggleOff() {
-  setJobsMobileMenu(false);
+  setFlag('ui.jobs_mobile_menu', false);
 }
 
-function setJobsMobileMenu(enabled) {
-  savingFlag.value = true;
-  router.post('/setups/settings/ui-flag', { key: 'ui.jobs_mobile_menu', enabled }, {
+function setFlag(key, enabled) {
+  savingFlag.value = key;
+  router.post('/setups/settings/ui-flag', { key, enabled }, {
     preserveScroll: true,
-    onFinish: () => { savingFlag.value = false; showFlagConfirm.value = false; },
+    onFinish: () => { savingFlag.value = null; showFlagConfirm.value = false; },
   });
 }
 
@@ -884,6 +905,7 @@ function getCheckpointName(checkpointId) {
   display: flex; align-items: flex-start; justify-content: space-between;
   gap: 24px; padding: 18px 24px; flex-wrap: wrap;
 }
+.flag-row + .flag-row { border-top: 1px solid #E5E7EB; }
 .flag-body { flex: 1 1 320px; min-width: 0; }
 .flag-label { display: block; font-size: 14px; font-weight: 600; color: #111827; }
 .flag-desc { display: block; font-size: 12.5px; line-height: 1.55; color: #6B7280; margin-top: 4px; max-width: 620px; }

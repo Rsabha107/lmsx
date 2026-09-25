@@ -57,6 +57,7 @@ class HandleInertiaRequests extends Middleware
 
         return [
             'jobsMobileMenu' => $settings->getGlobalFlag(SettingsService::FLAG_JOBS_MOBILE_MENU),
+            'utilities' => $settings->getGlobalFlag(SettingsService::FLAG_UTILITIES),
         ];
     }
 

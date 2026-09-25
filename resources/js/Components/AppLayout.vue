@@ -310,7 +310,7 @@ const allNavItems = [
     items: [
       { label: 'Users',         route: 'setups/users',       icon: 'user',   can: 'setups' },
       { label: 'Roles & Permissions', route: 'setups/access', icon: 'shield', can: 'setups' },
-      { label: 'Utilities',     route: 'utilities',          icon: 'columns', can: 'fleet.manage' },
+      { label: 'Utilities',     route: 'utilities',          icon: 'columns', can: 'fleet.manage', flag: 'utilities' },
       { label: 'Settings',      route: 'setups/settings',    icon: 'settings', can: 'setups' },
     ]
   },

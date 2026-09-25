@@ -26,7 +26,7 @@ class AiCopilotController extends Controller
         if (! $eventId) {
             return response()->json([
                 'ok' => false,
-                'message' => 'Select an active event before asking the AI Copilot.',
+                'message' => 'Select an active event before asking Daleel.',
             ]);
         }
 

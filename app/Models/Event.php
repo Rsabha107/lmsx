@@ -27,6 +27,20 @@ class Event extends Model
         'active_flag' => 'boolean',
     ];
 
+    protected $appends = ['logo_url'];
+
+    public function getLogoUrlAttribute(): ?string
+    {
+        if (blank($this->event_logo)) {
+            return null;
+        }
+
+        // Root-relative on purpose. Storage::url() prefixes APP_URL, which breaks
+        // the image on any other host or port, and would emit an http:// URL
+        // behind a TLS-terminating proxy - blocked as mixed content.
+        return '/storage/' . ltrim($this->event_logo, '/');
+    }
+
     public function country(): BelongsTo
     {
         return $this->belongsTo(Country::class, 'host_country', 'country_code');

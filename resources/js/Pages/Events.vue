@@ -47,6 +47,7 @@
           <table class="events-table">
             <thead>
               <tr>
+                <th class="center" style="width:56px;">Logo</th>
                 <th>Name</th>
                 <th>Short Name</th>
                 <th>Host Country</th>
@@ -64,6 +65,10 @@
                 :class="{ 'table-row--selected': selectedEvent?.id === event.id }"
                 @click="selectEvent(event)"
               >
+                <td class="center">
+                  <img v-if="event.logo_url" :src="event.logo_url" :alt="`${event.name} logo`" class="event-logo" />
+                  <span v-else class="event-logo event-logo--empty">{{ (event.short_name || event.name || '?').slice(0, 2).toUpperCase() }}</span>
+                </td>
                 <td class="event-name-cell">
                   <div class="event-name-primary">{{ event.name }}</div>
                 </td>
@@ -93,7 +98,7 @@
                 </td>
               </tr>
               <tr v-if="filteredEvents.length === 0">
-                <td colspan="7" style="text-align:center;padding:40px;color:var(--ink3);">No events found.</td>
+                <td colspan="8" style="text-align:center;padding:40px;color:var(--ink3);">No events found.</td>
               </tr>
             </tbody>
           </table>
@@ -239,6 +244,24 @@
             <FormDateField v-model="form.end_date" display-format="d/m/Y" value-format="Y-m-d" placeholder="dd/mm/yyyy" />
           </div>
         </div>
+        <div class="form-group">
+          <label class="form-label">Event Logo</label>
+          <div class="logo-field">
+            <div class="logo-preview">
+              <img v-if="logoPreview" :src="logoPreview" alt="Event logo preview" />
+              <span v-else class="logo-preview-empty">No logo</span>
+            </div>
+            <div class="logo-actions">
+              <input ref="logoInput" type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" class="sr-only" @change="onLogoSelected" />
+              <Button type="button" variant="secondary" size="sm" @click="$refs.logoInput.click()">
+                {{ logoPreview ? 'Replace' : 'Upload' }}
+              </Button>
+              <button v-if="logoPreview" type="button" class="logo-remove" @click="clearLogo">Remove</button>
+              <span class="logo-hint">PNG, JPG, WEBP or SVG · max 2 MB. Stored publicly so it can be shown on shared pages.</span>
+            </div>
+          </div>
+        </div>
+
         <div class="form-group">
           <label class="form-label">Notes</label>
           <textarea v-model="form.notes" class="form-input" rows="2" />
@@ -650,6 +673,9 @@ const eventToDelete    = ref(null);
 const assigningVenueEvent = ref(null);
 
 const form = ref(emptyForm());
+const logoFile = ref(null);
+const logoPreview = ref(null);
+const removeLogo = ref(false);
 const venueForm = ref({ venue_ids: [], purpose: '', notes: '' });
 const venueSearch = ref('');
 const eventVenueSearch = ref('');
@@ -715,6 +741,7 @@ function selectEvent(event) {
 function openAddModal() {
   editingEvent.value = null;
   form.value = emptyForm();
+  resetLogo(null);
   eventVenueSearch.value = '';
   showEventModal.value = true;
 }
@@ -731,18 +758,52 @@ function editEvent(event) {
     notes:        event.notes        || '',
     venue_ids:    (event.venues || []).map(v => v.id),
   };
+  resetLogo(event.logo_url);
   eventVenueSearch.value = '';
   showEventModal.value = true;
 }
 
+function resetLogo(existingUrl) {
+  if (logoPreview.value?.startsWith('blob:')) URL.revokeObjectURL(logoPreview.value);
+  logoFile.value = null;
+  removeLogo.value = false;
+  logoPreview.value = existingUrl ?? null;
+}
+
+function onLogoSelected(event) {
+  const file = event.target.files?.[0];
+  if (!file) return;
+
+  if (logoPreview.value?.startsWith('blob:')) URL.revokeObjectURL(logoPreview.value);
+  logoFile.value = file;
+  removeLogo.value = false;
+  logoPreview.value = URL.createObjectURL(file);
+}
+
+function clearLogo() {
+  if (logoPreview.value?.startsWith('blob:')) URL.revokeObjectURL(logoPreview.value);
+  logoFile.value = null;
+  logoPreview.value = null;
+  removeLogo.value = true;
+}
+
 function submitEvent() {
   processing.value = true;
-  const url    = editingEvent.value ? `/events/${editingEvent.value.id}` : '/events';
-  const method = editingEvent.value ? 'put' : 'post';
-  router[method](url, form.value, {
+
+  const payload = { ...form.value };
+  if (logoFile.value) payload.event_logo = logoFile.value;
+  if (removeLogo.value) payload.remove_logo = true;
+  // Inertia can't send files over PUT, so updates go as a spoofed POST.
+  if (editingEvent.value) payload._method = 'put';
+
+  const url = editingEvent.value ? `/events/${editingEvent.value.id}` : '/events';
+
+  router.post(url, payload, {
+    forceFormData: true,
     onFinish: () => {
       processing.value = false;
       showEventModal.value = false;
+      resetLogo(null);
       // Keep the open detail panel in step with the venues just saved.
       if (editingEvent.value && selectedEvent.value?.id === editingEvent.value.id) {
         const updated = props.events.find(e => e.id === editingEvent.value.id);
@@ -1071,6 +1132,35 @@ function fmtDT(dt) {
 .table-row:hover   { background:var(--panel); }
 .table-row--selected { background:var(--accent-soft) !important; }
 .event-name-primary { font-weight:600; color:var(--ink); }
+
+.event-logo {
+  width: 34px; height: 34px; border-radius: 7px;
+  object-fit: contain; background: var(--panel);
+  border: 1px solid var(--border); display: inline-block;
+}
+.event-logo--empty {
+  display: inline-grid; place-items: center;
+  font-size: 11px; font-weight: 700; color: var(--ink4);
+}
+
+.logo-field { display: flex; align-items: flex-start; gap: 12px; }
+.logo-preview {
+  flex: 0 0 auto; width: 64px; height: 64px;
+  display: grid; place-items: center; overflow: hidden;
+  border: 1px dashed var(--border); border-radius: 9px; background: var(--panel);
+}
+.logo-preview img { width: 100%; height: 100%; object-fit: contain; }
+.logo-preview-empty { font-size: 10.5px; color: var(--ink4); }
+
+.logo-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.logo-remove {
+  background: none; border: 0; padding: 0; cursor: pointer;
+  font-size: 12px; color: var(--danger);
+}
+.logo-remove:hover { text-decoration: underline; }
+.logo-hint { flex: 1 1 100%; font-size: 11px; line-height: 1.45; color: var(--ink3); }
+
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
 .mono { font-family:monospace; }
 .center { text-align:center; }
 .actions-cell { padding:8px 14px !important; }

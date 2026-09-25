@@ -355,7 +355,7 @@
           <div class="modal">
             <div class="modal-header">
               <div>
-                <div class="modal-eyebrow">AI COPILOT · {{ job.id }}</div>
+                <div class="modal-eyebrow">DALEEL · {{ job.id }}</div>
                 <div class="modal-title">Explain delay</div>
               </div>
               <button class="modal-close-btn" @click="showExplainModal = false">
@@ -364,8 +364,8 @@
             </div>
             <div class="modal-body">
               <div v-if="explaining" style="color: var(--ink3); font-size: 13.5px; font-style: italic;">Thinking…</div>
-              <div v-else style="font-size: 13.5px; color: var(--ink); white-space: pre-wrap; line-height: 1.5;" :class="{ 'explain-degraded': !explainOk }">
-                {{ explainAnswer }}
+              <div v-else style="font-size: 13.5px; color: var(--ink); line-height: 1.5;" :class="{ 'explain-degraded': !explainOk }">
+                <markdown-answer :text="explainAnswer" />
               </div>
             </div>
             <div class="modal-footer" style="justify-content: flex-end;">
@@ -386,6 +386,7 @@ import StatusPill from '../Components/StatusPill.vue';
 import SvgIcon from '../Components/SvgIcon.vue';
 import Button from '../Components/Button.vue';
 import FlagIcon from '../Components/FlagIcon.vue';
+import MarkdownAnswer from '../Components/MarkdownAnswer.vue';
 
 const props = defineProps({
   job: { type: Object, default: () => ({}) },
@@ -496,7 +497,7 @@ async function explainDelay() {
     explainAnswer.value = data.ok ? data.answer : (data.message || 'Something went wrong.');
   } catch (e) {
     explainOk.value = false;
-    explainAnswer.value = 'Could not reach the AI Copilot. Please try again.';
+    explainAnswer.value = 'Could not reach Daleel. Please try again.';
   } finally {
     explaining.value = false;
   }

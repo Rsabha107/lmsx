@@ -17,7 +17,7 @@
     >
       <div class="sidebar-logo">
         <span class="sidebar-logo-mark">LMS</span>
-        <span class="sidebar-logo-name">NAQLA LMS</span>
+        <span class="sidebar-logo-name">NAQLA</span>
         <button v-if="isMobile" class="sidebar-close-btn" aria-label="Close menu" @click="sidebarOpen = false">
           <svg-icon name="x" />
         </button>
@@ -41,6 +41,8 @@
           <sidebar-link v-else :item="item" @click="onNavClick" />
         </template>
       </nav>
+
+      <sc-logo v-if="!sidebarMini" class="sidebar-sc-logo" />
 
       <div class="sidebar-footer">
         <button class="sidebar-footer-btn" @click="toggleTheme" :title="theme === 'dark' ? 'Light mode' : 'Dark mode'">
@@ -72,7 +74,14 @@
         <!-- Event selector -->
         <div class="event-selector" ref="selectorRef">
           <button class="event-selector-btn" @click="selectorOpen = !selectorOpen">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/></svg>
+            <img
+              v-if="activeEventLogo"
+              :src="activeEventLogo"
+              alt=""
+              class="event-logo event-logo--btn"
+              @error="onLogoError"
+            />
+            <svg v-else width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/></svg>
             <span class="event-selector-label">{{ activeEventLabel }}</span>
             <svg class="event-selector-chevron" :class="{ 'rotated': selectorOpen }" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg>
           </button>
@@ -87,6 +96,14 @@
                 :class="{ 'event-dropdown-item--active': ev.id === page.props.activeEventId }"
                 @click="selectEvent(ev.id)"
               >
+                <img
+                  v-if="ev.logo_url && !brokenLogos.has(ev.id)"
+                  :src="ev.logo_url"
+                  alt=""
+                  class="event-logo"
+                  @error="brokenLogos.add(ev.id)"
+                />
+                <span v-else class="event-logo event-logo--fallback">{{ initials(ev) }}</span>
                 <span class="event-dropdown-name">{{ ev.name }}</span>
                 <svg v-if="ev.id === page.props.activeEventId" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 6L9 17l-5-5"/></svg>
               </button>
@@ -119,10 +136,11 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted, onUnmounted, h } from 'vue';
+import { ref, reactive, computed, watch, onMounted, onUnmounted, h } from 'vue';
 import { Link, router, usePage } from '@inertiajs/vue3';
 import { icons } from '../Composables/useIcons.js';
 import Toast from './Toast.vue';
+import ScLogo from './ScLogo.vue';
 
 const page = usePage();
 
@@ -136,6 +154,25 @@ const activeEventLabel = computed(() => {
   const ev = page.props.eventList?.find(e => e.id === id);
   return ev ? (ev.name) : 'Select Event';
 });
+
+// A logo that 404s shouldn't leave a broken-image icon in the topbar.
+const brokenLogos = reactive(new Set());
+
+const activeEvent = computed(() =>
+  page.props.eventList?.find(e => e.id === page.props.activeEventId) ?? null);
+
+const activeEventLogo = computed(() => {
+  const ev = activeEvent.value;
+  return ev?.logo_url && !brokenLogos.has(ev.id) ? ev.logo_url : null;
+});
+
+function onLogoError() {
+  if (activeEvent.value) brokenLogos.add(activeEvent.value.id);
+}
+
+function initials(ev) {
+  return (ev.short_name || ev.name || '?').slice(0, 2).toUpperCase();
+}
 
 function selectEvent(eventId) {
   console.log('Selecting event with ID:', eventId);
@@ -241,7 +278,7 @@ onUnmounted(() => {
 
 const allNavItems = [
   { label: 'Dashboard',     route: 'dashboard',        icon: 'dashboard', can: 'console.view' },
-  { label: 'AI Copilot',    route: 'ai',                icon: 'ai',        can: 'ai.use' },
+  { label: 'Daleel',        route: 'ai',                icon: 'ai',        can: 'ai.use' },
   { label: 'Schedule',      route: 'schedule',          icon: 'schedule',  can: 'console.view' },
   { label: 'Planning',      route: 'plans',             icon: 'plans',     can: 'plans.view' },
   { label: 'Jobs Queue',    route: 'jobs',              icon: 'jobs',      can: 'console.view' },
@@ -520,6 +557,11 @@ MobileNavItem.props = ['item'];
 }
 .sidebar--mini :deep(.nav-label) { display: none; }
 
+.sidebar-sc-logo {
+  flex-shrink: 0;
+  margin: 8px 12px;
+}
+
 .sidebar-footer {
   border-top: 1px solid var(--border);
   padding: 10px 12px;
@@ -586,6 +628,21 @@ MobileNavItem.props = ['item'];
 .event-selector-label { flex: 1; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .event-selector-chevron { color: var(--ink3); flex-shrink: 0; transition: transform .15s; }
 .event-selector-chevron.rotated { transform: rotate(180deg); }
+
+/* Logos are supplied by organisers at arbitrary aspect ratios, so they're
+   contained in a fixed box rather than cropped. */
+.event-logo {
+  flex-shrink: 0;
+  width: 20px; height: 20px;
+  object-fit: contain;
+  border-radius: 4px;
+}
+.event-logo--btn { width: 18px; height: 18px; }
+.event-logo--fallback {
+  display: grid; place-items: center;
+  background: var(--accent-soft); color: var(--accent-fg);
+  font-size: 8.5px; font-weight: 800; letter-spacing: .02em;
+}
 
 .event-dropdown {
   position: absolute; top: calc(100% + 6px); left: 0;

@@ -179,7 +179,6 @@
                 <span v-if="selectedJob.event_name" class="detail-event-badge">{{ selectedJob.event_code || selectedJob.event_name }}</span>
                 <span v-if="selectedJob.functional_area" class="detail-fa-badge">{{ formatFunctionalArea(selectedJob.functional_area) }}</span>
               </div>
-              <div v-if="selectedJob.date" class="detail-date">{{ formatDateLong(selectedJob.date) }}</div>
             </div>
             <status-pill :tone="statusTone(selectedJob.status)" :dot="true" size="sm">
               {{ statusLabel(selectedJob.status) }}
@@ -199,8 +198,9 @@
               <Button v-if="canOverride" variant="primary" size="sm" @click="openOverrideModal">Override</Button>
             </div>
           </div>
-          <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 14px;">
+          <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 14px; flex-wrap: wrap;">
             <span v-if="selectedJob.kind" class="detail-kind-badge" :class="`detail-kind-badge--${selectedJob.kind}`">{{ selectedJob.kind }}</span>
+            <span v-if="selectedJob.date" class="detail-date">{{ formatDateLong(selectedJob.date) }}</span>
             <div class="detail-subtitle" style="margin: 0;">
               {{ formatJobFromLocation(selectedJob) }} → {{ formatJobToLocation(selectedJob) }} · {{ selectedJob.vehicle }} · {{ selectedJob.pax }} pax
             </div>
@@ -1990,10 +1990,12 @@ function submitOverride() {
     flex: 1;
   }
 }
+/* Codes run longer than a trigram (EGY-17, BHR-V), so the badge grows
+   sideways from a square minimum rather than wrapping. */
 .team-badge {
-  width: 34px; height: 34px; border-radius: 7px;
+  min-width: 34px; height: 34px; padding: 0 6px; border-radius: 7px;
   background: var(--accent-soft); color: var(--accent-fg);
-  font-size: 10px; font-weight: 700; flex-shrink: 0;
+  font-size: 10px; font-weight: 700; flex-shrink: 0; white-space: nowrap;
   display: inline-flex; align-items: center; justify-content: center;
 }
 .detail-id {
@@ -2044,11 +2046,12 @@ function submitOverride() {
 .detail-kind-badge--training { background: #ede9fe; color: #6d28d9; }
 .detail-kind-badge--daily_ops { background: var(--panel); color: var(--ink3); }
 
+/* Sits inline beside the kind badge, so it reads as part of that row. */
 .detail-date {
   font-size: 11px;
   color: var(--ink3);
-  font-weight: 500;
-  margin-top: 2px;
+  font-weight: 600;
+  white-space: nowrap;
 }
 .detail-subtitle {
   font-size: 12px; color: var(--ink3);

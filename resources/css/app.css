@@ -23,10 +23,15 @@
     --ink2: #384152;
     --ink3: #6B7486;
     --ink4: #9AA2B2;
-    --accent: #0F1724;
-    --accent-soft: #F0F1F4;
-    --accent-fg: #0F1724;
-    --accent-ring: rgba(15, 23, 36, 0.12);
+    /* SC Brand Manual: Pantone 1955 C (#8A1538) is the corporate maroon, 294 C
+       (#1B3668) the logo blue. 9.35:1 behind white text, 8.65:1 as text on --panel. */
+    --brand-maroon: #8A1538;
+    --brand-blue: #1B3668;
+    --brand-blue-bright: #0077C8;
+    --accent: var(--brand-maroon);
+    --accent-soft: #F7E9ED;
+    --accent-fg: #8A1538;
+    --accent-ring: rgba(138, 21, 56, 0.18);
     --live: #2563EB;
     --live-soft: #EFF6FF;
     /* #F59E0B on --warn-soft is only 1.97:1; this is 4.60:1 (WCAG AA normal text). */
@@ -54,12 +59,15 @@
     --ink3: #7D8799;
     --ink4: #5C6477;
     /* soft/tint tokens need dark-mode overrides so they don't render as white-on-white */
-    /* accent stays dark enough for the white text that sits on it, while reading as a
-       lighter neutral than the surface behind it */
-    --accent: #3A4353;
-    --accent-soft: rgba(232, 236, 243, 0.14);
-    --accent-fg: #E8ECF3;
-    --accent-ring: rgba(232, 236, 243, 0.18);
+    /* The brand maroon is only 1.9:1 against this surface, so it reads as a muddy
+       block. The manual allows tints of any SC colour: this one keeps white text
+       legible (4.7:1) while standing clear of the surface (3.8:1). */
+    --accent: #C24A6B;
+    --accent-soft: rgba(194, 74, 107, 0.20);
+    --accent-fg: #E8A9BA;
+    --accent-ring: rgba(194, 74, 107, 0.35);
+    /* 3005 C is only 3.8:1 here; this lift reaches 6.4:1. */
+    --brand-blue-bright: #4FA3DC;
     --ok-soft: rgba(22, 163, 74, 0.18);
     --warn-soft: rgba(245, 158, 11, 0.18);
     /* The light-mode amber is already 6:1 on the dark tint, and darkening it here

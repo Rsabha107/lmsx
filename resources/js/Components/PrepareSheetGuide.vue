@@ -39,7 +39,7 @@
           </g>
 
           <!-- Header row (row 6 in the real sheet) -->
-          <rect x="22" y="75" width="372" height="18" fill="#7A1836" />
+          <rect x="22" y="75" width="372" height="18" fill="#8A1538" />
           <text
             v-for="(head, i) in preview.headers"
             :key="head"

@@ -13,7 +13,9 @@ use App\Models\Venue;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -64,11 +66,18 @@ class EventsController extends Controller
             'end_date'     => 'nullable|date|after_or_equal:start_date',
             'status'       => 'nullable|in:upcoming,active,completed',
             'notes'        => 'nullable|string',
+            'event_logo'   => 'nullable|image|mimes:png,jpg,jpeg,webp,svg|max:2048',
             'venue_ids'    => 'nullable|array',
             'venue_ids.*'  => 'integer|exists:venues,id',
         ]);
 
-        $event = Event::create(Arr::except($validated, 'venue_ids'));
+        $attributes = Arr::except($validated, ['venue_ids', 'event_logo']);
+
+        if ($request->hasFile('event_logo')) {
+            $attributes['event_logo'] = $this->storeLogo($request->file('event_logo'));
+        }
+
+        $event = Event::create($attributes);
         $event->venues()->sync($validated['venue_ids'] ?? []);
 
         return redirect()->back()->with('success', 'Event created successfully.');
@@ -86,11 +95,23 @@ class EventsController extends Controller
             'end_date'     => 'nullable|date|after_or_equal:start_date',
             'status'       => 'nullable|in:upcoming,active,completed',
             'notes'        => 'nullable|string',
+            'event_logo'   => 'nullable|image|mimes:png,jpg,jpeg,webp,svg|max:2048',
+            'remove_logo'  => 'sometimes|boolean',
             'venue_ids'    => 'nullable|array',
             'venue_ids.*'  => 'integer|exists:venues,id',
         ]);
 
-        $event->update(Arr::except($validated, 'venue_ids'));
+        $attributes = Arr::except($validated, ['venue_ids', 'event_logo', 'remove_logo']);
+
+        if ($request->hasFile('event_logo')) {
+            $this->deleteLogo($event->event_logo);
+            $attributes['event_logo'] = $this->storeLogo($request->file('event_logo'));
+        } elseif ($request->boolean('remove_logo')) {
+            $this->deleteLogo($event->event_logo);
+            $attributes['event_logo'] = null;
+        }
+
+        $event->update($attributes);
 
         // Only touch assignments when the form actually submitted them, so other
         // callers can't silently wipe the pivot (purpose/notes included).
@@ -106,9 +127,28 @@ class EventsController extends Controller
 
     public function destroy(int $id): RedirectResponse
     {
-        Event::findOrFail($id)->delete();
+        $event = Event::findOrFail($id);
+        $this->deleteLogo($event->event_logo);
+        $event->delete();
 
         return redirect()->back()->with('success', 'Event deleted successfully.');
+    }
+
+    /**
+     * Event logos are the one upload served straight from the web root - they're
+     * public branding. Everything else (checkpoint photos, signatures) stays on
+     * the private 'local' disk behind an authorised controller route.
+     */
+    private function storeLogo(UploadedFile $file): string
+    {
+        return $file->store('event-logos', 'public');
+    }
+
+    private function deleteLogo(?string $path): void
+    {
+        if ($path && Storage::disk('public')->exists($path)) {
+            Storage::disk('public')->delete($path);
+        }
     }
 
     // Assign one or more venues to an event

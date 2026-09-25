@@ -181,9 +181,9 @@ const MovementRow = {
 .mv-row:last-child { border-bottom: none; }
 .mv-left { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .team-badge {
-  width: 36px; height: 36px; border-radius: 8px;
+  min-width: 36px; height: 36px; padding: 0 6px; border-radius: 8px;
   background: var(--accent-soft); color: var(--accent-fg);
-  font-size: 10px; font-weight: 700; letter-spacing: 0.04em;
+  font-size: 10px; font-weight: 700; letter-spacing: 0.04em; white-space: nowrap;
   display: flex; align-items: center; justify-content: center; flex-shrink: 0;
 }
 .mv-team { font-size: 13px; font-weight: 600; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

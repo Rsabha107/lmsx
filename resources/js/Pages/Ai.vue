@@ -2,8 +2,8 @@
   <app-layout>
     <div class="page-header">
       <div>
-        <h1 class="page-title">AI Operations Copilot</h1>
-        <p class="page-sub">Ask about today's movements — read-only, scoped to what you can already see.</p>
+        <h1 class="page-title">Ask Daleel</h1>
+        <p class="page-sub">Daleel (دليل) — your guide to today's movements. Read-only, scoped to what you can already see.</p>
       </div>
     </div>
 
@@ -20,7 +20,7 @@
           <div class="copilot-question">{{ entry.question }}</div>
           <div v-if="entry.pending" class="copilot-answer copilot-answer--pending">Thinking…</div>
           <div v-else class="copilot-answer" :class="{ 'copilot-answer--degraded': !entry.ok }">
-            {{ entry.text }}
+            <markdown-answer :text="entry.text" />
           </div>
         </div>
       </div>
@@ -30,7 +30,7 @@
           v-model="question"
           type="text"
           class="copilot-input"
-          placeholder="Ask about today's operations…"
+          placeholder="Ask Daleel about today's operations…"
           :disabled="sending"
           maxlength="500"
         />
@@ -46,6 +46,7 @@
 import { ref, nextTick } from 'vue';
 import AppLayout from '../Components/AppLayout.vue';
 import Button from '../Components/Button.vue';
+import MarkdownAnswer from '../Components/MarkdownAnswer.vue';
 
 const question = ref('');
 const sending = ref(false);
@@ -94,7 +95,7 @@ async function ask(text) {
   } catch (e) {
     entry.pending = false;
     entry.ok = false;
-    entry.text = 'Could not reach the AI Copilot. Please try again.';
+    entry.text = 'Could not reach Daleel. Please try again.';
   } finally {
     sending.value = false;
     scrollToBottom();
@@ -142,10 +143,13 @@ function submit() {
   font-size: 13.5px;
 }
 .copilot-answer {
-  align-self: flex-start; max-width: 80%;
+  align-self: flex-start; max-width: 92%;
   background: var(--panel); color: var(--ink);
   padding: 10px 14px; border-radius: 12px 12px 12px 2px;
-  font-size: 13.5px; white-space: pre-wrap;
+  font-size: 13.5px;
+  /* Blocks carry their own spacing now, and a wide table can scroll rather
+     than stretch the thread. */
+  overflow-x: auto;
 }
 .copilot-answer--pending { color: var(--ink3); font-style: italic; }
 .copilot-answer--degraded { background: var(--warn-soft); color: var(--warn); }

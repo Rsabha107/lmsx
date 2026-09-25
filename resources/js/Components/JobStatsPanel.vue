@@ -251,7 +251,8 @@ function toggleDay(date) {
   --tone-ok: var(--ok, #16a34a);
   --tone-warn: var(--warn, #b45309);
   --tone-danger: var(--danger, #b91c1c);
-  --tone-info: var(--blue, #2563eb);
+  /* SC Brand Manual, Pantone 3005 C - 4.7:1 on white. */
+  --tone-info: var(--brand-blue-bright, #0077C8);
 
   background: var(--surface);
   border: 1px solid var(--border);

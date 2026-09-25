@@ -11309,8 +11309,10 @@ function statusLabel(s) {
   gap: 6px;
 }
 .team-badge {
-  width: 34px;
+  min-width: 34px;
   height: 34px;
+  padding: 0 6px;
+  white-space: nowrap;
   border-radius: 7px;
   background: var(--accent-soft);
   color: var(--accent-fg);

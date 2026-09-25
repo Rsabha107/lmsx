@@ -421,8 +421,10 @@ function formatJobToLocation(job) {
 }
 
 .team-badge {
-  width: 40px;
+  min-width: 40px;
   height: 40px;
+  padding: 0 7px;
+  white-space: nowrap;
   border-radius: 8px;
   background: var(--accent-soft);
   color: var(--accent-fg);

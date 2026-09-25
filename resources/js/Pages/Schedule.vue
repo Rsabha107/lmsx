@@ -265,9 +265,9 @@ function statusLabel(s) { return statusMap[s]?.label ?? s; }
   padding: 10px 16px;
 }
 .team-badge {
-  width: 36px; height: 36px; border-radius: 8px;
+  min-width: 36px; height: 36px; padding: 0 6px; border-radius: 8px;
   background: var(--accent-soft); color: var(--accent-fg);
-  font-size: 10px; font-weight: 700;
+  font-size: 10px; font-weight: 700; white-space: nowrap;
   display: flex; align-items: center; justify-content: center; flex-shrink: 0;
 }
 .gantt-meta { flex: 1; min-width: 0; }

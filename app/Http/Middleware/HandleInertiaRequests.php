@@ -35,7 +35,7 @@ class HandleInertiaRequests extends Middleware
             ],
             // Offering an event the user would be 403'd on is worse than hiding it.
             'eventList'     => $request->user()
-                ? Event::orderBy('start_date', 'desc')->get(['id', 'name', 'short_name'])
+                ? Event::orderBy('start_date', 'desc')->get(['id', 'name', 'short_name', 'event_logo'])
                     ->filter(fn (Event $event) => $request->user()->canAccessEvent($event->id))
                     ->values()
                     ->toArray()

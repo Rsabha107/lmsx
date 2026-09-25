@@ -263,7 +263,8 @@ trait ReadsSpreadsheetRows
         $sheet->fromArray($headers, null, 'A1');
         $sheet->getStyle("A1:{$lastColumn}1")->applyFromArray([
             'font' => ['bold' => true, 'color' => ['rgb' => 'FFFFFF']],
-            'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => '7A1836']],
+            // SC Brand Manual, Pantone 1955 C.
+            'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => '8A1538']],
         ]);
 
         if ($dataRows !== []) {

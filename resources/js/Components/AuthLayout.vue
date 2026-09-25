@@ -6,7 +6,7 @@
         <!-- Card header: logo + app name -->
         <div class="auth-logo">
           <span class="auth-logo-mark">LMS</span>
-          <span class="auth-logo-name">NAQLA LMS</span>
+          <span class="auth-logo-name">NAQLA</span>
         </div>
 
         <slot />

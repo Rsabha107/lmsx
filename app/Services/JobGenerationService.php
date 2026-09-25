@@ -276,6 +276,35 @@ class JobGenerationService
     }
 
     /**
+     * When a template's match leg starts relative to kick-off, and which setting
+     * that comes from - the same resolution generation uses, so the New Plan
+     * preview shows the times the movements will actually get.
+     *
+     * @return array{minutes: int, source: string}|null null when the template has no match leg
+     */
+    public function matchStartOffset(\App\Models\MovementTemplate $template, ?int $eventId): ?array
+    {
+        $leg = $template->legs->firstWhere('leg_type', 'match');
+        if (!$leg) {
+            return null;
+        }
+
+        $checkpoint = $leg->checkpointTemplate?->checkpoints->first();
+        $minutes = $this->resolveOffsetMinutes($checkpoint, 'match', $eventId);
+
+        $checkpointScope = $checkpoint ? $this->settingsService->offsetScope('match', $eventId, $checkpoint->id) : null;
+        $source = $checkpointScope
+            ? sprintf('the %s setting for the "%s" checkpoint', $checkpointScope === 'event' ? 'event' : 'global', $checkpoint->name)
+            : match ($this->settingsService->offsetScope('match', $eventId)) {
+                'event' => 'the event\'s match default',
+                'global' => 'the global match default',
+                default => 'no offset configured yet',
+            };
+
+        return ['minutes' => $minutes, 'source' => $source];
+    }
+
+    /**
      * Compute a single checkpoint's scheduled time from an explicit
      * checkpoint-specific offset (event-scoped, then global-scoped) only.
      * Returns null if no offset is configured for this checkpoint/movement

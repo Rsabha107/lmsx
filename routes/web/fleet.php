@@ -5,6 +5,7 @@
  * Routes for managing fleet, teams, and contacts
  */
 
+use App\Http\Controllers\AirportController;
 use App\Http\Controllers\BaseCampHotelController;
 use App\Http\Controllers\EventTeamsController;
 use App\Http\Controllers\FleetController;
@@ -27,6 +28,7 @@ Route::middleware('auth')->group(function () {
         Route::get('/event-teams/import-template', [TeamImportController::class, 'template'])->name('event-teams.import-template');
         Route::get('/contacts', [LmsController::class, 'contacts'])->name('contacts.index');
         Route::get('/base-camp-hotels', [BaseCampHotelController::class, 'index'])->name('base-camp-hotels.index');
+        Route::get('/airports', [AirportController::class, 'index'])->name('airports.index');
     });
 
     // Everything that mutates fleet or the master data managed alongside it.
@@ -61,6 +63,12 @@ Route::middleware('auth')->group(function () {
             Route::post('/', [BaseCampHotelController::class, 'store'])->name('store');
             Route::put('/{id}', [BaseCampHotelController::class, 'update'])->name('update');
             Route::delete('/{id}', [BaseCampHotelController::class, 'destroy'])->name('destroy');
+        });
+
+        Route::prefix('airports')->name('airports.')->group(function () {
+            Route::post('/', [AirportController::class, 'store'])->name('store');
+            Route::put('/{airport}', [AirportController::class, 'update'])->name('update');
+            Route::delete('/{airport}', [AirportController::class, 'destroy'])->name('destroy');
         });
     });
 });

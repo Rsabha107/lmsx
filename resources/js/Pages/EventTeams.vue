@@ -77,9 +77,9 @@
               <tr>
                 <th>Team</th>
                 <th>Country</th>
-                <th>Group / Pool</th>
+                <th class="center">Group / Pool</th>
                 <th>Classification</th>
-                <th class="center">Flights</th>
+                <th class="flights-col">Flights</th>
                 <th>Accommodation</th>
                 <th class="center">Actions</th>
               </tr>
@@ -87,62 +87,75 @@
             <tbody>
               <tr v-for="et in filteredTeams" :key="et.id" class="table-row">
                 <td>
-                  <div style="display: flex; align-items: center; gap: 8px">
+                  <div class="team-cell" :title="et.team_name">
                     <span class="team-badge-sm">{{ et.code }}</span>
-                    <span style="font-weight: 500">{{
-                      et.team_name
-                    }}</span>
                   </div>
                 </td>
                 <td>
-                  <span v-if="et.country" style="display: flex; align-items: center; gap: 6px">
+                  <span v-if="et.country" style="display: flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 700; color: var(--ink)">
                     <flag-icon :code="et.country_id" :fallback="et.country.flag" />
                     {{ et.country.country_name }}</span
                   >
                   <span v-else>—</span>
                 </td>
-                <td>{{ et.group_pool || "—" }}</td>
+                <td class="center" :style="et.group_pool ? { fontWeight: 700, fontSize: '15px', color: 'var(--ink)' } : null">{{ et.group_pool || "—" }}</td>
                 <td>
                   <span v-if="et.classification">{{
                     et.classification.name
                   }}</span>
                   <span v-else>—</span>
                 </td>
-                <td class="center">
-                  <div
-                    v-if="et.flights?.length"
-                    style="
-                      display: flex;
-                      flex-direction: column;
-                      gap: 2px;
-                      align-items: center;
-                    "
-                  >
-                    <div
-                      v-for="fl in et.flights"
-                      :key="fl.id"
-                      style="
-                        font-size: 11px;
-                        display: flex;
-                        align-items: center;
-                        gap: 4px;
-                      "
-                    >
-                      <span
-                        :class="[
-                          'direction-badge-sm',
-                          `direction-badge-sm--${fl.direction}`,
-                        ]"
-                        >{{ fl.direction === "arrival" ? "↓" : "↑" }}</span
-                      >
-                      <span class="mono">{{ fl.flight_number || "—" }}</span>
-                      <span v-if="fl.scheduled_at" class="text-muted">{{
-                        formatDateTime(fl.scheduled_at)
-                      }}</span>
-                      <span v-if="fl.party_size_total" class="party-size-badge-sm">{{ fl.party_size_total }} pax</span>
-                    </div>
+                <td class="flights-col">
+                  <div v-for="trip in [trips[et.id]]" :key="et.id">
+                    <template v-if="trip">
+                      <div :class="['trip-status', `trip-status--${trip.status.tone}`]">
+                        <span class="trip-status-dot"></span>{{ trip.status.text }}
+                      </div>
+                      <div class="trip">
+                        <template v-for="(leg, idx) in [trip.arrival, trip.departure]" :key="idx">
+                          <div v-if="idx === 1" class="trip-span" :title="trip.nights !== null ? `${trip.nights} nights between arrival and departure` : ''">
+                            <span class="trip-span-label">
+                              <template v-if="trip.nights !== null">{{ trip.nights }}<small>{{ trip.nights === 1 ? 'night' : 'nights' }}</small></template>
+                              <template v-else>—</template>
+                            </span>
+                          </div>
+                          <button
+                            type="button"
+                            :class="['trip-leg', idx === 0 ? 'trip-leg--arr' : 'trip-leg--dep', { 'trip-leg--empty': !leg }]"
+                            :title="leg ? `Edit the ${idx === 0 ? 'arrival' : 'departure'} flight` : `Add the ${idx === 0 ? 'arrival' : 'departure'} flight`"
+                            @click="editTripLeg(et, leg?.flight, idx === 0 ? 'arrival' : 'departure')"
+                          >
+                            <div class="trip-leg-head">
+                              <svg class="trip-leg-icon" width="11" height="11" viewBox="0 0 24 24" fill="currentColor" :style="{ transform: idx === 0 ? 'rotate(135deg)' : 'rotate(45deg)' }"><path d="M21 16v-2l-8-5V3.5a1.5 1.5 0 0 0-3 0V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5z"/></svg>
+                              {{ idx === 0 ? 'Arrive' : 'Depart' }}
+                              <span v-if="leg?.delay" class="trip-chip trip-chip--late" :title="`${leg.delay} minutes late`">+{{ leg.delay }}m</span>
+                              <span v-else-if="leg?.landed" class="trip-chip trip-chip--ok">{{ idx === 0 ? 'Landed' : 'Flown' }}</span>
+                            </div>
+                            <template v-if="leg">
+                              <div class="trip-date">
+                                <strong>{{ leg.day }}</strong>
+                                <span>{{ leg.month }}<br />{{ leg.weekday }}</span>
+                              </div>
+                              <div class="trip-meta">
+                                <span :class="['trip-flight', { 'trip-flight--bus': leg.isBus, 'trip-flight--tbc': !leg.flightNumber }]">
+                                  {{ leg.isBus ? 'By road' : (leg.flightNumber || 'TBC') }}
+                                </span>
+                                <span v-if="leg.time" class="trip-time">{{ leg.time }}</span>
+                              </div>
+                              <div v-if="leg.route || leg.pax" class="trip-sub">
+                                <span v-if="leg.route">{{ leg.route }}</span>
+                                <span v-if="leg.route && leg.pax"> · </span>
+                                <span v-if="leg.pax">{{ leg.pax }} pax</span>
+                              </div>
+                            </template>
+                            <div v-else class="trip-missing">Not booked <span class="trip-add">+ Add</span></div>
+                          </button>
+                        </template>
+                      </div>
+                      <div v-if="trip.extra" class="trip-extra">+{{ trip.extra }} more flight{{ trip.extra === 1 ? '' : 's' }} — see Manage</div>
+                    </template>
+                    <span v-else style="color: var(--ink3)">—</span>
                   </div>
-                  <span v-else style="color: var(--ink3)">—</span>
                 </td>
                 <td>
                   <div v-if="et.stay" style="font-size: 12px">
@@ -467,24 +480,33 @@
         </div>
         <div class="form-group">
           <label class="form-label">Origin Airport</label>
-          <select v-model="flightForm.origin_airport_id" class="form-select">
-            <option value="">— None —</option>
-            <option v-for="a in airports" :key="a.id" :value="a.id">
-              {{ a.code }} · {{ a.name }}
-            </option>
-          </select>
+          <Select
+            v-model="flightForm.origin_airport_id"
+            :options="airportOptions"
+            optionLabel="label"
+            optionValue="id"
+            filter
+            :filterFields="['code', 'name', 'city', 'country']"
+            filterPlaceholder="Search code, airport, city or country…"
+            showClear
+            placeholder="— None —"
+            class="w-full"
+          />
         </div>
         <div class="form-group">
           <label class="form-label">Destination Airport</label>
-          <select
+          <Select
             v-model="flightForm.destination_airport_id"
-            class="form-select"
-          >
-            <option value="">— None —</option>
-            <option v-for="a in airports" :key="a.id" :value="a.id">
-              {{ a.code }} · {{ a.name }}
-            </option>
-          </select>
+            :options="airportOptions"
+            optionLabel="label"
+            optionValue="id"
+            filter
+            :filterFields="['code', 'name', 'city', 'country']"
+            filterPlaceholder="Search code, airport, city or country…"
+            showClear
+            placeholder="— None —"
+            class="w-full"
+          />
         </div>
         <div class="form-row">
           <div class="form-group">
@@ -987,10 +1009,10 @@
     </Modal>
 
     <!-- Import Results Modal -->
-    <Modal :show="showImportResultsModal" @close="showImportResultsModal = false" max-width="640px">
+    <Modal :show="showImportResultsModal" :closeable="false" max-width="640px">
       <template #title>Import Results</template>
       <div style="display: flex; flex-direction: column; gap: 14px;">
-        <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px;">
+        <div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px;">
           <div style="padding: 10px; background: var(--panel); border-radius: 6px; text-align: center;">
             <div style="font-size: 18px; font-weight: 700; color: var(--ink);">{{ importResult?.created ?? 0 }}</div>
             <div style="font-size: 10px; font-weight: 700; color: var(--ink3); text-transform: uppercase; letter-spacing: 0.5px;">Created</div>
@@ -1002,6 +1024,10 @@
           <div style="padding: 10px; background: var(--panel); border-radius: 6px; text-align: center;">
             <div style="font-size: 18px; font-weight: 700; color: var(--ink);">{{ importResult?.unchanged ?? 0 }}</div>
             <div style="font-size: 10px; font-weight: 700; color: var(--ink3); text-transform: uppercase; letter-spacing: 0.5px;">Unchanged</div>
+          </div>
+          <div :style="{ padding: '10px', background: importNeedsReview ? '#FEF3C7' : 'var(--panel)', borderRadius: '6px', textAlign: 'center' }">
+            <div :style="{ fontSize: '18px', fontWeight: 700, color: importNeedsReview ? '#92400E' : 'var(--ink)' }">{{ importNeedsReview }}</div>
+            <div :style="{ fontSize: '10px', fontWeight: 700, color: importNeedsReview ? '#92400E' : 'var(--ink3)', textTransform: 'uppercase', letterSpacing: '0.5px' }">Needs Review</div>
           </div>
           <div style="padding: 10px; background: #FEE2E2; border-radius: 6px; text-align: center;">
             <div style="font-size: 18px; font-weight: 700; color: #991B1B;">{{ importResult?.failed?.length ?? 0 }}</div>
@@ -1147,6 +1173,95 @@ const totalFlights = computed(() =>
   props.eventTeams.reduce((sum, et) => sum + (et.flights?.length || 0), 0)
 );
 
+const airportOptions = computed(() =>
+  (props.airports ?? []).map((a) => ({
+    id: a.id,
+    code: a.code,
+    name: a.name,
+    city: a.city ?? "",
+    country: a.country ?? "",
+    label: `${a.code} · ${a.name}${a.city ? ` — ${a.city}` : ""}`,
+  }))
+);
+
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const DAY_MS = 86400000;
+
+// Flight times are stored as local "YYYY-MM-DD HH:mm:ss" wall-clock times, so read them without a timezone shift.
+function wallClock(value) {
+  const m = String(value ?? "").match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/);
+  if (!m) return null;
+  const date = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  return { date, time: `${m[4]}:${m[5]}` };
+}
+
+function tripLeg(flight) {
+  if (!flight) return null;
+  const at = wallClock(flight.scheduled_at);
+  const origin = flight.origin_airport?.code;
+  const destination = flight.destination_airport?.code;
+
+  return {
+    flight,
+    date: at?.date ?? null,
+    day: at ? String(at.date.getDate()).padStart(2, "0") : "—",
+    month: at ? MONTHS[at.date.getMonth()] : "",
+    weekday: at ? WEEKDAYS[at.date.getDay()] : "",
+    time: at?.time ?? null,
+    flightNumber: flight.flight_number || null,
+    isBus: flight.flight_number === "BUS",
+    route: origin || destination ? `${origin || "?"} → ${destination || "?"}` : null,
+    pax: flight.party_size_total || null,
+    delay: flight.delay_minutes > 0 ? flight.delay_minutes : null,
+    landed: !!flight.actual_at,
+  };
+}
+
+function tripStatus(arrival, departure, nights) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const days = (d) => Math.round((d - today) / DAY_MS);
+
+  if (departure?.date && days(departure.date) < 0) return { tone: "done", text: "Departed" };
+  if (arrival?.date) {
+    const until = days(arrival.date);
+    if (until > 1) return { tone: "soon", text: `Arrives in ${until} days` };
+    if (until === 1) return { tone: "soon", text: "Arrives tomorrow" };
+    if (until === 0) return { tone: "live", text: "Arrives today" };
+    if (departure?.date && days(departure.date) === 0) return { tone: "live", text: "Departs today" };
+    const day = 1 - until;
+    return { tone: "live", text: nights ? `On site · day ${day} of ${nights + 1}` : "On site" };
+  }
+  return { tone: "idle", text: "Arrival not booked" };
+}
+
+// One trip card per team: its first arrival and first departure; any further flights are counted, not drawn.
+const trips = computed(() => {
+  const map = {};
+  for (const et of props.eventTeams) {
+    const flights = et.flights ?? [];
+    if (!flights.length) continue;
+
+    const arrivalFlight = flights.find((f) => f.direction === "arrival");
+    const departureFlight = flights.find((f) => f.direction === "departure");
+    const arrival = tripLeg(arrivalFlight);
+    const departure = tripLeg(departureFlight);
+    const nights = arrival?.date && departure?.date
+      ? Math.max(0, Math.round((departure.date - arrival.date) / DAY_MS))
+      : null;
+
+    map[et.id] = {
+      arrival,
+      departure,
+      nights,
+      status: tripStatus(arrival, departure, nights),
+      extra: flights.length - [arrivalFlight, departureFlight].filter(Boolean).length,
+    };
+  }
+  return map;
+});
+
 function formatDate(value) {
   if (!value) return "—";
   const d = new Date(value);
@@ -1255,6 +1370,13 @@ function formatSyncDate(isoStr) {
 function openManageModal(et) {
   managingTeam.value = et;
   showManageModal.value = true;
+}
+
+// Opens the flight form straight from the table; a missing leg opens a new flight in that direction.
+function editTripLeg(et, flight, direction) {
+  managingTeam.value = et;
+  openFlightForm(flight ?? null);
+  if (!flight) flightForm.value.direction = direction;
 }
 
 function refreshManagingTeam() {
@@ -1654,6 +1776,11 @@ const importing = ref(false);
 const importError = ref("");
 const showImportResultsModal = ref(false);
 const importResult = ref(null);
+const importNeedsReview = computed(() =>
+  (importResult.value?.flight_changes ?? [])
+    .flatMap((change) => change.movements)
+    .filter((m) => m.status === "needs_review").length
+);
 
 const importTemplateUrl = "/event-teams/import-template";
 
@@ -1898,6 +2025,9 @@ function csvEscape(value) {
   letter-spacing: 0.02em;
 }
 
+.team-cell { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
+.team-cell .team-badge-sm { font-size: 13px; padding: 3px 9px; border-radius: 5px; }
+
 .direction-badge-sm {
   display: inline-flex;
   align-items: center;
@@ -1926,6 +2056,100 @@ function csvEscape(value) {
   background: #f3f4f6;
   color: #6b7280;
 }
+
+/* Flights column: one trip card per team */
+.flights-col { min-width: 330px; }
+
+.trip-status {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 10.5px; font-weight: 600; margin-bottom: 5px;
+  color: var(--ink3);
+}
+.trip-status-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.trip-status--soon { color: #1d4ed8; }
+.trip-status--live { color: #15803d; }
+.trip-status--live .trip-status-dot { box-shadow: 0 0 0 3px rgba(21, 128, 61, .18); animation: trip-pulse 1.8s ease-in-out infinite; }
+.trip-status--done { color: var(--ink4, #9ca3af); }
+.trip-status--idle { color: #b45309; }
+@keyframes trip-pulse { 50% { box-shadow: 0 0 0 5px rgba(21, 128, 61, 0); } }
+
+.trip {
+  display: grid; grid-template-columns: 1fr 56px 1fr; align-items: stretch;
+}
+
+.trip-leg {
+  position: relative;
+  display: block; width: 100%; text-align: left; font: inherit; color: inherit; cursor: pointer;
+  padding: 7px 9px 7px 11px; border-radius: 8px;
+  background: var(--panel); border: 1px solid var(--border);
+  min-width: 0;
+  transition: border-color .15s, box-shadow .15s, transform .15s;
+}
+.trip-leg:hover { transform: translateY(-1px); box-shadow: 0 3px 10px rgba(0, 0, 0, .08); }
+.trip-leg--arr:hover { border-color: #93c5fd; }
+.trip-leg--dep:hover { border-color: #fcd34d; }
+.trip-leg:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.trip-add { display: none; font-style: normal; font-weight: 700; color: var(--accent); margin-left: 4px; }
+.trip-leg--empty:hover .trip-add { display: inline; }
+.trip-leg::before {
+  content: ""; position: absolute; left: 0; top: 7px; bottom: 7px;
+  width: 3px; border-radius: 0 3px 3px 0;
+}
+.trip-leg--arr::before { background: #2563eb; }
+.trip-leg--dep::before { background: #d97706; }
+.trip-leg--empty { background: transparent; border-style: dashed; }
+.trip-leg--empty::before { background: var(--border); }
+
+.trip-leg-head {
+  display: flex; align-items: center; gap: 4px;
+  font-size: 9.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+  color: var(--ink3); margin-bottom: 3px;
+}
+.trip-leg--arr .trip-leg-icon { color: #2563eb; }
+.trip-leg--dep .trip-leg-icon { color: #d97706; }
+
+.trip-chip {
+  margin-left: auto; padding: 0 5px; border-radius: 999px;
+  font-size: 9px; letter-spacing: 0; text-transform: none;
+}
+.trip-chip--late { background: #fef3c7; color: #92400e; }
+.trip-chip--ok { background: #dcfce7; color: #166534; }
+
+.trip-date { display: flex; align-items: center; gap: 6px; }
+.trip-date strong {
+  font-size: 20px; font-weight: 800; line-height: 1; color: var(--ink);
+  font-variant-numeric: tabular-nums; letter-spacing: -.5px;
+}
+.trip-date span { font-size: 9.5px; line-height: 1.15; color: var(--ink3); font-weight: 600; text-transform: uppercase; }
+
+.trip-meta { display: flex; align-items: baseline; gap: 6px; margin-top: 4px; }
+.trip-flight {
+  font-family: var(--mono); font-size: 11px; font-weight: 700; color: var(--ink);
+  white-space: nowrap;
+}
+.trip-flight--bus { font-family: inherit; color: #6d28d9; }
+.trip-flight--tbc { color: var(--ink4, #9ca3af); font-weight: 600; }
+.trip-time { font-family: var(--mono); font-size: 11px; color: var(--ink2, var(--ink)); }
+
+.trip-sub {
+  margin-top: 2px; font-size: 10px; color: var(--ink3);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.trip-missing { font-size: 11px; color: var(--ink4, #9ca3af); font-style: italic; padding: 8px 0; }
+
+.trip-span {
+  display: flex; align-items: center; gap: 3px; padding: 0 4px;
+}
+.trip-span::before, .trip-span::after {
+  content: ""; flex: 1; border-top: 1.5px dashed var(--border);
+}
+.trip-span-label {
+  display: flex; flex-direction: column; align-items: center;
+  font-size: 14px; font-weight: 800; line-height: 1; color: var(--ink);
+}
+.trip-span-label small { font-size: 8.5px; font-weight: 600; color: var(--ink3); text-transform: uppercase; letter-spacing: .04em; margin-top: 2px; }
+
+.trip-extra { margin-top: 4px; font-size: 10px; color: var(--ink3); }
 
 .mono {
   font-family: var(--mono);

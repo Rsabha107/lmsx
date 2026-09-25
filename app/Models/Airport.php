@@ -24,4 +24,14 @@ class Airport extends Model
     {
         return $this->hasMany(Team::class, 'destination_airport_id');
     }
+
+    public function flightsAsOrigin()
+    {
+        return $this->hasMany(TeamFlight::class, 'origin_airport_id');
+    }
+
+    public function flightsAsDestination()
+    {
+        return $this->hasMany(TeamFlight::class, 'destination_airport_id');
+    }
 }

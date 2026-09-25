@@ -235,7 +235,7 @@
                     margin-bottom: 2px;
                   "
                 >
-                  All Movements (Event-wide)
+                  {{ inAllPlansView ? 'All Plans' : 'All Movements' }} (Event-wide)
                 </div>
                 <div style="font-size: 11px; color: #9ca3af">
                   View all movements across all plans
@@ -391,7 +391,7 @@
             >
               <div style="display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 6px;">
                 <div style="font-size: 13px; font-weight: 700; color: #111827;">
-                  All Movements
+                  {{ inAllPlansView ? 'All Plans' : 'All Movements' }}
                 </div>
                 <svg
                   v-if="activePlan === null"
@@ -1430,12 +1430,17 @@
                 <div style="font-size: 11px; color: var(--ink3);">
                   {{ mv.window_start ? formatDate(mv.window_start) : '—' }}
                 </div>
-                <Badge
-                  v-if="mv.match_id"
-                  type="kind"
-                  variant="match"
-                  >Match {{ mv.match?.match_number || '' }}</Badge
-                >
+                <div v-if="mv.match_id" style="display: flex; flex-direction: column; align-items: flex-start; gap: 3px; min-width: 0;">
+                  <Badge
+                    type="kind"
+                    variant="match"
+                    >Match {{ mv.match?.match_number || '' }}</Badge
+                  >
+                  <span
+                    style="font-size: 10.5px; color: var(--ink3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;"
+                    :title="matchLineup(mv.match)"
+                  >{{ matchLineup(mv.match) }}</span>
+                </div>
                 <Badge
                   v-else-if="mv.kind"
                   type="kind"
@@ -2875,13 +2880,18 @@
                       {{ mv.flight.planned_bags }} bags
                     </div>
                   </div>
-                  <Badge
-                    v-if="mv.match_id"
-                    type="kind"
-                    variant="match"
-                  >
-                    Match {{ mv.match?.match_number || '' }}
-                  </Badge>
+                  <div v-if="mv.match_id" style="display: flex; flex-direction: column; align-items: flex-start; gap: 3px; min-width: 0;">
+                    <Badge
+                      type="kind"
+                      variant="match"
+                    >
+                      Match {{ mv.match?.match_number || '' }}
+                    </Badge>
+                    <span
+                      style="font-size: 10.5px; color: var(--ink3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;"
+                      :title="matchLineup(mv.match)"
+                    >{{ matchLineup(mv.match) }}</span>
+                  </div>
                   <Badge
                     v-else-if="mv.kind"
                     type="kind"
@@ -3005,7 +3015,7 @@
                     variant="match"
                     :custom-style="{ fontSize: '10px' }"
                   >
-                    Match {{ selectedMovement.match?.match_number || '' }} {{ selectedMovement.match?.match_number || '' }}
+                    Match {{ selectedMovement.match?.match_number || '' }} · {{ matchLineup(selectedMovement.match) }}
                   </Badge>
                   <Badge
                     v-else-if="selectedMovement.kind"
@@ -4504,7 +4514,8 @@
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
                         <path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z" />
                       </svg>
-                      Plans start 5 hours before kick-off
+                      Plans start {{ describeKickoffOffset(matchStartOffsetMinutes) }}
+                      <span style="opacity: 0.8">· from {{ matchStartOffsetSource }}</span>
                     </div>
                   </div>
 
@@ -5139,13 +5150,15 @@
                   <div class="gen-mv-id">
                     {{ mv.code || `M${genMovements.indexOf(mv) + 1}` }}
                   </div>
-                  <Badge
-                    v-if="mv.match_id"
-                    type="kind"
-                    variant="match"
-                    :custom-style="{ fontSize: '10px', whiteSpace: 'nowrap' }"
-                    >Match {{ mv.match?.match_number || '' }}</Badge
-                  >
+                  <div v-if="mv.match_id" style="display: flex; flex-direction: column; align-items: flex-start; gap: 2px;">
+                    <Badge
+                      type="kind"
+                      variant="match"
+                      :custom-style="{ fontSize: '10px', whiteSpace: 'nowrap' }"
+                      >Match {{ mv.match?.match_number || '' }}</Badge
+                    >
+                    <span style="font-size: 10px; color: var(--ink3); white-space: nowrap;">{{ matchLineup(mv.match) }}</span>
+                  </div>
                   <Badge
                     v-else-if="mv.kind"
                     type="kind"
@@ -8892,6 +8905,8 @@ const PLAN_STATUS_STYLE = {
 const selectedPlanObj = computed(
   () => allPlans.value.find((p) => p.id === activePlan.value) ?? null
 );
+// The plans list ("View All Plans"), as opposed to the event-wide movements view.
+const inAllPlansView = computed(() => !selectedPlanObj.value && activeTab.value === 'plans');
 const selectedPlanMovements = computed(() => {
   // If no plan is selected, show all movements from all plans
   if (!activePlan.value) {
@@ -8989,7 +9004,10 @@ const teamsInCurrentPlan = computed(() => {
       teamMap.set(mv.team.id, mv.team);
     }
   });
-  return Array.from(teamMap.values());
+  const label = (team) => team.team_name || team.team || "";
+  return Array.from(teamMap.values()).sort((a, b) =>
+    label(a).localeCompare(label(b), undefined, { sensitivity: "base" })
+  );
 });
 
 // Get unique dates from movements in the current plan
@@ -9073,6 +9091,31 @@ const bulkArrivalMovementTemplates = computed(() =>
 const matchDayMovementTemplates = computed(() =>
   props.movementTemplates.filter((t) => t.scenario_type === "match_day")
 );
+
+// Resolved server-side from Settings (checkpoint override, then event, then global).
+const matchStartOffsetMinutes = computed(
+  () => selectedNewPlanTemplate.value?.match_start_offset?.minutes ?? 0
+);
+const matchStartOffsetSource = computed(
+  () => selectedNewPlanTemplate.value?.match_start_offset?.source ?? "no offset configured yet"
+);
+
+function matchLineup(match) {
+  const side = (team) => team?.code || team?.team_name || "TBD";
+  return `${side(match?.team1)} vs ${side(match?.team2)}`;
+}
+
+function describeKickoffOffset(minutes) {
+  if (!minutes) return "at kick-off";
+  const abs = Math.abs(minutes);
+  const hours = Math.floor(abs / 60);
+  const mins = abs % 60;
+  const span = [
+    hours ? `${hours} hour${hours === 1 ? "" : "s"}` : "",
+    mins ? `${mins} min` : "",
+  ].filter(Boolean).join(" ");
+  return `${span} ${minutes < 0 ? "before" : "after"} kick-off`;
+}
 
 const selectedNewPlanTeam = computed(() => {
   if (!newPlanTeamId.value) return null;
@@ -9239,8 +9282,8 @@ const matchesPreview = computed(() => {
     // Use the match date (not the plan start date which could roll back to previous day)
     const matchDate = kickOffDate.toISOString().split('T')[0];
     
-    // Calculate plan start time (5 hours before kick-off)
-    const planStartDate = new Date(kickOffDate.getTime() - (5 * 60 * 60 * 1000));
+    // Calculate plan start time from the template's configured match offset
+    const planStartDate = new Date(kickOffDate.getTime() + matchStartOffsetMinutes.value * 60 * 1000);
     const planTime = planStartDate.toTimeString().slice(0, 5);
     
     // Create a unique key for this match to group its teams together
@@ -9935,9 +9978,9 @@ watch([() => newPlanTemplate.value, () => newPlanTeamId.value], () => {
   if (isMatchTemplate) {
     if (!selectedTeamNextMatch.value) return;
 
-    // Set date and time based on match kick_off (5 hours before match)
+    // Set date and time from the match kick-off and the template's configured offset
     const kickOffDate = new Date(selectedTeamNextMatch.value.kick_off);
-    const planStartDate = new Date(kickOffDate.getTime() - (5 * 60 * 60 * 1000)); // Subtract 5 hours
+    const planStartDate = new Date(kickOffDate.getTime() + matchStartOffsetMinutes.value * 60 * 1000);
 
     const year = planStartDate.getFullYear();
     const month = String(planStartDate.getMonth() + 1).padStart(2, '0');

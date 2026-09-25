@@ -130,6 +130,14 @@ class PlanManagementController extends Controller
             ->orderBy('name')
             ->get();
 
+        $matchDayTemplates = $movementTemplates->where('scenario_type', 'match_day');
+        $matchDayTemplates->load('legs.checkpointTemplate.checkpoints');
+        foreach ($matchDayTemplates as $template) {
+            $template->match_start_offset = $this->jobService->matchStartOffset($template, $activeEventId);
+            // Only needed to resolve the offset; keeps the page payload unchanged.
+            $template->legs->each(fn ($leg) => $leg->checkpointTemplate?->unsetRelation('checkpoints'));
+        }
+
         // Load teams from active event only
         $teams = collect();
         if ($activeEventId) {

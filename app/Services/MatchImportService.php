@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\GameMatch;
+use App\Models\Movement;
 use App\Models\Team;
 use App\Models\Venue;
 use Carbon\Carbon;
@@ -29,9 +30,16 @@ class MatchImportService
         'Stage',
     ];
 
+    /** Match change made by the row being processed; kept only if the row commits. */
+    private ?array $rowMatchChange = null;
+
+    public function __construct(private JobGenerationService $jobs)
+    {
+    }
+
     /**
      * @param array<int, array<string, mixed>> $rows
-     * @return array{total: int, created: int, updated: int, unchanged: int, incomplete: array, failed: array}
+     * @return array{total: int, created: int, updated: int, unchanged: int, incomplete: array, failed: array, match_changes: array}
      */
     public function import(array $rows, int $eventId): array
     {
@@ -40,12 +48,18 @@ class MatchImportService
         $unchanged = 0;
         $incomplete = [];
         $failed = [];
+        $matchChanges = [];
 
         foreach ($rows as $index => $row) {
             $rowNumber = $index + 2; // header occupies row 1
+            $this->rowMatchChange = null;
 
             try {
                 $result = DB::transaction(fn () => $this->processRow($row, $eventId));
+
+                if ($this->rowMatchChange !== null) {
+                    $matchChanges[] = $this->rowMatchChange;
+                }
 
                 match ($result['status']) {
                     'created' => $created++,
@@ -76,6 +90,7 @@ class MatchImportService
             'unchanged' => $unchanged,
             'incomplete' => $incomplete,
             'failed' => $failed,
+            'match_changes' => $matchChanges,
         ];
     }
 
@@ -104,6 +119,13 @@ class MatchImportService
 
         $matchDate = $this->parseDate($row['match_date'] ?? null);
         $kickOff = $matchDate !== null ? $this->combineDateTime($matchDate, $row['kick_off'] ?? null) : null;
+
+        // A new date with no kick-off given keeps the known kick-off time, rather
+        // than leaving kick_off on the old day while match_date moves.
+        if ($matchDate !== null && $kickOff === null && $match?->kick_off
+            && $match->kick_off->format('Y-m-d') !== $matchDate) {
+            $kickOff = $matchDate . ' ' . $match->kick_off->format('H:i:s');
+        }
 
         $attrs = [];
         if ($team1Id !== null && (!$match || $match->team1_id !== $team1Id)) {
@@ -135,7 +157,16 @@ class MatchImportService
         } else {
             $changed = !empty($attrs);
             if ($changed) {
+                $before = [
+                    'kick_off' => $match->kick_off?->copy(),
+                    'team_ids' => [$match->team1_id, $match->team2_id],
+                    'venue_id' => $match->venue_id,
+                ];
                 $match->update($attrs);
+
+                if (isset($attrs['kick_off']) || isset($attrs['team1_id']) || isset($attrs['team2_id']) || isset($attrs['venue_id'])) {
+                    $this->rowMatchChange = $this->syncMovements($match->fresh(), $before, $matchNumber);
+                }
             }
         }
 
@@ -157,6 +188,105 @@ class MatchImportService
             'status' => $isNew ? 'created' : ($changed ? 'updated' : 'unchanged'),
             'matchNumber' => $matchNumber,
             'missing' => $missing,
+        ];
+    }
+
+    /**
+     * Carries a kick-off, line-up or venue change through to the movements
+     * planned for the match. Movements not yet turned into a job are
+     * rescheduled; anything a person has to fix - an issued job, a team no
+     * longer playing, route text naming the old venue - is reported instead.
+     *
+     * @param array{kick_off: ?Carbon, team_ids: array<int, ?int>, venue_id: ?int} $before
+     * @return array<string, mixed>
+     */
+    private function syncMovements(GameMatch $match, array $before, string $matchNumber): array
+    {
+        $timeMoved = $before['kick_off']?->format('Y-m-d H:i') !== $match->kick_off?->format('Y-m-d H:i');
+        $venueMoved = $before['venue_id'] !== $match->venue_id;
+        $venueNames = Venue::whereIn('id', array_filter([$before['venue_id'], $match->venue_id]))->pluck('name', 'id');
+        $oldVenue = $venueNames[$before['venue_id']] ?? null;
+        $newVenue = $venueNames[$match->venue_id] ?? null;
+        $teamIds = array_filter([$match->team1_id, $match->team2_id]);
+        $teamNames = Team::whereIn('id', array_filter([...$before['team_ids'], ...$teamIds]))->pluck('code', 'id');
+        $lineup = fn (array $ids) => implode(' v ', array_map(fn ($id) => $teamNames[$id] ?? 'TBD', $ids));
+
+        $movements = Movement::where('match_id', $match->id)
+            ->with(['match', 'plan', 'team', 'checkpointTemplate.checkpoints'])
+            ->orderBy('window_start')
+            ->get();
+
+        $results = [];
+
+        foreach ($movements as $movement) {
+            $entry = [
+                'id' => $movement->id,
+                'code' => $movement->code,
+                'team' => $movement->team?->code,
+                'plan' => $movement->plan?->name,
+                'from' => $movement->window_start?->format('D j M H:i'),
+                'to' => null,
+                'status' => 'unchanged',
+                'notes' => [],
+            ];
+
+            // Moving a movement to the new team would be guesswork: it may carry
+            // that team's hotel, vehicle and passengers.
+            if ($movement->team_id && !in_array($movement->team_id, $teamIds, true)) {
+                $entry['status'] = 'needs_review';
+                $entry['notes'][] = "{$movement->team?->code} is no longer in this match - reassign or cancel this movement.";
+                $results[] = $entry;
+                continue;
+            }
+
+            if ($movement->hasJob()) {
+                if ($timeMoved || $venueMoved) {
+                    $entry['status'] = 'needs_review';
+                    $entry['notes'][] = "Job {$movement->job_id} was already issued - update it by hand.";
+                    if ($venueMoved) {
+                        $entry['notes'][] = 'The crew may still be heading to ' . ($oldVenue ?? 'the old venue') . '.';
+                    }
+                    $results[] = $entry;
+                }
+                continue;
+            }
+
+            if ($timeMoved && $this->jobs->recomputeMovementWindow($movement)) {
+                $movement->refresh();
+                $entry['status'] = 'updated';
+                $entry['to'] = $movement->window_start?->format('D j M H:i');
+
+                if ($movement->vehicle_id || $movement->driver_id) {
+                    $entry['notes'][] = 'Vehicle/driver kept - check they are still free at the new time.';
+                }
+                if ($movement->plan?->date && $movement->window_start
+                    && !$movement->plan->date->isSameDay($movement->window_start)) {
+                    $entry['notes'][] = "Plan is dated {$movement->plan->date->format('D j M')}; this movement is now on {$movement->window_start->format('D j M')}.";
+                }
+            }
+
+            // Route text is free text copied from the plan template, so it can't be rewritten safely.
+            if ($venueMoved && $oldVenue
+                && stripos("{$movement->from_location} {$movement->to_location}", $oldVenue) !== false) {
+                $entry['status'] = 'needs_review';
+                $entry['notes'][] = "Route still says \"{$movement->from_location} → {$movement->to_location}\" - update it to "
+                    . ($newVenue ?? 'the new venue') . '.';
+            }
+
+            if ($entry['status'] !== 'unchanged') {
+                $results[] = $entry;
+            }
+        }
+
+        return [
+            'code' => $matchNumber,
+            'time_before' => $before['kick_off']?->format('D j M H:i'),
+            'time_after' => $match->kick_off?->format('D j M H:i'),
+            'teams_before' => $lineup($before['team_ids']),
+            'teams_after' => $lineup([$match->team1_id, $match->team2_id]),
+            'venue_before' => $oldVenue,
+            'venue_after' => $newVenue,
+            'movements' => $results,
         ];
     }
 

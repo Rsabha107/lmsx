@@ -228,6 +228,10 @@ class LmsController extends Controller
             'movement.flight.destinationAirport',
             'movement.accommodation',
             'movement.match.venue',
+            'movement.match.team1:id,code,team_name',
+            'movement.match.team2:id,code,team_name',
+            'movement.checkpointTemplate:id,name',
+            'plan:id,code,name',
             'vehicle',
             'driver',
             'supervisor',
@@ -268,8 +272,10 @@ class LmsController extends Controller
                     'checksComplete' => $job->checkpoints_completed ?? 0,
                     'checksTotal' => $job->checkpoints_total ?? 0,
                     'supervisor' => $job->supervisor?->name ?? 'Unassigned',
+                    'supervisor_id' => $job->supervisor_id,
                     'supervisor_phone' => $job->supervisor?->phone ?? null,
                     'driver' => $job->driver?->name ?? 'Unassigned',
+                    'driver_id' => $job->driver_id,
                     'driver_phone' => $job->driver?->phone ?? null,
                     'updated_at' => $job->updated_at?->format('Y-m-d H:i') ?? null,
                     'flight' => $movement?->flight ? [
@@ -286,7 +292,24 @@ class LmsController extends Controller
                         'id' => $movement->match->id,
                         'match_number' => $movement->match->match_number,
                         'venue' => $movement->match->venue,
+                        'lineup' => ($movement->match->team1?->code ?? 'TBD') . ' vs ' . ($movement->match->team2?->code ?? 'TBD'),
+                        'team1' => $movement->match->team1?->team_name ?? 'TBD',
+                        'team2' => $movement->match->team2?->team_name ?? 'TBD',
+                        'stage' => $movement->match->stage,
+                        'kick_off' => $movement->match->kick_off?->format('Y-m-d H:i'),
+                        'gates_opening' => $movement->match->gates_opening?->format('H:i'),
                     ] : null,
+                    'job_info' => [
+                        'movement_code' => $movement?->code,
+                        'plan_name' => $job->plan?->name,
+                        'plan_code' => $job->plan?->code,
+                        'sequence' => $movement?->checkpointTemplate?->name,
+                        'generated_at' => $job->created_at?->format('Y-m-d H:i'),
+                        'dispatched_at' => $job->dispatched_at?->format('Y-m-d H:i'),
+                        'started_at' => $job->started_at?->format('Y-m-d H:i'),
+                        'completed_at' => $job->completed_at?->format('Y-m-d H:i'),
+                        'notes' => $job->notes,
+                    ],
                     'team_data' => $team ? [
                         'hotel_name' => $team->hotel_name,
                         'origin_airport' => $team->originAirport?->code,
@@ -359,6 +382,9 @@ class LmsController extends Controller
 
         return Inertia::render('Jobs', [
             'schedule' => $jobs,
+            // Same pools the Planning movement editor offers, for crew changes in the override modal.
+            'drivers' => Driver::select('id', 'name')->orderBy('name')->get(),
+            'supervisors' => User::select('id', 'name')->orderBy('name')->get(),
         ]);
     }
 
@@ -881,10 +907,10 @@ class LmsController extends Controller
     {
         try {
             $validated = $request->validate([
-                'state' => 'required|in:done,skipped',
+                'state' => 'nullable|in:done,skipped',
                 'actual_time' => 'nullable|date_format:H:i',
                 'exclude_date' => 'nullable|boolean',
-                'reason' => 'required|string|max:255',
+                'reason' => 'required_with:state|nullable|string|max:255',
                 'notes' => 'nullable|string',
                 'planned_bags' => 'nullable|integer|min:0',
                 'bags_loaded' => 'nullable|integer|min:0',
@@ -893,11 +919,38 @@ class LmsController extends Controller
                 'photo' => 'nullable|image|max:10240', // Max 10MB
                 'signature_data' => 'nullable|string', // Base64 encoded image
                 'update_flight_actual' => 'nullable|string', // Flag to update team flight actual_at
+                'driver_id' => 'nullable|integer|exists:drivers,id',
+                'supervisor_id' => 'nullable|integer|exists:users,id',
             ]);
 
             $checkpoint = JobCheckpoint::with(['job.movement', 'checkpoint'])->findOrFail($checkpointId);
 
             $this->authorize('override', $checkpoint->job);
+
+            $driverId = isset($validated['driver_id']) ? (int) $validated['driver_id'] : null;
+            $supervisorId = isset($validated['supervisor_id']) ? (int) $validated['supervisor_id'] : null;
+
+            // No new state: this is a crew change only, and the checkpoint is left as it is.
+            if (empty($validated['state'])) {
+                $changed = app(JobLifecycleService::class)->changeCrew(
+                    $checkpoint->job,
+                    $driverId,
+                    $supervisorId,
+                    $validated['reason'] ?? null,
+                );
+
+                if (! $changed) {
+                    throw \Illuminate\Validation\ValidationException::withMessages([
+                        'state' => 'Pick a new state, or change the driver or supervisor.',
+                    ]);
+                }
+
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Crew updated successfully',
+                    'checkpoint' => $checkpoint->fresh(),
+                ]);
+            }
 
             $checkpoint = app(JobLifecycleService::class)->overrideCheckpoint(
                 $checkpoint,
@@ -916,6 +969,8 @@ class LmsController extends Controller
                     'bags_loaded' => $validated['bags_loaded'] ?? null,
                     'food_bags' => $validated['food_bags'] ?? null,
                     'oversized_pieces' => $validated['oversized_pieces'] ?? null,
+                    'driver_id' => $driverId,
+                    'supervisor_id' => $supervisorId,
                 ],
             );
 

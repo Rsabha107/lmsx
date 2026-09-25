@@ -296,6 +296,7 @@ const allNavItems = [
       { label: 'Library',       route: 'library',           icon: 'database', can: 'console.view' },
       { label: 'Events',        route: 'events',            icon: 'trophy',   can: 'events.view' },
       { label: 'Venues',        route: 'venues',            icon: 'building', can: 'console.view' },
+      { label: 'Airports',      route: 'airports',          icon: 'plane',    can: 'fleet.view' },
       { label: 'Fleet',         route: 'fleet',             icon: 'fleet',    can: 'fleet.view' },
       { label: 'Movement Tracking', route: 'kit-truck',     icon: 'fleet',    can: 'fleet.view' },
       { label: 'Contacts',      route: 'contacts',          icon: 'contacts', can: 'fleet.view' },

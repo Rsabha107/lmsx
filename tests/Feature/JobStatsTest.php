@@ -71,4 +71,38 @@ class JobStatsTest extends TestCase
                 ->where('schedule.0.metrics.spanMinutes', null)
                 ->where('schedule.0.metrics.varianceCount', 0));
     }
+
+    public function test_a_match_job_carries_match_and_job_details_for_the_detail_panel(): void
+    {
+        $event = $this->createEvent();
+        $plan = $this->createPlan($event);
+        $home = $this->createTeam($event);
+        $away = $this->createTeam($event);
+        $venue = \App\Models\Venue::create(['name' => 'Aspire Zone']);
+        $match = \App\Models\GameMatch::create([
+            'event_id' => $event->id,
+            'match_number' => 'FU17-004',
+            'team1_id' => $home->id,
+            'team2_id' => $away->id,
+            'venue_id' => $venue->id,
+            'stage' => 'Group A',
+            'match_date' => '2026-11-19',
+            'kick_off' => '2026-11-19 18:00:00',
+        ]);
+        $movement = $this->createMovement($event, $plan, $home, ['kind' => 'match', 'match_id' => $match->id]);
+        $this->createJob($event, $movement, $home, ['plan_id' => $plan->id]);
+
+        $this->actingAs($this->createUserWithRole('admin'))
+            ->withSession(['active_event_id' => $event->id])
+            ->get('/jobs')
+            ->assertInertia(fn ($page) => $page
+                ->where('schedule.0.match.lineup', "{$home->code} vs {$away->code}")
+                ->where('schedule.0.match.team1', $home->team_name)
+                ->where('schedule.0.match.stage', 'Group A')
+                ->where('schedule.0.match.kick_off', '2026-11-19 18:00')
+                ->where('schedule.0.match.venue.name', 'Aspire Zone')
+                ->where('schedule.0.job_info.movement_code', $movement->code)
+                ->where('schedule.0.job_info.plan_name', $plan->name)
+                ->where('schedule.0.job_info.plan_code', $plan->code));
+    }
 }

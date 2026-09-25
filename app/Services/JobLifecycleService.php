@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\AuditLog;
+use App\Models\Driver;
 use App\Models\JobCheckpoint;
 use App\Models\JobOperation;
 use App\Models\User;
@@ -256,7 +257,8 @@ class JobLifecycleService
      * @param  array{
      *     state: string, reason: string, notes?: ?string, actual_time?: ?string,
      *     exclude_date?: bool, photo?: UploadedFile|string|null, signature?: ?string,
-     *     planned_bags?: ?int, bags_loaded?: ?int, food_bags?: ?int, oversized_pieces?: ?int
+     *     planned_bags?: ?int, bags_loaded?: ?int, food_bags?: ?int, oversized_pieces?: ?int,
+     *     driver_id?: ?int, supervisor_id?: ?int
      * }  $data
      */
     public function overrideCheckpoint(JobCheckpoint $checkpoint, User $actor, array $data): JobCheckpoint
@@ -331,6 +333,10 @@ class JobLifecycleService
                     eventId: $checkpoint->job?->event_id,
                 );
 
+                if ($checkpoint->job) {
+                    $this->reassignCrew($checkpoint->job, $data['driver_id'] ?? null, $data['supervisor_id'] ?? null, $data['reason']);
+                }
+
                 return $checkpoint->fresh();
             });
         } catch (Throwable $e) {
@@ -338,6 +344,57 @@ class JobLifecycleService
 
             throw $e;
         }
+    }
+
+    /**
+     * Change a job's crew without touching any checkpoint.
+     *
+     * @return bool whether anything actually changed
+     */
+    public function changeCrew(JobOperation $job, ?int $driverId, ?int $supervisorId, ?string $reason): bool
+    {
+        return DB::transaction(fn () => $this->reassignCrew($job, $driverId, $supervisorId, $reason));
+    }
+
+    /**
+     * Swap the driver and/or supervisor on a job, mirroring the change onto its
+     * movement so Planning shows the same crew. A null id leaves that role as is.
+     */
+    private function reassignCrew(JobOperation $job, ?int $driverId, ?int $supervisorId, ?string $reason): bool
+    {
+        $changes = [];
+
+        if ($driverId !== null && $driverId !== $job->driver_id) {
+            $from = $job->driver?->name ?? 'Unassigned';
+            $job->driver_id = $driverId;
+            $changes[] = "Driver {$from} → " . (Driver::find($driverId)?->name ?? "#{$driverId}");
+        }
+
+        if ($supervisorId !== null && $supervisorId !== $job->supervisor_id) {
+            $from = $job->supervisor?->name ?? 'Unassigned';
+            $job->supervisor_id = $supervisorId;
+            $changes[] = "Supervisor {$from} → " . (User::find($supervisorId)?->name ?? "#{$supervisorId}");
+        }
+
+        if ($changes === []) {
+            return false;
+        }
+
+        $job->save();
+        $job->movement?->update([
+            'driver_id' => $job->driver_id,
+            'field_supervisor_id' => $job->supervisor_id,
+        ]);
+
+        AuditLog::record(
+            action: 'Job crew changed',
+            target: $job->job_id ?? 'JOB',
+            meta: implode('; ', $changes) . ' · ' . ($reason ?: 'no reason given'),
+            subject: $job,
+            eventId: $job->event_id,
+        );
+
+        return true;
     }
 
     /**

@@ -10,7 +10,7 @@
     </div>
 
     <!-- Active Event Content -->
-    <div v-else>
+    <div v-else class="jobs-page">
     <div class="page-header">
       <div style="display: flex; align-items: center; gap: 12px;">
         <div>
@@ -128,7 +128,7 @@
                   v-if="job.kind"
                   class="jl-job-phase"
                   :class="`jl-job-phase--${job.kind}`"
-                >{{ job.kind }}</span>
+                >{{ job.kind }}<template v-if="job.match?.match_number"> {{ job.match.match_number }}</template></span>
                 <span v-if="job.functional_area" class="jl-fa-badge">{{ job.functional_area }}</span>
                 <span
                   v-if="openIssueCount(job)"
@@ -136,6 +136,7 @@
                   :title="`${openIssueCount(job)} unresolved issue(s) reported from the field`"
                 >⚑ {{ openIssueCount(job) }}</span>
               </div>
+              <span v-if="job.match?.lineup" class="jl-lineup" :title="job.match.lineup">{{ job.match.lineup }}</span>
               <span class="jl-route" :title="`${formatJobFromLocation(job)} → ${formatJobToLocation(job)}`">{{ formatJobFromLocation(job) }} → {{ formatJobToLocation(job) }}</span>
             </div>
             <div class="jl-col-progress">
@@ -262,6 +263,7 @@
             </div>
           </div>
 
+          <div class="side-column">
           <!-- Crew card -->
           <div class="crew-section">
             <div class="checkpoint-header">
@@ -286,6 +288,65 @@
                 <status-pill tone="ok" :dot="true" size="sm">On shift</status-pill>
               </div>
             </div>
+          </div>
+
+          <div class="detail-card">
+            <div class="info-head">
+              <h3 class="section-title">Job</h3>
+              <span class="section-kicker">{{ selectedJob.id }}</span>
+            </div>
+            <dl class="info-list">
+              <dt>Movement</dt>
+              <dd class="info-mono">{{ selectedJob.job_info?.movement_code || '—' }}</dd>
+              <dt>Plan</dt>
+              <dd>
+                {{ selectedJob.job_info?.plan_name || '—' }}
+                <span v-if="selectedJob.job_info?.plan_code" class="info-mono info-muted"> · {{ selectedJob.job_info.plan_code }}</span>
+              </dd>
+              <dt>Sequence</dt>
+              <dd>{{ selectedJob.job_info?.sequence || '—' }}</dd>
+              <dt>Generated</dt>
+              <dd>{{ formatStamp(selectedJob.job_info?.generated_at) }}</dd>
+              <template v-if="selectedJob.job_info?.dispatched_at">
+                <dt>Dispatched</dt>
+                <dd>{{ formatStamp(selectedJob.job_info.dispatched_at) }}</dd>
+              </template>
+              <template v-if="selectedJob.job_info?.started_at">
+                <dt>Started</dt>
+                <dd>{{ formatStamp(selectedJob.job_info.started_at) }}</dd>
+              </template>
+              <template v-if="selectedJob.job_info?.completed_at">
+                <dt>Completed</dt>
+                <dd>{{ formatStamp(selectedJob.job_info.completed_at) }}</dd>
+              </template>
+              <template v-if="selectedJob.job_info?.notes">
+                <dt>Notes</dt>
+                <dd class="info-notes">{{ selectedJob.job_info.notes }}</dd>
+              </template>
+            </dl>
+          </div>
+
+          <div v-if="selectedJob.match" class="detail-card">
+            <div class="info-head">
+              <h3 class="section-title">Match</h3>
+              <span class="section-kicker">{{ selectedJob.match.match_number }}</span>
+            </div>
+            <div class="info-lineup">
+              {{ selectedJob.match.team1 }} <span class="info-vs">vs</span> {{ selectedJob.match.team2 }}
+            </div>
+            <dl class="info-list">
+              <dt>Kick-off</dt>
+              <dd>{{ formatStamp(selectedJob.match.kick_off) }}</dd>
+              <template v-if="selectedJob.match.gates_opening">
+                <dt>Gates open</dt>
+                <dd>{{ selectedJob.match.gates_opening }}</dd>
+              </template>
+              <dt>Venue</dt>
+              <dd>{{ selectedJob.match.venue?.name || '—' }}</dd>
+              <dt>Stage</dt>
+              <dd>{{ selectedJob.match.stage || '—' }}</dd>
+            </dl>
+          </div>
           </div>
         </div>
       </div>
@@ -344,7 +405,7 @@
       </div>
     </div>
     <!-- Override Checkpoint Modal -->
-    <Modal :show="showOverrideModal" @close="showOverrideModal = false" maxWidth="500px">
+    <Modal :show="showOverrideModal" @close="showOverrideModal = false" maxWidth="760px">
       <template #title>
         <span class="override-modal-title-wrap">
           <span class="override-privileged-badge">PRIVILEGED ACTION · {{ selectedJob?.id }}</span>
@@ -359,8 +420,31 @@
         </div>
 
         <div class="override-field">
-          <label class="override-label">CHECKPOINT</label>
+          <label class="override-label">NEW STATE (OPTIONAL)</label>
+          <div class="override-states" :style="{ gridTemplateColumns: `repeat(${overrideStates.length}, 1fr)` }">
+            <button v-for="s in overrideStates" :key="s.value"
+              type="button"
+              role="checkbox"
+              :class="['override-state-btn', `override-state-btn--${s.value}`, overrideState === s.value ? 'override-state-btn--active' : '']"
+              :aria-checked="overrideState === s.value"
+              @click="overrideState = overrideState === s.value ? null : s.value">
+              <span class="override-state-check" aria-hidden="true">
+                <svg v-if="overrideState === s.value" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg>
+              </span>
+              <span class="override-state-icon">{{ s.icon }}</span>
+              <strong>{{ s.label }}</strong>
+              <small>{{ s.desc }}</small>
+            </button>
+          </div>
+          <div class="override-field-hint">
+            {{ overrideState ? 'Click it again to leave the checkpoint as it is.' : 'Leave unselected to change only the driver or supervisor.' }}
+          </div>
+        </div>
+
+        <div v-if="overrideState" class="override-field">
+          <label class="override-label">CHECKPOINT (REQUIRED)</label>
           <select v-model="overrideCheckpoint" class="override-select override-select--checkpoints">
+            <option :value="null" disabled>Select a checkpoint…</option>
             <option v-for="cp in selectedJob?.checkpoints" :key="cp.id" :value="cp" :class="cp.state === 'done' ? 'checkpoint-option--done' : ''">
               {{ cp.label || cp.name }} — {{ cp.status || cp.state }} {{ cp.state === 'done' && cp.scheduled_at && cp.completed_at ? `(${cp.scheduled_at} → ${cp.completed_at} ✓)` : `(scheduled ${cp.scheduled_at || cp.at})` }}{{ (cp.requires_photo || cp.requiresPhoto || cp.requires_signature || cp.requiresSignature) ? ' 📋' : '' }}
             </option>
@@ -370,19 +454,6 @@
             <span v-if="overrideCheckpoint?.requires_photo || overrideCheckpoint?.requiresPhoto">Photo</span>
             <span v-if="(overrideCheckpoint?.requires_photo || overrideCheckpoint?.requiresPhoto) && (overrideCheckpoint?.requires_signature || overrideCheckpoint?.requiresSignature)"> and </span>
             <span v-if="overrideCheckpoint?.requires_signature || overrideCheckpoint?.requiresSignature">Signature</span>
-          </div>
-        </div>
-
-        <div class="override-field">
-          <label class="override-label">NEW STATE</label>
-          <div class="override-states" :style="{ gridTemplateColumns: `repeat(${overrideStates.length}, 1fr)` }">
-            <button v-for="s in overrideStates" :key="s.value"
-              :class="['override-state-btn', `override-state-btn--${s.value}`, overrideState === s.value ? 'override-state-btn--active' : '']"
-              @click="overrideState = s.value">
-              <span class="override-state-icon">{{ s.icon }}</span>
-              <strong>{{ s.label }}</strong>
-              <small>{{ s.desc }}</small>
-            </button>
           </div>
         </div>
 
@@ -428,7 +499,30 @@
           </div>
         </div>
 
-        <div class="override-field">
+        <div class="override-two-col">
+          <div class="override-field">
+            <label class="override-label">DRIVER</label>
+            <select v-model="overrideDriverId" class="override-select">
+              <option :value="null" disabled>Unassigned — pick a driver</option>
+              <option v-for="d in props.drivers" :key="d.id" :value="d.id">{{ d.name }}</option>
+            </select>
+            <div v-if="overrideDriverId !== (selectedJob?.driver_id ?? null)" class="override-field-hint override-field-hint--change">
+              Changes from {{ selectedJob?.driver || 'Unassigned' }}
+            </div>
+          </div>
+          <div class="override-field">
+            <label class="override-label">SUPERVISOR</label>
+            <select v-model="overrideSupervisorId" class="override-select">
+              <option :value="null" disabled>Unassigned — pick a supervisor</option>
+              <option v-for="s in props.supervisors" :key="s.id" :value="s.id">{{ s.name }}</option>
+            </select>
+            <div v-if="overrideSupervisorId !== (selectedJob?.supervisor_id ?? null)" class="override-field-hint override-field-hint--change">
+              Changes from {{ selectedJob?.supervisor || 'Unassigned' }}
+            </div>
+          </div>
+        </div>
+
+        <div v-if="overrideState" class="override-field">
           <label class="override-label">REASON (REQUIRED)</label>
           <select v-model="overrideReason" class="override-select">
             <option value="" disabled>Select a reason…</option>
@@ -500,7 +594,7 @@
           <span class="override-signed-as">Signed as <strong>{{ page.props.auth?.user?.name || 'Unknown user' }}</strong></span>
           <div style="display:flex;gap:8px;">
             <Button variant="secondary" size="sm" @click="showOverrideModal = false" :disabled="overrideProcessing">Cancel</Button>
-            <Button variant="primary" size="sm" :disabled="!canSubmitOverride" :processing="overrideProcessing" @click="submitOverride">Override &amp; log</Button>
+            <Button variant="primary" size="sm" :disabled="!canSubmitOverride" :processing="overrideProcessing" @click="submitOverride">{{ overrideState ? 'Override & log' : 'Save crew change' }}</Button>
           </div>
         </div>
       </template>
@@ -561,6 +655,8 @@ const hasActiveEvent = computed(() => !!page.props.activeEventId);
 
 const props = defineProps({
   schedule: { type: Array, default: () => [] },
+  drivers: { type: Array, default: () => [] },
+  supervisors: { type: Array, default: () => [] },
 });
 
 const selectedJob = ref(null);
@@ -790,6 +886,15 @@ function formatDateLong(dateString) {
   const date = new Date(dateString);
   const options = { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' };
   return date.toLocaleDateString('en-US', options);
+}
+
+// Server sends local "YYYY-MM-DD HH:MM"; built by hand so no timezone shift is applied.
+function formatStamp(value) {
+  const m = value?.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}:\d{2})/);
+  if (!m) return '—';
+  const date = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  const day = date.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
+  return `${day} · ${m[4]}`;
 }
 
 function formatTimeAgo(dateString) {
@@ -1081,12 +1186,14 @@ const canOverride = computed(() => page.props.auth?.can?.['jobs.override'] === t
 const showOverrideModal = ref(false);
 const overrideProcessing = ref(false);
 const overrideCheckpoint = ref(null);
-const overrideState = ref('done');
+const overrideState = ref(null); // null = leave the checkpoint as it is (crew change only)
 const overrideTime = ref('');
 const overrideExcludeDate = ref(false);
 const overrideReason = ref('');
 const overrideNotes = ref('');
 const overrideNotify = ref(true);
+const overrideDriverId = ref(null);
+const overrideSupervisorId = ref(null);
 const overridePlannedBags = ref(0);
 const overrideBagsLoaded = ref(0);
 const overrideFoodBags = ref(0);
@@ -1121,6 +1228,11 @@ watch(overrideCheckpoint, () => {
   syncOverrideBaggageFields();
 });
 
+// A hidden reason must not be sent with a crew-only change.
+watch(overrideState, (state) => {
+  if (!state) overrideReason.value = '';
+});
+
 function openOverrideModal() {
   const active = selectedJob.value?.checkpoints?.find(c => c.status === 'active' || c.state === 'active');
   overrideCheckpoint.value = active ?? selectedJob.value?.checkpoints?.[0] ?? null;
@@ -1134,10 +1246,8 @@ function openOverrideModal() {
     requiresSignature: overrideCheckpoint.value?.requiresSignature
   });
   
-  // Set initial state - if checkpoint requires evidence, start with 'done', otherwise 'done'
-  const requiresEvidence = overrideCheckpoint.value?.requires_photo || overrideCheckpoint.value?.requiresPhoto || 
-                           overrideCheckpoint.value?.requires_signature || overrideCheckpoint.value?.requiresSignature;
-  overrideState.value = 'done';
+  // Nothing is preselected: a state is only applied when the user picks one.
+  overrideState.value = null;
   
   const now = new Date();
   overrideTime.value = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
@@ -1145,6 +1255,8 @@ function openOverrideModal() {
   overrideReason.value = '';
   overrideNotes.value = '';
   overrideNotify.value = true;
+  overrideDriverId.value = selectedJob.value?.driver_id ?? null;
+  overrideSupervisorId.value = selectedJob.value?.supervisor_id ?? null;
   syncOverrideBaggageFields();
   overridePhoto.value = null;
   overridePhotoPreview.value = null;
@@ -1211,8 +1323,18 @@ const overrideVarianceText = computed(() => {
   return v > 0 ? `+${abs} min late` : `${abs} min early`;
 });
 
+const overrideCrewChanged = computed(() =>
+  (overrideDriverId.value !== null && overrideDriverId.value !== (selectedJob.value?.driver_id ?? null))
+  || (overrideSupervisorId.value !== null && overrideSupervisorId.value !== (selectedJob.value?.supervisor_id ?? null))
+);
+
 const canSubmitOverride = computed(() => {
-  if (!overrideReason.value || overrideProcessing.value) return false;
+  if (overrideProcessing.value) return false;
+
+  // Without a new state there is only a crew change to save.
+  if (!overrideState.value) return overrideCrewChanged.value;
+
+  if (!overrideCheckpoint.value || !overrideReason.value) return false;
   
   // Check if state is 'done' and checkpoint requires photo or signature
   if (overrideState.value === 'done') {
@@ -1417,7 +1539,7 @@ function confirmStatusChange() {
 }
 
 function submitOverride() {
-  if (!overrideReason.value || !overrideCheckpoint.value) return;
+  if (!canSubmitOverride.value || !overrideCheckpoint.value) return;
 
   // Validate required photo
   const needsPhoto = overrideCheckpoint.value?.requires_photo || overrideCheckpoint.value?.requiresPhoto;
@@ -1440,9 +1562,15 @@ function submitOverride() {
   
   // Build FormData for file uploads
   const formData = new FormData();
-  formData.append('state', overrideState.value);
-  formData.append('reason', overrideReason.value);
+  if (overrideState.value) formData.append('state', overrideState.value);
+  if (overrideReason.value) formData.append('reason', overrideReason.value);
   if (overrideNotes.value) formData.append('notes', overrideNotes.value);
+  if (overrideDriverId.value !== null && overrideDriverId.value !== (selectedJob.value?.driver_id ?? null)) {
+    formData.append('driver_id', overrideDriverId.value);
+  }
+  if (overrideSupervisorId.value !== null && overrideSupervisorId.value !== (selectedJob.value?.supervisor_id ?? null)) {
+    formData.append('supervisor_id', overrideSupervisorId.value);
+  }
 
   // Add actual time only for 'done' state
   if (overrideState.value === 'done') {
@@ -1595,6 +1723,8 @@ function submitOverride() {
 .btn--secondary { background: #fff; border-color: var(--border); color: var(--ink3); }
 .btn--secondary:hover { background: var(--panel); color: var(--ink); }
 
+.jobs-page { padding-bottom: 5px; }
+
 .jobs-layout {
   display: grid; grid-template-columns: 580px 1fr; gap: 12px;
   min-height: 0; flex: 1;
@@ -1735,6 +1865,12 @@ function submitOverride() {
 .jl-job-phase--training { background: #ede9fe; color: #6d28d9; }
 .jl-job-phase--daily_ops { background: var(--panel); color: var(--ink3); }
 
+.jl-lineup {
+  font-size: 10.5px; font-weight: 600; color: var(--ink2);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  display: block; max-width: 100%;
+}
+
 .jl-job-date {
   font-size: 9px;
   font-weight: 600;
@@ -1866,6 +2002,8 @@ function submitOverride() {
 .job-detail-panel {
   display: flex; flex-direction: column; gap: 14px;
   align-self: start;
+  /* The panel can run past the fixed-height layout, so the page padding alone wouldn't clear it. */
+  padding-bottom: 5px;
 }
 
 .detail-card {
@@ -1877,6 +2015,19 @@ function submitOverride() {
     padding: 12px;
   }
 }
+
+.info-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 10px; }
+.info-lineup { font-size: 14px; font-weight: 700; color: var(--ink); margin-bottom: 10px; }
+.info-vs { font-weight: 500; color: var(--ink3); margin: 0 4px; }
+.info-list {
+  display: grid; grid-template-columns: max-content 1fr; gap: 6px 14px;
+  margin: 0; font-size: 12.5px;
+}
+.info-list dt { color: var(--ink3); font-weight: 500; }
+.info-list dd { margin: 0; color: var(--ink); min-width: 0; overflow-wrap: anywhere; }
+.info-mono { font-family: var(--mono, ui-monospace, monospace); font-size: 11.5px; }
+.info-muted { color: var(--ink3); }
+.info-notes { white-space: pre-wrap; }
 
 .job-detail-empty {
   background: var(--panel); border: 1px dashed var(--border);
@@ -2135,6 +2286,8 @@ function submitOverride() {
   border-radius: 10px; overflow: hidden;
 }
 
+.side-column { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+
 .crew-list {
   padding: 0 16px;
 }
@@ -2252,18 +2405,33 @@ function submitOverride() {
 }
 
 .override-field-hint { font-size: 11px; color: var(--ink4); }
+.override-field-hint--change { color: #b45309; font-weight: 600; }
 
 .override-states {
   display: grid; gap: 8px;
 }
 
 .override-state-btn {
+  position: relative;
   display: flex; flex-direction: column; gap: 3px;
   padding: 10px 12px; border-radius: 8px;
   border: 1.5px solid var(--border); background: var(--surface);
   cursor: pointer; text-align: left; font-family: inherit;
   transition: border-color 0.15s, background 0.15s;
 }
+.override-state-btn:hover { border-color: var(--ink4); }
+.override-state-check {
+  position: absolute; top: 8px; right: 8px;
+  width: 16px; height: 16px; border-radius: 4px;
+  display: grid; place-items: center;
+  border: 1.5px solid var(--border); background: var(--surface); color: #fff;
+  transition: background 0.15s, border-color 0.15s;
+}
+.override-state-btn--active .override-state-check { border-color: currentColor; }
+.override-state-btn--done.override-state-btn--active .override-state-check { background: #166534; border-color: #166534; }
+.override-state-btn--missed.override-state-btn--active .override-state-check { background: #c2410c; border-color: #c2410c; }
+.override-state-btn--skipped.override-state-btn--active .override-state-check { background: var(--ink3); border-color: var(--ink3); }
+.override-state-btn--success.override-state-btn--active .override-state-check { background: #065F46; border-color: #065F46; }
 .override-state-btn strong { font-size: 13px; font-weight: 700; color: var(--ink); }
 .override-state-btn small  { font-size: 10px; color: var(--ink3); line-height: 1.3; }
 .override-state-icon { font-size: 14px; margin-bottom: 2px; }

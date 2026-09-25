@@ -597,10 +597,10 @@
     </Modal>
 
     <!-- Import Results Modal -->
-    <Modal :show="showMatchImportResultsModal" @close="showMatchImportResultsModal = false" max-width="640px">
+    <Modal :show="showMatchImportResultsModal" :closeable="false" max-width="640px">
       <template #title>Import Results</template>
       <div style="display: flex; flex-direction: column; gap: 14px;">
-        <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px;">
+        <div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px;">
           <div style="padding: 10px; background: var(--panel); border-radius: 6px; text-align: center;">
             <div style="font-size: 18px; font-weight: 700; color: var(--ink);">{{ matchImportResult?.created ?? 0 }}</div>
             <div style="font-size: 10px; font-weight: 700; color: var(--ink3); text-transform: uppercase; letter-spacing: 0.5px;">Created</div>
@@ -612,6 +612,10 @@
           <div style="padding: 10px; background: var(--panel); border-radius: 6px; text-align: center;">
             <div style="font-size: 18px; font-weight: 700; color: var(--ink);">{{ matchImportResult?.unchanged ?? 0 }}</div>
             <div style="font-size: 10px; font-weight: 700; color: var(--ink3); text-transform: uppercase; letter-spacing: 0.5px;">Unchanged</div>
+          </div>
+          <div :style="{ padding: '10px', background: matchImportNeedsReview ? '#FEF3C7' : 'var(--panel)', borderRadius: '6px', textAlign: 'center' }">
+            <div :style="{ fontSize: '18px', fontWeight: 700, color: matchImportNeedsReview ? '#92400E' : 'var(--ink)' }">{{ matchImportNeedsReview }}</div>
+            <div :style="{ fontSize: '10px', fontWeight: 700, color: matchImportNeedsReview ? '#92400E' : 'var(--ink3)', textTransform: 'uppercase', letterSpacing: '0.5px' }">Needs Review</div>
           </div>
           <div style="padding: 10px; background: #FEE2E2; border-radius: 6px; text-align: center;">
             <div style="font-size: 18px; font-weight: 700; color: #991B1B;">{{ matchImportResult?.failed?.length ?? 0 }}</div>
@@ -627,6 +631,48 @@
             <div v-for="item in matchImportResult.incomplete" :key="item.row" style="padding: 8px 12px; border-bottom: 1px solid var(--border); font-size: 12px; display: flex; justify-content: space-between; gap: 10px;">
               <span style="font-weight: 600; color: var(--ink);">{{ item.code }}</span>
               <span style="color: var(--ink3);">missing {{ item.missing.join(", ") }}</span>
+            </div>
+          </div>
+        </div>
+
+        <div v-if="matchImportResult?.match_changes?.length" style="border: 1px solid var(--border); border-radius: 6px; overflow: hidden;">
+          <div style="background: #DBEAFE; padding: 8px 12px; font-size: 11px; font-weight: 700; color: #1E40AF; text-transform: uppercase; letter-spacing: 0.5px;">
+            Match Changes ({{ matchImportResult.match_changes.length }})
+          </div>
+          <div style="max-height: 260px; overflow-y: auto;">
+            <div v-for="(change, i) in matchImportResult.match_changes" :key="`mc${i}`" style="padding: 8px 12px; border-bottom: 1px solid var(--border); font-size: 12px;">
+              <div style="display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline;">
+                <span style="font-weight: 700; color: var(--ink);">{{ change.code }}</span>
+                <span v-if="change.teams_before !== change.teams_after" style="color: var(--ink);">
+                  {{ change.teams_before }} → <strong>{{ change.teams_after }}</strong>
+                </span>
+                <span v-else style="color: var(--ink3);">{{ change.teams_after }}</span>
+                <span v-if="change.time_before !== change.time_after" style="color: var(--ink);">
+                  {{ change.time_before || '—' }} → <strong>{{ change.time_after }}</strong>
+                </span>
+                <span v-if="change.venue_before !== change.venue_after" style="color: var(--ink);">
+                  {{ change.venue_before || '—' }} → <strong>{{ change.venue_after }}</strong>
+                </span>
+              </div>
+              <div v-if="!change.movements.length" style="margin-top: 3px; color: var(--ink3);">No planned movements affected.</div>
+              <div
+                v-for="m in change.movements"
+                :key="m.id"
+                :style="{ marginTop: '4px', padding: '5px 8px', borderRadius: '4px', background: m.status === 'needs_review' ? '#FEF3C7' : 'var(--panel)' }"
+              >
+                <div style="display: flex; justify-content: space-between; gap: 10px;">
+                  <span style="color: var(--ink);">
+                    <strong>{{ m.code }}</strong>
+                    <span v-if="m.team" style="color: var(--ink3);"> · {{ m.team }}</span>
+                    <span v-if="m.plan" style="color: var(--ink3);"> · {{ m.plan }}</span>
+                  </span>
+                  <span style="display: flex; gap: 8px; white-space: nowrap;">
+                    <span v-if="m.to && m.from !== m.to" style="color: var(--ink);">{{ m.from || '—' }} → <strong>{{ m.to }}</strong></span>
+                    <span v-if="m.status === 'needs_review'" style="font-weight: 700; color: #92400E;">Needs review</span>
+                  </span>
+                </div>
+                <div v-for="(note, n) in m.notes" :key="n" :style="{ fontSize: '11px', color: m.status === 'needs_review' ? '#92400E' : 'var(--ink3)' }">{{ note }}</div>
+              </div>
             </div>
           </div>
         </div>
@@ -1041,6 +1087,11 @@ const matchImporting = ref(false);
 const matchImportError = ref("");
 const showMatchImportResultsModal = ref(false);
 const matchImportResult = ref(null);
+const matchImportNeedsReview = computed(() =>
+  (matchImportResult.value?.match_changes ?? [])
+    .flatMap((change) => change.movements)
+    .filter((m) => m.status === 'needs_review').length
+);
 
 const matchImportTemplateUrl = "/matches/import-template";
 

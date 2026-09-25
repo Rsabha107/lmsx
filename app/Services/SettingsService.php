@@ -252,6 +252,25 @@ class SettingsService
     {
         return "checkpoint_setting.{$key}.{$scope}." . ($scopeId ?? 'null') . ".checkpoint.{$checkpointId}";
     }
+
+    /**
+     * Which level a movement offset resolves from - 'event', 'global', or null
+     * when nothing is configured - using the same cascade as the getters.
+     */
+    public function offsetScope(string $movementType, ?int $eventId, ?int $checkpointId = null): ?string
+    {
+        $key = "movement_offset.{$movementType}";
+
+        $lookup = fn (string $scope, ?int $scopeId) => $checkpointId
+            ? $this->getCheckpointSetting($key, $scope, $scopeId, $checkpointId)
+            : $this->getSetting($key, $scope, $scopeId);
+
+        if ($eventId && $lookup(Setting::SCOPE_EVENT, $eventId) !== null) {
+            return 'event';
+        }
+
+        return $lookup(Setting::SCOPE_GLOBAL, null) !== null ? 'global' : null;
+    }
     
     /**
      * Clear all settings cache.

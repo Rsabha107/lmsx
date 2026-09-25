@@ -3,12 +3,14 @@
 namespace App\Http\Controllers;
 
 use App\Http\Controllers\Concerns\ReadsSpreadsheetRows;
+use App\Models\Event;
 use App\Services\AbstractSheetReader;
 use App\Services\MatchImportService;
 use App\Services\MatchSheetReader;
 use App\Services\TeamImportService;
 use App\Services\TeamSheetReader;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -30,7 +32,7 @@ class UtilitiesController extends Controller
     /**
      * The converters on offer, keyed by the URL segment that selects one.
      *
-     * @var array<string, array{title: string, reader: class-string<AbstractSheetReader>, headers: array<int, string>, blurb: string, importHint: string}>
+     * @var array<string, array{title: string, reader: class-string<AbstractSheetReader>, headers: array<int, string>, blurb: string, importHint: string, suffix: string}>
      */
     private const CONVERTERS = [
         'teams' => [
@@ -39,6 +41,7 @@ class UtilitiesController extends Controller
             'headers' => TeamImportService::HEADERS,
             'blurb' => "Convert an organiser's team spreadsheet into the Event Teams import template.",
             'importHint' => 'Download this file, then upload it on the Event Teams page to import. Rows are matched by Trigram, so importing the same file twice updates rather than duplicates.',
+            'suffix' => 'TEAMS',
         ],
         'matches' => [
             'title' => 'Match Sheet Converter',
@@ -46,35 +49,36 @@ class UtilitiesController extends Controller
             'headers' => MatchImportService::HEADERS,
             'blurb' => "Convert an organiser's fixtures spreadsheet into the Matches import template.",
             'importHint' => 'Download this file, then upload it on the Matches page to import. Rows are matched by Match Number, so importing the same file twice updates rather than duplicates.',
+            'suffix' => 'MATCHES',
         ],
     ];
 
-    public function index(): Response
+    public function index(Request $request): Response
     {
+        $requested = (string) $request->query('tool');
+
         return Inertia::render('Utilities/Index', [
-            'converters' => collect(self::CONVERTERS)
+            'tools' => collect(self::CONVERTERS)
                 ->map(fn (array $c, string $type) => [
                     'type' => $type,
                     'title' => $c['title'],
                     'blurb' => $c['blurb'],
+                    'importHint' => $c['importHint'],
+                    'headers' => $c['headers'],
                 ])
                 ->values()
                 ->all(),
+            'activeTool' => isset(self::CONVERTERS[$requested]) ? $requested : array_key_first(self::CONVERTERS),
+            'canUseAi' => (bool) $request->user()?->can('ai.use'),
         ]);
     }
 
-    public function converter(Request $request, string $type): Response
+    /** The converters share one tabbed page now; keep old links working. */
+    public function converter(string $type): RedirectResponse
     {
-        $converter = $this->definition($type);
+        $this->definition($type);
 
-        return Inertia::render('Utilities/SheetConverter', [
-            'type' => $type,
-            'title' => $converter['title'],
-            'blurb' => $converter['blurb'],
-            'importHint' => $converter['importHint'],
-            'headers' => $converter['headers'],
-            'canUseAi' => (bool) $request->user()?->can('ai.use'),
-        ]);
+        return redirect()->route('utilities.index', ['tool' => $type]);
     }
 
     /**
@@ -120,7 +124,7 @@ class UtilitiesController extends Controller
                 array_map($this->fieldKey(...), $headers),
                 array_column($report['columns'], 'field'),
             )),
-            'suggestedFilename' => $this->suggestFilename($request->file('file')->getClientOriginalName()),
+            'suggestedFilename' => $this->exportFilename($request, $type),
         ]);
     }
 
@@ -138,7 +142,6 @@ class UtilitiesController extends Controller
             'rows' => 'required|array|min:1|max:1000',
             'rows.*' => 'array|size:' . count($headers),
             'rows.*.*' => 'nullable|string|max:500',
-            'filename' => 'sometimes|string|max:120',
         ]);
 
         $writer = new Xlsx($this->buildTemplateSpreadsheet(
@@ -147,7 +150,7 @@ class UtilitiesController extends Controller
             $validated['rows'],
         ));
 
-        $filename = $this->sanitizeFilename($validated['filename'] ?? 'converted.xlsx');
+        $filename = $this->exportFilename($request, $type);
 
         return response()->streamDownload(function () use ($writer) {
             $writer->save('php://output');
@@ -191,18 +194,22 @@ class UtilitiesController extends Controller
         return str_replace(' ', '_', strtolower($header));
     }
 
-    private function suggestFilename(string $originalName): string
+    /**
+     * e.g. PMA_GFFU1726_25092026_TEAMS.xlsx - built server-side rather than from
+     * the uploaded file's name, so it can't steer the Content-Disposition header.
+     */
+    private function exportFilename(Request $request, string $type): string
     {
-        return $this->sanitizeFilename(
-            pathinfo($originalName, PATHINFO_FILENAME) . ' - import.xlsx'
-        );
-    }
+        $eventId = $request->session()->get('active_event_id');
+        $code = $eventId ? Event::find($eventId)?->short_name : null;
 
-    /** Keeps a user-supplied name from steering the Content-Disposition header. */
-    private function sanitizeFilename(string $name): string
-    {
-        $base = preg_replace('/[^A-Za-z0-9 _.\-]/', '', pathinfo($name, PATHINFO_FILENAME)) ?: 'converted';
+        $parts = array_filter([
+            'PMA',
+            $code ? preg_replace('/[^A-Za-z0-9]/', '', $code) : null,
+            now()->format('dmY'),
+            self::CONVERTERS[$type]['suffix'],
+        ]);
 
-        return trim(substr($base, 0, 100)) . '.xlsx';
+        return implode('_', $parts) . '.xlsx';
     }
 }

@@ -25,8 +25,13 @@ return Application::configure(basePath: dirname(__DIR__))
         // the load balancer: anyone who can hit it directly can forge their client
         // IP, scheme and host. Set TRUSTED_PROXIES to the balancer's CIDR(s) if the
         // origin is ever exposed.
+        //
+        // Passed through as a raw string: TrustProxies only recognises the wildcard
+        // as the literal string '*', and splits comma-separated lists itself. Handing
+        // it ['*'] instead makes it match '*' as an IP, which never matches - the
+        // proxy goes untrusted and every generated URL falls back to http://.
         $middleware->trustProxies(
-            at: array_map('trim', explode(',', (string) env('TRUSTED_PROXIES', '*'))),
+            at: env('TRUSTED_PROXIES', '*'),
             headers: Request::HEADER_X_FORWARDED_FOR
                 | Request::HEADER_X_FORWARDED_HOST
                 | Request::HEADER_X_FORWARDED_PORT

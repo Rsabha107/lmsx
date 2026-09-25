@@ -1,14 +1,9 @@
 <template>
-  <app-layout>
-    <div class="page-header">
-      <div>
-        <h1 class="page-title">{{ title }}</h1>
-        <p class="page-sub">
-          {{ blurb }}
-          Nothing is saved — review the result, download the file, then import it as usual.
-        </p>
-      </div>
-    </div>
+  <div>
+    <p class="tool-blurb">
+      {{ blurb }}
+      Nothing is saved — review the result, download the file, then import it as usual.
+    </p>
 
     <!-- Step 1: pick a file -->
     <div class="card">
@@ -127,15 +122,14 @@
         <p class="footnote">{{ importHint }}</p>
       </div>
     </template>
-  </app-layout>
+  </div>
 </template>
 
 <script setup>
 import { ref, computed } from 'vue';
-import AppLayout from '../../Components/AppLayout.vue';
-import Button from '../../Components/Button.vue';
-import SvgIcon from '../../Components/SvgIcon.vue';
-import PrepareSheetGuide from '../../Components/PrepareSheetGuide.vue';
+import Button from './Button.vue';
+import SvgIcon from './SvgIcon.vue';
+import PrepareSheetGuide from './PrepareSheetGuide.vue';
 
 const props = defineProps({
   type: { type: String, required: true },
@@ -268,9 +262,7 @@ async function download() {
 </script>
 
 <style scoped>
-.page-header { margin-bottom: 20px; }
-.page-title { font-size: 20px; font-weight: 700; color: var(--ink); margin: 0 0 2px; }
-.page-sub { font-size: 13px; color: var(--ink3); margin: 0; max-width: 780px; }
+.tool-blurb { margin: 0 0 16px; font-size: 13px; line-height: 1.55; color: var(--ink3); max-width: 780px; }
 
 .card {
   background: var(--surface); border: 1px solid var(--border);

@@ -24,7 +24,7 @@ class SheetConverterTest extends TestCase
 
     public function test_guest_cannot_reach_the_converter(): void
     {
-        $this->get('/utilities/converters/teams')->assertRedirect('/login');
+        $this->get('/utilities')->assertRedirect('/login');
     }
 
     public function test_user_without_fleet_manage_is_forbidden(): void
@@ -32,15 +32,32 @@ class SheetConverterTest extends TestCase
         $user = \App\Models\User::factory()->create();
 
         $this->actingAs($user)->get('/utilities')->assertForbidden();
-        $this->actingAs($user)->get('/utilities/converters/teams')->assertForbidden();
     }
 
-    public function test_user_with_fleet_manage_can_reach_both_pages(): void
+    public function test_every_converter_is_offered_as_a_tab(): void
     {
-        $admin = $this->admin();
+        $this->actingAs($this->admin())->get('/utilities')
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->component('Utilities/Index')
+                ->has('tools', 2)
+                ->where('activeTool', 'teams'));
+    }
 
-        $this->actingAs($admin)->get('/utilities')->assertOk();
-        $this->actingAs($admin)->get('/utilities/converters/teams')->assertOk();
+    public function test_a_tool_can_be_deep_linked(): void
+    {
+        $this->actingAs($this->admin())->get('/utilities?tool=matches')
+            ->assertInertia(fn ($page) => $page->where('activeTool', 'matches'));
+
+        // An unknown tool falls back to the first tab rather than erroring.
+        $this->actingAs($this->admin())->get('/utilities?tool=nonsense')
+            ->assertInertia(fn ($page) => $page->where('activeTool', 'teams'));
+    }
+
+    public function test_the_old_per_converter_urls_redirect_to_the_tab(): void
+    {
+        $this->actingAs($this->admin())->get('/utilities/converters/matches')
+            ->assertRedirect('/utilities?tool=matches');
     }
 
     public function test_a_recognisable_sheet_converts_without_calling_the_ai(): void
@@ -88,12 +105,39 @@ class SheetConverterTest extends TestCase
 
         $response = $this->actingAs($this->admin())->post('/utilities/converters/teams/download', [
             'rows' => [$row],
-            'filename' => 'my teams - import.xlsx',
         ]);
 
         $response->assertOk()
             ->assertHeader('content-type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-        $this->assertStringContainsString('my teams - import.xlsx', $response->headers->get('content-disposition'));
+        $this->assertStringContainsString(
+            'PMA_' . now()->format('dmY') . '_TEAMS.xlsx',
+            $response->headers->get('content-disposition'),
+        );
+    }
+
+    public function test_the_filename_carries_the_active_event_code_and_date(): void
+    {
+        $event = \App\Models\Event::create([
+            'name' => 'GFF U17 Gulf Cup Qatar 2026',
+            'short_name' => 'GFFU1726',
+            'start_date' => '2026-10-28',
+            'end_date' => '2026-11-05',
+        ]);
+
+        $expected = "PMA_GFFU1726_{$this->today()}_MATCHES.xlsx";
+
+        $response = $this->actingAs($this->admin())
+            ->withSession(['active_event_id' => $event->id])
+            ->post('/utilities/converters/matches/download', [
+                'rows' => [array_fill(0, 7, 'x')],
+            ]);
+
+        $this->assertStringContainsString($expected, $response->headers->get('content-disposition'));
+    }
+
+    private function today(): string
+    {
+        return now()->format('dmY');
     }
 
     public function test_download_rejects_rows_that_are_not_the_template_shape(): void
@@ -152,7 +196,7 @@ class SheetConverterTest extends TestCase
 
     public function test_an_unknown_converter_type_is_not_found(): void
     {
-        $this->actingAs($this->admin())->get('/utilities/converters/nonsense')->assertNotFound();
+        $this->actingAs($this->admin())->post('/utilities/converters/nonsense/preview', [])->assertNotFound();
     }
 
     private function admin(): \App\Models\User

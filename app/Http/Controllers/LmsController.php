@@ -27,6 +27,7 @@ use App\Services\JobLifecycleService;
 use App\Services\DailySummaryService;
 use App\Services\NotificationFeedService;
 use App\Services\SettingsService;
+use Carbon\Carbon;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\JsonResponse;
@@ -298,6 +299,7 @@ class LmsController extends Controller
                         'destination_airport' => $team->destinationAirport?->code,
                         'training_ground' => $team->training_ground,
                     ] : null,
+                    'metrics' => $this->jobMetrics($job),
                     'issues' => $job->issues->map(fn ($issue) => [
                         'id' => $issue->id,
                         'label' => $issue->label(),
@@ -358,6 +360,47 @@ class LmsController extends Controller
         return Inertia::render('Jobs', [
             'schedule' => $jobs,
         ]);
+    }
+
+    /**
+     * Per-job roll-up of checkpoint timing and load figures, mirroring the
+     * Rpt.*Arrivals / Rpt.*Departures KPI strips in the LOG PMA Scheduler.
+     *
+     * Sums and counts are sent rather than averages so the UI can re-average
+     * across whatever subset the user has filtered to.
+     *
+     * @return array<string, int|null>
+     */
+    private function jobMetrics(JobOperation $job): array
+    {
+        $checkpoints = $job->checkpoints;
+        $completed = $checkpoints->filter(fn ($c) => $c->completed_at !== null);
+
+        // Signed, so early (negative) and late (positive) don't cancel out into
+        // a flattering average - callers average the absolute spread instead.
+        $variances = $completed
+            ->filter(fn ($c) => $c->scheduled_at !== null)
+            ->map(fn ($c) => (int) $c->scheduled_at->diffInMinutes($c->completed_at, false));
+
+        $firstStart = $completed->min('started_at') ?? $completed->min('completed_at');
+        $lastEnd = $completed->max('completed_at');
+
+        return [
+            'checkpointsDone' => $completed->count(),
+            'onTime' => $checkpoints->filter(fn ($c) => $c->is_on_time === true)->count(),
+            'offSchedule' => $completed->filter(fn ($c) => $c->is_on_time === false)->count(),
+            'varianceAbsSum' => (int) $variances->map(fn (int $m) => abs($m))->sum(),
+            'varianceCount' => $variances->count(),
+            // bags_loaded/oversized_pieces are the columns the capture flows
+            // actually write; bags_count exists in the schema but is never set.
+            'plannedBags' => (int) $checkpoints->sum('planned_bags'),
+            'bags' => (int) $checkpoints->sum('bags_loaded'),
+            'oversized' => (int) $checkpoints->sum('oversized_pieces'),
+            'checkpointSeconds' => (int) $checkpoints->sum('actual_duration_seconds'),
+            'spanMinutes' => $firstStart && $lastEnd
+                ? (int) Carbon::parse($firstStart)->diffInMinutes(Carbon::parse($lastEnd))
+                : null,
+        ];
     }
 
     public function jobsMobile(Request $request): Response

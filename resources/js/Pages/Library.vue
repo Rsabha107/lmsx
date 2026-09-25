@@ -109,7 +109,7 @@
             gap: '10px',
             padding: '12px 14px',
             borderBottom: i === filteredCheckpoints.length - 1 ? 'none' : '1px solid var(--border)',
-            alignItems: 'center',
+            alignItems: checkpoint.description ? 'start' : 'center',
             transition: 'background 0.13s',
           }"
           @mouseenter="$event.currentTarget.style.background = 'var(--panel)'"
@@ -124,11 +124,20 @@
             />
           </div>
           <div style="font-family: var(--mono); font-size: 11px; color: var(--ink); font-weight: 700;">{{ checkpoint.code }}</div>
-          <div style="font-size: 13px; color: var(--ink); font-weight: 600; display: flex; align-items: center; gap: 6px;">
-            <span>{{ checkpoint.name }}</span>
-            <svg-icon v-if="checkpoint.requires_photo" name="camera" :size="13" style="color: var(--ink3); flex-shrink: 0;" title="Requires photo" />
-            <svg-icon v-if="checkpoint.requires_signature" name="signature" :size="13" style="color: var(--ink3); flex-shrink: 0;" title="Requires signature" />
-            <svg-icon v-if="checkpoint.requires_baggage_count" name="bag" :size="13" style="color: var(--ink3); flex-shrink: 0;" title="Requires baggage count" />
+          <div style="min-width: 0;">
+            <div style="font-size: 13px; color: var(--ink); font-weight: 600; display: flex; align-items: center; gap: 6px;">
+              <span>{{ checkpoint.name }}</span>
+              <svg-icon v-if="checkpoint.requires_photo" name="camera" :size="13" style="color: var(--ink3); flex-shrink: 0;" title="Requires photo" />
+              <svg-icon v-if="checkpoint.requires_signature" name="signature" :size="13" style="color: var(--ink3); flex-shrink: 0;" title="Requires signature" />
+              <svg-icon v-if="checkpoint.requires_baggage_count" name="bag" :size="13" style="color: var(--ink3); flex-shrink: 0;" title="Requires baggage count" />
+            </div>
+            <div
+              v-if="checkpoint.description"
+              :title="checkpoint.description"
+              style="font-size: 11.5px; color: var(--ink3); line-height: 1.4; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;"
+            >
+              {{ checkpoint.description }}
+            </div>
           </div>
           <div>
             <span :style="categoryPillStyle(checkpoint.category)">{{ checkpoint.category }}</span>
@@ -401,6 +410,11 @@
           <input v-model="newCheckpoint.name" type="text" placeholder="Dispatch from depot" style="width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px;" />
         </div>
         <div>
+          <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px; color: var(--ink);">Description</label>
+          <textarea v-model="newCheckpoint.description" rows="2" placeholder="What the crew must do at this checkpoint" style="width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; resize: vertical;"></textarea>
+          <span style="display: block; font-size: 11px; color: var(--ink3); margin-top: 4px;">Shown to supervisors on the mobile job screen.</span>
+        </div>
+        <div>
           <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px; color: var(--ink);">Category</label>
           <select v-model="newCheckpoint.category" style="width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px;">
             <option value="NA">N/A</option>
@@ -474,6 +488,11 @@
         <div>
           <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px; color: var(--ink);">Name</label>
           <input v-model="editingCheckpoint.name" type="text" style="width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px;" />
+        </div>
+        <div>
+          <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px; color: var(--ink);">Description</label>
+          <textarea v-model="editingCheckpoint.description" rows="2" placeholder="What the crew must do at this checkpoint" style="width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; resize: vertical;"></textarea>
+          <span style="display: block; font-size: 11px; color: var(--ink3); margin-top: 4px;">Shown to supervisors on the mobile job screen.</span>
         </div>
         <div>
           <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px; color: var(--ink);">Category</label>
@@ -1280,7 +1299,8 @@ const filteredCheckpoints = computed(() => {
       c.code.toLowerCase().includes(search) || 
       c.name.toLowerCase().includes(search) ||
       c.type.toLowerCase().includes(search) ||
-      c.category?.toLowerCase().includes(search)
+      c.category?.toLowerCase().includes(search) ||
+      c.description?.toLowerCase().includes(search)
     );
   }
 
@@ -1389,6 +1409,7 @@ const deleteTarget = ref(null); // { type: 'checkpoint'|'checkpoint-template'|'m
 // New checkpoint form
 const newCheckpoint = ref({
   name: '',
+  description: '',
   category: 'Logistics',
   type: 'dispatch',
   capture_method: 'manual',
@@ -1875,10 +1896,13 @@ function createCheckpoint() {
       showNewCheckpoint.value = false;
       newCheckpoint.value = {
         name: '',
+        description: '',
+        category: 'Logistics',
         type: 'dispatch',
         capture_method: 'manual',
         requires_photo: false,
         requires_signature: false,
+        requires_baggage_count: false,
         is_active: true,
       };
       checkpointErrors.value = {};

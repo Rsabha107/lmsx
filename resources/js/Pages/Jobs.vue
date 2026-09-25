@@ -71,6 +71,12 @@
       </div>
     </div>
 
+    <job-stats-panel
+      :jobs="scopedJobs"
+      :kind="activeKind"
+      v-model:selected-date="statsDate"
+    />
+
     <div class="jobs-layout" :class="{ 'jobs-layout--full': !selectedJob }">
       <!-- Job list -->
       <div class="jobs-list-card">
@@ -548,6 +554,7 @@ import Button from '../Components/Button.vue';
 import CheckpointTimeline from '../Components/CheckpointTimeline.vue';
 import FlagIcon from '../Components/FlagIcon.vue';
 import ConfirmModal from '../Components/ConfirmModal.vue';
+import JobStatsPanel from '../Components/JobStatsPanel.vue';
 
 const page = usePage();
 const hasActiveEvent = computed(() => !!page.props.activeEventId);
@@ -979,6 +986,30 @@ function formatJobToLocation(job) {
 }
 
 const filtered = computed(() => {
+  let jobs = scopedJobs.value;
+
+  // The stats panel's day selection narrows the list as well, so chart and
+  // table always describe the same set of jobs.
+  if (statsDate.value) {
+    jobs = jobs.filter(j => j.date === statsDate.value);
+  }
+
+  // Sort by date desc
+  jobs = [...jobs].sort((a, b) => {
+    const aTime = a.date ? new Date(a.date).getTime() : -Infinity;
+    const bTime = b.date ? new Date(b.date).getTime() : -Infinity;
+    return bTime - aTime;
+  });
+
+  return jobs;
+});
+
+const statsDate = ref(null);
+
+const activeKind = computed(() =>
+  resourceFilter.value === 'kind' ? selectedResource.value : null);
+
+const scopedJobs = computed(() => {
   let jobs = props.schedule;
 
   // Date filter
@@ -1022,13 +1053,6 @@ const filtered = computed(() => {
       jobs = jobs.filter(j => j.kind === selectedResource.value);
     }
   }
-  
-  // Sort by date desc
-  jobs = [...jobs].sort((a, b) => {
-    const aTime = a.date ? new Date(a.date).getTime() : -Infinity;
-    const bTime = b.date ? new Date(b.date).getTime() : -Infinity;
-    return bTime - aTime;
-  });
 
   return jobs;
 });

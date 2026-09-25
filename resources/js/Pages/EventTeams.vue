@@ -941,6 +941,22 @@
           Download import template
         </a>
 
+        <div style="padding: 10px 12px; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; font-size: 12px; line-height: 1.55; color: var(--ink3);">
+          <strong style="color: var(--ink);">Working from the LOG PMA Scheduler?</strong>
+          A workbook like "LOG PMA Scheduler 2026 20260915.xlsx" won't import directly — it holds dozens of
+          sheets and its columns differ from this template. Convert the
+          <code>Tbl.…Arrivals&amp;Depart</code> sheet first: you'll see how each column was matched and every
+          converted row before anything is saved.
+          <a
+            v-if="$page.props.auth?.can?.['fleet.manage']"
+            href="/utilities?tool=teams"
+            style="display: inline-flex; align-items: center; gap: 5px; margin-top: 8px; font-weight: 600; color: var(--accent); text-decoration: none;"
+          >
+            Open the Team Sheet Converter
+            <svg-icon name="chevron" :size="12" />
+          </a>
+        </div>
+
         <div
           style="border: 1px dashed var(--border); border-radius: 8px; padding: 20px; text-align: center; cursor: pointer;"
           @click="$refs.importFileInput.click()"

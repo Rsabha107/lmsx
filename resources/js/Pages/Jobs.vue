@@ -137,6 +137,17 @@
                 >⚑ {{ openIssueCount(job) }}</span>
               </div>
               <span v-if="job.match?.lineup" class="jl-lineup" :title="job.match.lineup">{{ job.match.lineup }}</span>
+              <span
+                v-if="isFlightJob(job)"
+                class="jl-flight"
+                :title="flightTitle(job.flight)"
+              >
+                <span class="jl-flight-no">{{ job.flight.is_bus ? 'By road' : (job.flight.flight_number || 'Flight TBC') }}</span>
+                <template v-if="flightRoute(job.flight)"> · {{ flightRoute(job.flight) }}</template>
+                <template v-if="job.flight.scheduled_time"> · {{ job.flight.direction === 'arrival' ? 'Arr' : 'Dep' }} <strong>{{ job.flight.scheduled_time }}</strong></template>
+                <span v-if="job.flight.actual_time" class="jl-flight-ok"> · {{ job.flight.direction === 'arrival' ? 'Landed' : 'Took off' }} {{ job.flight.actual_time }}</span>
+                <span v-else-if="job.flight.estimated_time && job.flight.estimated_time !== job.flight.scheduled_time" class="jl-flight-warn"> · Est {{ job.flight.estimated_time }}</span>
+              </span>
               <span class="jl-route" :title="`${formatJobFromLocation(job)} → ${formatJobToLocation(job)}`">{{ formatJobFromLocation(job) }} → {{ formatJobToLocation(job) }}</span>
             </div>
             <div class="jl-col-progress">
@@ -208,7 +219,11 @@
           </div>
 
           <div :class="['detail-stats', (selectedJob.status === 'completed' && timeVariance) || selectedJob.updated_at ? 'detail-stats--five' : '']">
-            <mini-stat label="Window" :value="`${selectedJob.dep} – ${selectedJob.arr}`"/>
+            <mini-stat
+              label="Pickup"
+              :value="selectedJob.pickup || '--:--'"
+              :title="selectedJob.pickup_checkpoint ? `First checkpoint: ${selectedJob.pickup_checkpoint}` : 'Planned pickup time'"
+            />
             <mini-stat label="Progress" :value="`${progressPercentage}%`"/>
             <mini-stat label="Checks" :value="`${doneCount}/${totalChecks}`"/>
             <mini-stat 
@@ -345,6 +360,43 @@
               <dd>{{ selectedJob.match.venue?.name || '—' }}</dd>
               <dt>Stage</dt>
               <dd>{{ selectedJob.match.stage || '—' }}</dd>
+            </dl>
+          </div>
+
+          <div v-if="isFlightJob(selectedJob)" class="detail-card">
+            <div class="info-head">
+              <h3 class="section-title">{{ selectedJob.flight.direction === 'arrival' ? 'Arrival flight' : 'Departure flight' }}</h3>
+              <span class="section-kicker info-mono">{{ selectedJob.flight.is_bus ? 'By road' : (selectedJob.flight.flight_number || 'TBC') }}</span>
+            </div>
+            <div v-if="flightRoute(selectedJob.flight)" class="info-lineup">{{ flightRoute(selectedJob.flight) }}</div>
+            <dl class="info-list">
+              <dt>{{ selectedJob.flight.direction === 'arrival' ? 'Scheduled arrival' : 'Scheduled departure' }}</dt>
+              <dd>
+                <template v-if="selectedJob.flight.scheduled_time">
+                  <strong>{{ selectedJob.flight.scheduled_time }}</strong> · {{ selectedJob.flight.scheduled_date }}
+                </template>
+                <template v-else>—</template>
+              </dd>
+              <template v-if="selectedJob.flight.estimated_time">
+                <dt>Estimated</dt>
+                <dd :class="{ 'info-warn': selectedJob.flight.estimated_time !== selectedJob.flight.scheduled_time }">{{ selectedJob.flight.estimated_time }}</dd>
+              </template>
+              <template v-if="selectedJob.flight.actual_time">
+                <dt>{{ selectedJob.flight.direction === 'arrival' ? 'Landed' : 'Took off' }}</dt>
+                <dd class="info-ok">{{ selectedJob.flight.actual_time }}</dd>
+              </template>
+              <template v-if="selectedJob.flight.delay_minutes">
+                <dt>Delay</dt>
+                <dd class="info-warn">+{{ selectedJob.flight.delay_minutes }} min</dd>
+              </template>
+              <template v-if="selectedJob.flight.terminal || selectedJob.flight.gate">
+                <dt>Terminal / gate</dt>
+                <dd>{{ [selectedJob.flight.terminal, selectedJob.flight.gate].filter(Boolean).join(' · ') }}</dd>
+              </template>
+              <template v-if="selectedJob.flight.flight_status">
+                <dt>Status</dt>
+                <dd style="text-transform: capitalize;">{{ selectedJob.flight.flight_status }}</dd>
+              </template>
             </dl>
           </div>
           </div>
@@ -636,6 +688,7 @@
 </template>
 
 <script setup>
+import { useStatusLabels } from '../Composables/useStatusLabels';
 import { ref, computed, nextTick, watch } from 'vue';
 import { router, usePage } from '@inertiajs/vue3';
 import AppLayout from '../Components/AppLayout.vue';
@@ -736,20 +789,9 @@ const statusMap = {
   'issue':       { tone: 'warn',    label: 'Issue' },
 };
 function statusTone(s) { return statusMap[s]?.tone ?? 'neutral'; }
-function statusLabel(s) { return statusMap[s]?.label ?? s; }
-
-const stageLabelMap = {
-  'in-progress': 'in progress',
-  'live':        'in progress',
-  'pending':     'scheduled',
-  'dispatched':  'dispatched',
-  'delayed':     'delayed',
-  'completed':   'completed',
-  'cancelled':   'cancelled',
-  'queued':      'queued',
-  'issue':       'issue',
-};
-function stagePillLabel(s) { return stageLabelMap[s] ?? s; }
+const { statusLabel: sharedStatusLabel } = useStatusLabels();
+function statusLabel(s) { return sharedStatusLabel(s, statusMap[s]?.label); }
+function stagePillLabel(s) { return statusLabel(s).toLowerCase(); }
 
 function jobStepsText(job) {
   if (job.checkpoints && job.checkpoints.length > 0) {
@@ -895,6 +937,22 @@ function formatStamp(value) {
   const date = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
   const day = date.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
   return `${day} · ${m[4]}`;
+}
+
+function isFlightJob(job) {
+  return !!job?.flight && (job.kind === 'arrival' || job.kind === 'departure');
+}
+
+function flightRoute(flight) {
+  if (!flight?.origin_airport && !flight?.destination_airport) return '';
+  return `${flight.origin_airport || '?'} → ${flight.destination_airport || '?'}`;
+}
+
+function flightTitle(flight) {
+  const verb = flight.direction === 'arrival' ? 'Scheduled arrival' : 'Scheduled departure';
+  return [flight.flight_number, flightRoute(flight), flight.scheduled_time && `${verb} ${flight.scheduled_date} ${flight.scheduled_time}`]
+    .filter(Boolean)
+    .join(' · ');
 }
 
 function formatTimeAgo(dateString) {
@@ -1871,6 +1929,16 @@ function submitOverride() {
   display: block; max-width: 100%;
 }
 
+.jl-flight {
+  font-size: 10.5px; color: var(--ink3);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  display: block; max-width: 100%;
+}
+.jl-flight strong { color: var(--ink); font-family: var(--font-mono, monospace); }
+.jl-flight-no { font-family: var(--font-mono, monospace); font-weight: 700; color: var(--ink2); }
+.jl-flight-ok { color: var(--ok); font-weight: 600; }
+.jl-flight-warn { color: var(--warn); font-weight: 600; }
+
 .jl-job-date {
   font-size: 9px;
   font-weight: 600;
@@ -2028,6 +2096,8 @@ function submitOverride() {
 .info-mono { font-family: var(--mono, ui-monospace, monospace); font-size: 11.5px; }
 .info-muted { color: var(--ink3); }
 .info-notes { white-space: pre-wrap; }
+.info-warn { color: var(--warn); font-weight: 600; }
+.info-ok { color: var(--ok); font-weight: 600; }
 
 .job-detail-empty {
   background: var(--panel); border: 1px dashed var(--border);

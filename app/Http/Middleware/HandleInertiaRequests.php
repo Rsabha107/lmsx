@@ -42,6 +42,8 @@ class HandleInertiaRequests extends Middleware
                 : [],
             'activeEventId' => $activeEventId ? (int) $activeEventId : null,
             'ui' => $this->uiFlags(),
+            // The one source of status wording; the mobile API sends the same labels.
+            'jobStatusLabels' => \App\Models\JobOperation::uiStatusLabels(),
         ]);
     }
 

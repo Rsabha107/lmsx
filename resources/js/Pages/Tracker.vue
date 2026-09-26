@@ -103,6 +103,7 @@
 </template>
 
 <script setup>
+import { useStatusLabels } from '../Composables/useStatusLabels';
 import { ref, computed } from 'vue';
 import AppLayout from '../Components/AppLayout.vue';
 import StatusPill from '../Components/StatusPill.vue';
@@ -171,7 +172,8 @@ const statusMap = {
   'done':        { tone: 'ok',      label: 'Done' },
 };
 function statusTone(s) { return statusMap[s]?.tone ?? 'neutral'; }
-function statusLabel(s) { return statusMap[s]?.label ?? s; }
+const { statusLabel: sharedStatusLabel } = useStatusLabels();
+function statusLabel(s) { return sharedStatusLabel(s, statusMap[s]?.label); }
 </script>
 
 <style scoped>

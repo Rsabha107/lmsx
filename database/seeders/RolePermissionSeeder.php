@@ -20,6 +20,8 @@ class RolePermissionSeeder extends Seeder
         'movements.view-all-functional-areas',
         'jobs.view',
         'jobs.view-all-functional-areas',
+        // In the mobile app, see and work jobs supervised by someone else.
+        'jobs.view-unassigned',
         // Forging a completion record is an oversight action, not a field one.
         'jobs.override',
         // Reach events the user is not assigned to.
@@ -43,6 +45,7 @@ class RolePermissionSeeder extends Seeder
     private const SCOPED_PERMISSIONS = [
         'movements.view',
         'jobs.view',
+        'jobs.view-unassigned',
         'events.view',
         'fleet.view',
         'plans.view',

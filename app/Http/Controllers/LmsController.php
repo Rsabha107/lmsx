@@ -260,6 +260,9 @@ class LmsController extends Controller
                     'dep' => $movement?->window_start?->format('H:i') ?? '--:--',
                     'arr' => $movement?->flight?->scheduled_at?->format('H:i') ?? $movement?->window_start?->format('H:i') ?? '--:--',
                     'date' => $movement?->date?->format('Y-m-d') ?? $movement?->window_start?->format('Y-m-d') ?? now()->format('Y-m-d'),
+                    // The first checkpoint's time; the movement start is derived from the same checkpoint.
+                    'pickup' => ($job->checkpoints->sortBy('order')->first()?->scheduled_at ?? $movement?->window_start)?->format('H:i'),
+                    'pickup_checkpoint' => $job->checkpoints->sortBy('order')->first()?->name,
                     'event_name' => $job->event?->name ?? null,
                     'event_code' => $job->event?->code ?? null,
                     'functional_area' => $job->functional_area ?? null,
@@ -278,12 +281,7 @@ class LmsController extends Controller
                     'driver_id' => $job->driver_id,
                     'driver_phone' => $job->driver?->phone ?? null,
                     'updated_at' => $job->updated_at?->format('Y-m-d H:i') ?? null,
-                    'flight' => $movement?->flight ? [
-                        'id' => $movement->flight->id,
-                        'flight_number' => $movement->flight->flight_number,
-                        'origin_airport' => $movement->flight->originAirport?->code ?? $movement->flight->origin_airport_id,
-                        'destination_airport' => $movement->flight->destinationAirport?->code ?? $movement->flight->destination_airport_id,
-                    ] : null,
+                    'flight' => \App\Support\FlightSummary::from($movement?->flight),
                     'accommodation' => $movement?->accommodation ? [
                         'id' => $movement->accommodation->id,
                         'hotel_name' => $movement->accommodation->hotel_name,

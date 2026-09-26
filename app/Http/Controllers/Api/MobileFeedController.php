@@ -45,6 +45,7 @@ class MobileFeedController extends Controller
         foreach ($checkpoints as $cp) {
             $team = $cp->job?->team?->team_name ?? 'Unknown team';
             $jobRef = $cp->job?->job_id ?? 'JOB-'.$cp->job_id;
+            $link = ['job_id' => $cp->job_id, 'code' => $cp->job?->team?->code];
 
             if ($cp->state === 'done' && $cp->is_on_time === false) {
                 $alerts[] = [
@@ -53,6 +54,7 @@ class MobileFeedController extends Controller
                     'title' => 'Late: '.$cp->name,
                     'body' => "$jobRef · $team · {$cp->delay_minutes} min past the movement window.",
                     'at' => $cp->completed_at?->toIso8601String(),
+                    ...$link,
                 ];
             }
 
@@ -63,6 +65,7 @@ class MobileFeedController extends Controller
                     'title' => 'Overridden: '.$cp->name,
                     'body' => "$jobRef · ".($cp->override_reason ?: 'No reason recorded.'),
                     'at' => $cp->overridden_at?->toIso8601String(),
+                    ...$link,
                 ];
             }
 
@@ -73,12 +76,13 @@ class MobileFeedController extends Controller
                     'title' => 'Skipped: '.$cp->name,
                     'body' => "$jobRef · ".($cp->skip_reason ?: 'No reason recorded.'),
                     'at' => $cp->skipped_at?->toIso8601String(),
+                    ...$link,
                 ];
             }
         }
 
         $issues = $this->scopeToVisibleAreasViaJob(
-            JobIssue::with('job', 'reporter')->open()->where('event_id', $eventId),
+            JobIssue::with('job.team', 'reporter')->open()->where('event_id', $eventId),
             $request
         )->latest()->limit(25)->get();
 
@@ -91,6 +95,8 @@ class MobileFeedController extends Controller
                     .($issue->notes ?: 'No detail given.')
                     .($issue->reporter ? ' — '.$issue->reporter->name : ''),
                 'at' => $issue->created_at->toIso8601String(),
+                'job_id' => $issue->job_id,
+                'code' => $issue->job?->team?->code,
             ];
         }
 
@@ -107,6 +113,11 @@ class MobileFeedController extends Controller
                 'method' => $cp->completion_method ?? 'web',
                 'action' => 'Checkpoint ✓',
                 'target' => ($cp->job?->job_id ?? 'JOB').' · '.$cp->name,
+                'at' => $cp->completed_at?->toIso8601String(),
+                'job_id' => $cp->job_id,
+                'code' => $cp->job?->team?->code,
+                'team' => $cp->job?->team?->team_name,
+                'checkpoint' => $cp->name,
             ])
             ->values();
 
@@ -225,25 +236,45 @@ class MobileFeedController extends Controller
         $user = $request->user();
 
         $counts = JobOperation::query()
-            ->selectRaw('event_id, count(*) as total')
+            ->when($this->onlyOwnJobs($request), fn ($q) => $q->where('supervisor_id', $user->id))
+            ->selectRaw('event_id, count(*) as total, count(distinct team_id) as teams')
             ->groupBy('event_id')
-            ->pluck('total', 'event_id');
+            ->get()
+            ->keyBy('event_id');
+
+        $punctuality = JobCheckpoint::query()
+            ->where('state', 'done')
+            ->selectRaw('event_id, count(*) as done, sum(case when is_on_time = 0 then 0 else 1 end) as on_time')
+            ->groupBy('event_id')
+            ->get()
+            ->keyBy('event_id');
 
         $events = Event::query()
+            ->with(['country', 'venues'])
             ->orderByDesc('active_flag')
             ->orderByDesc('id')
             ->get()
             ->filter(fn (Event $event) => $user->canAccessEvent($event->id))
-            ->map(fn (Event $event) => [
-                'id' => $event->id,
-                'name' => $event->name,
-                'short_name' => $event->short_name,
-                'status' => $event->status,
-                'starts_on' => $event->start_date?->toDateString(),
-                'ends_on' => $event->end_date?->toDateString(),
-                'active' => (bool) $event->active_flag,
-                'jobs' => (int) ($counts[$event->id] ?? 0),
-            ])
+            ->map(function (Event $event) use ($counts, $punctuality) {
+                $jobs = $counts[$event->id] ?? null;
+                $done = $punctuality[$event->id] ?? null;
+
+                return [
+                    'id' => $event->id,
+                    'name' => $event->name,
+                    'short_name' => $event->short_name,
+                    'status' => $event->status,
+                    'starts_on' => $event->start_date?->toDateString(),
+                    'ends_on' => $event->end_date?->toDateString(),
+                    'active' => (bool) $event->active_flag,
+                    'jobs' => (int) ($jobs->total ?? 0),
+                    'teams' => (int) ($jobs->teams ?? 0),
+                    'venue' => $event->venues->first()?->city ?: $event->country?->country_name,
+                    'on_time_pct' => $done && $done->done > 0
+                        ? (int) round($done->on_time / $done->done * 100)
+                        : null,
+                ];
+            })
             ->values();
 
         // Falls back to the first event the user may work, so the picker never

@@ -109,6 +109,24 @@ summary:focus-visible,
     outline-offset: 2px !important;
 }
 
+/* Text fields match :focus-visible on every click (you're about to type), so the
+   blue ring above showed on all of them. They get the brand ring instead: the
+   maroon border carries the contrast, the soft glow makes it obvious. */
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not([type="color"]):not([type="button"]):not([type="submit"]):not([type="reset"]):focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+.p-select-label:focus-visible {
+    outline: none !important;
+}
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not([type="color"]):not([type="button"]):not([type="submit"]):not([type="reset"]):focus,
+select:focus,
+textarea:focus,
+.p-select.p-focus,
+.p-inputtext:enabled:focus {
+    border-color: var(--accent) !important;
+    box-shadow: 0 0 0 3px var(--accent-ring) !important;
+}
+
 /* Respect the OS "reduce motion" setting rather than animating regardless. */
 @media (prefers-reduced-motion: reduce) {
     *,

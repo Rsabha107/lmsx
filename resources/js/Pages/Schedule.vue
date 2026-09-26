@@ -102,6 +102,7 @@
 </template>
 
 <script setup>
+import { useStatusLabels } from '../Composables/useStatusLabels';
 import { ref, computed, watch } from 'vue';
 import { router, usePage } from '@inertiajs/vue3';
 import AppLayout from '../Components/AppLayout.vue';
@@ -146,12 +147,12 @@ function onDateChange(dateStr) {
   });
 }
 
-const filters = [
-  { value: 'all',         label: 'All' },
-  { value: 'in-progress', label: 'In Progress' },
-  { value: 'scheduled',   label: 'Scheduled' },
-  { value: 'delayed',     label: 'Delayed' },
-];
+const { statusLabel: sharedStatusLabel } = useStatusLabels();
+
+const filters = computed(() => [
+  { value: 'all', label: 'All' },
+  ...['in-progress', 'scheduled', 'delayed'].map((value) => ({ value, label: statusLabel(value) })),
+]);
 const activeFilter = ref('all');
 
 const filtered = computed(() =>
@@ -184,7 +185,7 @@ const statusMap = {
   'done':        { tone: 'ok',      label: 'Done' },
 };
 function statusTone(s) { return statusMap[s]?.tone ?? 'neutral'; }
-function statusLabel(s) { return statusMap[s]?.label ?? s; }
+function statusLabel(s) { return sharedStatusLabel(s, statusMap[s]?.label); }
 </script>
 
 <style scoped>

@@ -1344,7 +1344,7 @@
                 <InfoIcon :size="12" @click="showRefTimeInfoModal = true" />
               </div>
               <div>Team & Route</div>
-              <div>Window</div>
+              <div title="Time of the movement's first checkpoint">Pickup</div>
               <div>Vehicle</div>
               <div>Pax</div>
               <div>Checks</div>
@@ -1499,10 +1499,7 @@
                   "
                 >
                   <template v-if="isBusMovement(mv)">BUS</template>
-                  <template v-else>
-                    {{ formatTime(mv.window_start) }} –
-                    {{ formatTime(mv.window_end) }}
-                  </template>
+                  <template v-else>{{ formatTime(mv.window_start) }}</template>
                 </div>
                 <div style="font-size: 11px; color: var(--ink2)">
                   {{ mv.vehicle?.code || "-" }}
@@ -1642,11 +1639,10 @@
 
               <!-- Stats grid -->
               <div class="dc-stats-grid">
-                <div class="dc-stat">
-                  <div class="dc-stat-label">Window</div>
+                <div class="dc-stat" title="Time of the movement's first checkpoint">
+                  <div class="dc-stat-label">Pickup</div>
                   <div class="dc-stat-value">
-                    {{ formatTime(selectedMovement.window_start) || "—" }} →
-                    {{ formatTime(selectedMovement.window_end) || "—" }}
+                    {{ formatTime(selectedMovement.window_start) || "—" }}
                   </div>
                 </div>
                 <div class="dc-stat">
@@ -2777,7 +2773,7 @@
                 </div>
                 <div>Type</div>
                 <div>From → To</div>
-                <div>Planned / Actual</div>
+                <div title="Planned pickup (first checkpoint), with the actual time underneath">Pickup</div>
                 <div>Source</div>
                 <div>Linked Job</div>
                 <div>Status</div>
@@ -2915,7 +2911,7 @@
                   >
                     <div style="color: var(--ink3)">
                       <template v-if="isBusMovement(mv)">BUS</template>
-                      <template v-else>{{ mv.dep }} – {{ mv.arr }}</template>
+                      <template v-else>{{ mv.dep }}</template>
                     </div>
                     <div
                       :style="{
@@ -3053,18 +3049,12 @@
 
                 <!-- Stats grid -->
                 <div class="dc-stats-grid">
-                  <div class="dc-stat">
-                    <div class="dc-stat-label">Window</div>
+                  <div class="dc-stat" title="Time of the movement's first checkpoint">
+                    <div class="dc-stat-label">Pickup</div>
                     <div class="dc-stat-value">
                       {{
                         selectedMovement.dep ||
                         formatTime(selectedMovement.window_start) ||
-                        "—"
-                      }}
-                      →
-                      {{
-                        selectedMovement.arr ||
-                        formatTime(selectedMovement.window_end) ||
                         "—"
                       }}
                     </div>
@@ -5187,8 +5177,7 @@
                         color: var(--ink2);
                       "
                     >
-                      {{ formatTime(mv.window_start) || "—" }} →
-                      {{ formatTime(mv.window_end) || "—" }}
+                      Pickup {{ formatTime(mv.window_start) || "—" }}
                     </div>
                     <div style="font-size: 10.5px; color: var(--ink3)">
                       {{ mv.flight?.party_size_total ?? mv.pax ?? mv.passengers ?? 0 }} pax ·

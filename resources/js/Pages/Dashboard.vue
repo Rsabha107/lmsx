@@ -82,6 +82,7 @@
 </template>
 
 <script setup>
+import { useStatusLabels } from '../Composables/useStatusLabels';
 import AppLayout from '../Components/AppLayout.vue';
 import KPICard from '../Components/KPICard.vue';
 import SvgIcon from '../Components/SvgIcon.vue';
@@ -104,7 +105,8 @@ const statusMap = {
 };
 
 function statusTone(s) { return statusMap[s]?.tone ?? 'neutral'; }
-function statusLabel(s) { return statusMap[s]?.label ?? s; }
+const { statusLabel: sharedStatusLabel } = useStatusLabels();
+function statusLabel(s) { return sharedStatusLabel(s, statusMap[s]?.label); }
 
 // MovementRow as inline component via template is fine here
 const MovementRow = {

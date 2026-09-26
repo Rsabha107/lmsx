@@ -104,6 +104,7 @@
 </template>
 
 <script setup>
+import { useStatusLabels } from '../Composables/useStatusLabels';
 import { ref, computed } from 'vue';
 import { router, usePage } from '@inertiajs/vue3';
 import AppLayout from '../Components/AppLayout.vue';
@@ -141,8 +142,9 @@ function statusTone(s) {
   return statusMap[s]?.tone ?? 'neutral';
 }
 
+const { statusLabel: sharedStatusLabel } = useStatusLabels();
 function statusLabel(s) {
-  return statusMap[s]?.label ?? s;
+  return sharedStatusLabel(s, statusMap[s]?.label);
 }
 
 function formatFunctionalArea(code) {

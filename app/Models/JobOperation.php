@@ -12,6 +12,31 @@ class JobOperation extends Model
 
     public const STATUSES = ['pending', 'dispatched', 'in-progress', 'completed', 'cancelled'];
 
+    /** What each status is called on screen - the web Jobs Queue and the mobile app both read this. */
+    public const STATUS_LABELS = [
+        'pending' => 'Scheduled',
+        'dispatched' => 'Dispatched',
+        'in-progress' => 'In Progress',
+        'completed' => 'Done',
+        'cancelled' => 'Cancelled',
+    ];
+
+    public static function statusLabel(?string $status): string
+    {
+        return self::STATUS_LABELS[$status] ?? ucfirst((string) $status);
+    }
+
+    /**
+     * Everything a page may need to name: the stored statuses, plus "delayed",
+     * which the schedule boards derive from a movement's delay.
+     *
+     * @return array<string, string>
+     */
+    public static function uiStatusLabels(): array
+    {
+        return self::STATUS_LABELS + ['delayed' => 'Delayed'];
+    }
+
     /**
      * Which statuses a job may move to from its current one. A job only ever
      * moves forwards, except that anything unfinished can be cancelled and a

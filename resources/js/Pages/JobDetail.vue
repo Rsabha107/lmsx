@@ -379,6 +379,7 @@
 </template>
 
 <script setup>
+import { useStatusLabels } from '../Composables/useStatusLabels';
 import { ref, computed } from 'vue';
 import { Link as InertiaLink } from '@inertiajs/vue3';
 import AppLayout from '../Components/AppLayout.vue';
@@ -453,8 +454,13 @@ const completedCount = computed(() =>
   props.checkpoints.filter(cp => cp.status === 'done').length
 );
 
+// This page shows the job's stored status, so it needs every stored value's tone.
 const statusMap = {
+  'pending': { tone: 'primary' },
+  'dispatched': { tone: 'primary' },
   'in-progress': { tone: 'live', label: 'In Progress' },
+  'completed': { tone: 'ok' },
+  'cancelled': { tone: 'neutral' },
   'scheduled': { tone: 'primary', label: 'Scheduled' },
   'delayed': { tone: 'warn', label: 'Delayed' },
   'done': { tone: 'ok', label: 'Done' },
@@ -464,8 +470,9 @@ function statusTone(s) {
   return statusMap[s]?.tone ?? 'neutral';
 }
 
+const { statusLabel: sharedStatusLabel } = useStatusLabels();
 function statusLabel(s) {
-  return statusMap[s]?.label ?? s;
+  return sharedStatusLabel(s, statusMap[s]?.label);
 }
 
 const showExplainModal = ref(false);

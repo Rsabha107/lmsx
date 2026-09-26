@@ -53,28 +53,52 @@ trait ScopesMobileAccess
     }
 
     /**
-     * Constrain a query to the caller's areas. An empty area list matches
-     * nothing, which is the intended deny-by-default.
+     * Field supervisors see only the jobs they supervise; desk roles holding
+     * jobs.view-unassigned see every job their functional areas allow.
+     */
+    protected function onlyOwnJobs(Request $request): bool
+    {
+        return ! $request->user()->can('jobs.view-unassigned');
+    }
+
+    /**
+     * Constrain a jobs query to the caller's areas (and, for field supervisors,
+     * their own jobs). An empty area list matches nothing, which is the
+     * intended deny-by-default.
      */
     protected function scopeToVisibleAreas(Builder $query, Request $request, string $column = 'functional_area'): Builder
     {
+        if ($this->onlyOwnJobs($request)) {
+            // Keep the table prefix the caller used, so joined queries stay unambiguous.
+            $prefix = str_contains($column, '.') ? strstr($column, '.', true).'.' : '';
+            $query->where($prefix.'supervisor_id', $request->user()->id);
+        }
+
         $areas = $this->visibleFunctionalAreas($request);
 
         return $areas === null ? $query : $query->whereIn($column, $areas);
     }
 
     /**
-     * Same restriction for rows that reach functional_area through their job.
+     * Same restriction for rows that reach their job through a relation.
      */
     protected function scopeToVisibleAreasViaJob(Builder $query, Request $request, string $relation = 'job'): Builder
     {
         $areas = $this->visibleFunctionalAreas($request);
+        $ownOnly = $this->onlyOwnJobs($request);
 
-        if ($areas === null) {
+        if ($areas === null && ! $ownOnly) {
             return $query;
         }
 
-        return $query->whereHas($relation, fn (Builder $job) => $job->whereIn('functional_area', $areas));
+        return $query->whereHas($relation, function (Builder $job) use ($areas, $ownOnly, $request) {
+            if ($areas !== null) {
+                $job->whereIn('functional_area', $areas);
+            }
+            if ($ownOnly) {
+                $job->where('supervisor_id', $request->user()->id);
+            }
+        });
     }
 
     protected function authorizeJobAccess(Request $request, JobOperation $job): void
@@ -91,6 +115,12 @@ trait ScopesMobileAccess
                 || $user->hasFunctionalArea($job->functional_area),
             403,
             'This job is outside your functional area.'
+        );
+
+        abort_if(
+            $this->onlyOwnJobs($request) && (int) $job->supervisor_id !== (int) $user->id,
+            403,
+            'This job is assigned to another supervisor.'
         );
     }
 

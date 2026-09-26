@@ -56,14 +56,14 @@
           <div class="email-section-title">Today's Movements</div>
           <table class="email-table">
             <thead><tr>
-              <th>Job</th><th>Team</th><th>Route</th><th>Window</th><th>Status</th>
+              <th>Job</th><th>Team</th><th>Route</th><th>Pickup</th><th>Status</th>
             </tr></thead>
             <tbody>
               <tr v-for="mv in schedule" :key="mv.id">
                 <td class="mono">{{ mv.id }}</td>
                 <td>{{ mv.team }}</td>
                 <td>{{ mv.from }} → {{ mv.to }}</td>
-                <td class="mono">{{ mv.dep }}–{{ mv.arr }}</td>
+                <td class="mono">{{ mv.dep }}</td>
                 <td :class="`status-${mv.status}`">{{ mv.status }}</td>
               </tr>
               <tr v-if="!schedule.length">

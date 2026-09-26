@@ -23,7 +23,8 @@ class EventSeeder extends Seeder
             [
                 'name' => 'FIFA U-17 WORLD CUP QATAR 2026',
                 'host_country' => 'QAT',
-                'status' => 'upcoming',
+                'start_date' => '2026-11-10',
+                'end_date' => '2026-12-02',
                 'event_logo' => '',
                 'active_flag' => true,
             ]

@@ -16,10 +16,14 @@ class Event extends Model
         'host_country',
         'start_date',
         'end_date',
-        'status',
         'active_flag',
         'notes',
     ];
+
+    public const STATUS_UPCOMING = 'upcoming';
+    public const STATUS_CURRENT = 'current';
+    public const STATUS_PAST = 'past';
+    public const STATUS_CANCELLED = 'cancelled';
 
     protected $casts = [
         'start_date'  => 'date',
@@ -27,7 +31,30 @@ class Event extends Model
         'active_flag' => 'boolean',
     ];
 
-    protected $appends = ['logo_url'];
+    protected $appends = ['logo_url', 'status'];
+
+    /**
+     * Dates decide where an event sits; active_flag = false means it was
+     * cancelled, whatever its dates say.
+     */
+    public function getStatusAttribute(): string
+    {
+        if (! $this->active_flag) {
+            return self::STATUS_CANCELLED;
+        }
+
+        $today = today();
+
+        if (! $this->start_date || $today->lt($this->start_date)) {
+            return self::STATUS_UPCOMING;
+        }
+
+        if ($this->end_date && $today->gt($this->end_date)) {
+            return self::STATUS_PAST;
+        }
+
+        return self::STATUS_CURRENT;
+    }
 
     public function getLogoUrlAttribute(): ?string
     {
@@ -63,13 +90,25 @@ class Event extends Model
         return $this->belongsToMany(User::class, 'user_events')->withTimestamps();
     }
 
+    /** Not cancelled. */
     public function scopeActive($query)
     {
-        return $query->where('is_active', true);
+        return $query->where('active_flag', true);
     }
 
-    public function scopeByStatus($query, string $status)
+    /** The event running today, else the latest one that isn't cancelled. */
+    public static function defaultId(): ?int
     {
-        return $query->where('status', $status);
+        return static::active()->current()->orderByDesc('start_date')->value('id')
+            ?: static::active()->latest('start_date')->latest('id')->value('id');
+    }
+
+    /** Running today (dates only, not the cancelled flag). */
+    public function scopeCurrent($query)
+    {
+        $today = today()->toDateString();
+
+        return $query->whereDate('start_date', '<=', $today)
+            ->where(fn ($q) => $q->whereNull('end_date')->orWhereDate('end_date', '>=', $today));
     }
 }

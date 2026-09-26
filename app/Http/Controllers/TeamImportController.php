@@ -55,7 +55,7 @@ class TeamImportController extends Controller
     {
         return [
             ['Column', 'Description'],
-            ['Trigram', 'Required. The team\'s 3-letter code, unique within this event. Rows are matched to existing teams by this code.'],
+            ['Trigram', 'Required. The team\'s code (e.g. QAT, or BHR-V with a squad suffix), unique within this event and spelled exactly as in the match schedule. Rows are matched to existing teams by this code.'],
             ['Team Name', 'Required when creating a new team. Ignored (kept as-is) when updating an existing one, unless changed.'],
             ['Country Code', 'Optional. 3-letter code matching a country already in the system (e.g. EGY, FRA).'],
             ['Group', 'Optional, e.g. "Group A".'],

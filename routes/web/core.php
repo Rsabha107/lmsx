@@ -6,9 +6,9 @@
  */
 
 use App\Http\Controllers\LmsController;
-use App\Models\Event;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
+use Illuminate\Validation\Rule;
 
 Route::middleware('auth')->group(function () {
 
@@ -38,7 +38,8 @@ Route::middleware('auth')->group(function () {
     // Session: active event selector
     Route::post('/session/active-event', function (Request $request) {
         $validated = $request->validate([
-            'event_id' => ['nullable', 'integer', 'exists:events,id'],
+            // Cancelled events are hidden from the switcher, so don't accept them either.
+            'event_id' => ['nullable', 'integer', Rule::exists('events', 'id')->where('active_flag', true)],
         ]);
 
         $eventId = $validated['event_id'] ?? null;
@@ -49,13 +50,6 @@ Route::middleware('auth')->group(function () {
         }
 
         $request->session()->put('active_event_id', $eventId);
-
-        // active_flag is global: it is the default event every mobile client
-        // resolves to, so switching it is not a per-user preference.
-        if ($eventId && $user->can('events.set-mobile-default')) {
-            Event::whereKeyNot($eventId)->update(['active_flag' => false]);
-            Event::whereKey($eventId)->update(['active_flag' => true]);
-        }
 
         return redirect()->back();
     })->name('session.active-event');

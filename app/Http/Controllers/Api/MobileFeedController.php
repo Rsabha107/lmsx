@@ -250,8 +250,9 @@ class MobileFeedController extends Controller
             ->keyBy('event_id');
 
         $events = Event::query()
+            ->active()
             ->with(['country', 'venues'])
-            ->orderByDesc('active_flag')
+            ->orderByDesc('start_date')
             ->orderByDesc('id')
             ->get()
             ->filter(fn (Event $event) => $user->canAccessEvent($event->id))
@@ -266,7 +267,8 @@ class MobileFeedController extends Controller
                     'status' => $event->status,
                     'starts_on' => $event->start_date?->toDateString(),
                     'ends_on' => $event->end_date?->toDateString(),
-                    'active' => (bool) $event->active_flag,
+                    // Kept for app builds that predate the date-derived status.
+                    'active' => $event->status === Event::STATUS_CURRENT,
                     'jobs' => (int) ($jobs->total ?? 0),
                     'teams' => (int) ($jobs->teams ?? 0),
                     'venue' => $event->venues->first()?->city ?: $event->country?->country_name,
@@ -292,8 +294,6 @@ class MobileFeedController extends Controller
 
     private function resolveEventId(Request $request): ?int
     {
-        return $request->integer('event_id')
-            ?: Event::where('active_flag', true)->latest('id')->value('id')
-            ?: Event::query()->latest('id')->value('id');
+        return $request->integer('event_id') ?: Event::defaultId();
     }
 }

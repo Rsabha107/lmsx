@@ -26,8 +26,6 @@ class RolePermissionSeeder extends Seeder
         'jobs.override',
         // Reach events the user is not assigned to.
         'events.access-all',
-        // Flip the global active_flag the mobile app reads as its default event.
-        'events.set-mobile-default',
         'events.view',
         'events.manage',
         'fleet.view',

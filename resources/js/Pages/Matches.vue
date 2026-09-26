@@ -539,6 +539,15 @@
     <Modal :show="showImportModal" @close="closeImportModal" max-width="560px">
       <template #title>Import Matches</template>
       <div style="display: flex; flex-direction: column; gap: 14px;">
+        <div role="alert" style="display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; background: #FEF3C7; border: 1px solid #FCD34D; border-radius: 8px; font-size: 12px; line-height: 1.55; color: #92400E;">
+          <svg-icon name="info" :size="14" style="flex-shrink: 0; margin-top: 2px;" />
+          <div>
+            <strong>Make sure all teams already exist in {{ activeEventName }}.</strong>
+            A team code that isn't set up yet is left blank on the match, not created.
+            <a href="/event-teams" style="font-weight: 600; color: #92400E;">Check teams</a>
+          </div>
+        </div>
+
         <div style="font-size: 13px; color: var(--ink2); line-height: 1.5;">
           Upload an Excel (.xlsx/.xls) or CSV file to create or update matches for
           <strong>{{ activeEventName }}</strong>. Rows are matched by Match Number -

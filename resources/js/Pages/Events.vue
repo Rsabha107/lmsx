@@ -19,9 +19,10 @@
     <!-- Stats -->
     <div class="stats-grid">
       <mini-stat label="Total Events"  :value="events.length" />
-      <mini-stat label="Active"        :value="countByStatus('active')"    tone="primary" />
+      <mini-stat label="Current"       :value="countByStatus('current')"   tone="primary" />
       <mini-stat label="Upcoming"      :value="countByStatus('upcoming')"  tone="ok" />
-      <mini-stat label="Completed"     :value="countByStatus('completed')" />
+      <mini-stat label="Past"          :value="countByStatus('past')" />
+      <mini-stat label="Cancelled"     :value="countByStatus('cancelled')" />
     </div>
 
     <!-- Table controls -->
@@ -33,9 +34,10 @@
         </div>
         <select v-model="filterStatus" class="filter-select">
           <option value="">All Statuses</option>
+          <option value="current">Current</option>
           <option value="upcoming">Upcoming</option>
-          <option value="active">Active</option>
-          <option value="completed">Completed</option>
+          <option value="past">Past</option>
+          <option value="cancelled">Cancelled</option>
         </select>
       </div>
     </div>
@@ -227,23 +229,31 @@
           </div>
           <div class="form-group">
             <label class="form-label">Status</label>
-            <select v-model="form.status" class="form-select">
-              <option value="upcoming">Upcoming</option>
-              <option value="active">Active</option>
-              <option value="completed">Completed</option>
-            </select>
+            <div class="status-hint">
+              <span :class="['status-pill', `status-pill--${formStatus}`]">{{ formStatus }}</span>
+              <span>Follows the start and end dates.</span>
+            </div>
           </div>
         </div>
         <div class="form-row">
           <div class="form-group">
-            <label class="form-label">Start Date</label>
+            <label class="form-label">Start Date <span class="required">*</span></label>
             <FormDateField v-model="form.start_date" display-format="d/m/Y" value-format="Y-m-d" placeholder="dd/mm/yyyy" />
+            <span v-if="formErrors.start_date" class="field-error">{{ formErrors.start_date }}</span>
           </div>
           <div class="form-group">
-            <label class="form-label">End Date</label>
+            <label class="form-label">End Date <span class="required">*</span></label>
             <FormDateField v-model="form.end_date" display-format="d/m/Y" value-format="Y-m-d" placeholder="dd/mm/yyyy" />
+            <span v-if="formErrors.end_date" class="field-error">{{ formErrors.end_date }}</span>
           </div>
         </div>
+        <label v-if="editingEvent" class="cancel-toggle">
+          <input type="checkbox" :checked="!form.active_flag" @change="form.active_flag = !$event.target.checked" />
+          <span>
+            <strong>Cancelled</strong>
+            Hidden from the event switcher and the mobile app. Untick to bring it back.
+          </span>
+        </label>
         <div class="form-group">
           <label class="form-label">Event Logo</label>
           <div class="logo-field">
@@ -673,6 +683,7 @@ const eventToDelete    = ref(null);
 const assigningVenueEvent = ref(null);
 
 const form = ref(emptyForm());
+const formErrors = ref({});
 const logoFile = ref(null);
 const logoPreview = ref(null);
 const removeLogo = ref(false);
@@ -681,8 +692,21 @@ const venueSearch = ref('');
 const eventVenueSearch = ref('');
 
 function emptyForm() {
-  return { name: '', short_name: '', host_country: '', start_date: '', end_date: '', status: 'upcoming', notes: '', venue_ids: [] };
+  return { name: '', short_name: '', host_country: '', start_date: '', end_date: '', active_flag: true, notes: '', venue_ids: [] };
 }
+
+// Mirrors Event::getStatusAttribute() so the form previews the saved status.
+function statusFor(startDate, endDate, activeFlag) {
+  if (!activeFlag) return 'cancelled';
+  const today = new Date().toISOString().substring(0, 10);
+  const start = startDate ? String(startDate).substring(0, 10) : '';
+  const end = endDate ? String(endDate).substring(0, 10) : '';
+  if (!start || today < start) return 'upcoming';
+  if (end && today > end) return 'past';
+  return 'current';
+}
+
+const formStatus = computed(() => statusFor(form.value.start_date, form.value.end_date, form.value.active_flag));
 
 // ── Computed ───────────────────────────────────────────────────────────────
 const filteredEvents = computed(() => {
@@ -743,6 +767,7 @@ function openAddModal() {
   form.value = emptyForm();
   resetLogo(null);
   eventVenueSearch.value = '';
+  formErrors.value = {};
   showEventModal.value = true;
 }
 
@@ -754,12 +779,13 @@ function editEvent(event) {
     host_country: event.host_country || '',
     start_date:   event.start_date   ? String(event.start_date).substring(0, 10) : '',
     end_date:     event.end_date     ? String(event.end_date).substring(0, 10)   : '',
-    status:       event.status       || 'upcoming',
+    active_flag:  event.active_flag !== false,
     notes:        event.notes        || '',
     venue_ids:    (event.venues || []).map(v => v.id),
   };
   resetLogo(event.logo_url);
   eventVenueSearch.value = '';
+  formErrors.value = {};
   showEventModal.value = true;
 }
 
@@ -800,8 +826,7 @@ function submitEvent() {
 
   router.post(url, payload, {
     forceFormData: true,
-    onFinish: () => {
-      processing.value = false;
+    onSuccess: () => {
       showEventModal.value = false;
       resetLogo(null);
       // Keep the open detail panel in step with the venues just saved.
@@ -810,6 +835,8 @@ function submitEvent() {
         if (updated) selectedEvent.value = updated;
       }
     },
+    onError: (errors) => { formErrors.value = errors; },
+    onFinish: () => { processing.value = false; },
   });
 }
 
@@ -1110,7 +1137,7 @@ function fmtDT(dt) {
 .page-sub    { font-size:13px; color:var(--ink3); margin:2px 0 0; }
 .header-actions { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
 
-.stats-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:20px; }
+.stats-grid { display:grid; grid-template-columns:repeat(5,1fr); gap:14px; margin-bottom:20px; }
 @media(max-width:768px) { .stats-grid { grid-template-columns:repeat(2,1fr); } }
 
 .table-header   { display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; flex-wrap:wrap; gap:8px; }
@@ -1168,8 +1195,14 @@ function fmtDT(dt) {
 /* Status pills */
 .status-pill { display:inline-block; padding:2px 8px; border-radius:12px; font-size:11px; font-weight:600; text-transform:capitalize; }
 .status-pill--upcoming  { background:#EFF6FF; color:#1d4ed8; }
-.status-pill--active    { background:#F0FDF4; color:#15803d; }
-.status-pill--completed { background:var(--panel); color:var(--ink3); }
+.status-pill--current   { background:#F0FDF4; color:#15803d; }
+.status-pill--past      { background:var(--panel); color:var(--ink3); }
+.status-pill--cancelled { background:#FEE2E2; color:#991B1B; }
+.status-hint { display:flex; align-items:center; gap:8px; min-height:34px; font-size:12px; color:var(--ink3); }
+.field-error { font-size:11.5px; color:#b91c1c; }
+.cancel-toggle { display:flex; align-items:flex-start; gap:8px; padding:10px 12px; border:1px solid var(--border); border-radius:8px; font-size:12px; line-height:1.5; color:var(--ink3); cursor:pointer; }
+.cancel-toggle strong { color:var(--ink); margin-right:4px; }
+.cancel-toggle input { margin-top:2px; }
 
 /* Detail card */
 .detail-card { width:320px; flex-shrink:0; background:var(--surface); border:1px solid var(--border); border-radius:12px; overflow:hidden; max-height:calc(100vh - 40px); display:flex; flex-direction:column; }

@@ -17,15 +17,13 @@ use Illuminate\Http\Request;
 trait ScopesMobileAccess
 {
     /**
-     * Mobile clients have no session, so resolve the flagged active event. The
-     * client picks the event, so the choice is authorized against the user's
+     * Mobile clients have no session, so they name the event; without one, the
+     * event running today. The choice is authorized against the user's
      * assignments rather than trusted outright.
      */
     protected function activeEventId(Request $request): ?int
     {
-        $eventId = $request->integer('event_id')
-            ?: Event::where('active_flag', true)->latest('id')->value('id')
-            ?: Event::query()->latest('id')->value('id');
+        $eventId = $request->integer('event_id') ?: Event::defaultId();
 
         abort_unless(
             $request->user()->canAccessEvent($eventId),

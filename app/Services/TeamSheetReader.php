@@ -107,8 +107,11 @@ class TeamSheetReader extends AbstractSheetReader
               "Total Pax" columns). Decide which leg each belongs to from the
               grouping row above it, or from left-to-right order: inbound/arrival
               first, outbound/departure second.
-            - "trigram" is the team's short code (3 letters, e.g. QAT, BRA). Do not
-              confuse it with a country code column or the full team name.
+            - "trigram" is the team's short code (e.g. QAT, BRA, BHR-V). Copy it
+              exactly as printed, keeping any suffix such as "-V" or "-17" - it
+              is how matches refer to the team, so "BHR-V" must stay "BHR-V",
+              never "BHR". Do not confuse it with a country code column or the
+              full team name.
             - "itinerary" is a routing string such as "TAS-DOH-TAS".
             - "arrival_date" is the day the team travels in, from a column such as
               "Arrival Date", "Arrival Date to Doha" or "Inbound Date". Likewise

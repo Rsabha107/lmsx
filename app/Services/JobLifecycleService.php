@@ -6,7 +6,9 @@ use App\Models\AuditLog;
 use App\Models\Driver;
 use App\Models\JobCheckpoint;
 use App\Models\JobOperation;
+use App\Models\Movement;
 use App\Models\User;
+use App\Models\Vehicle;
 use Carbon\Carbon;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
@@ -26,6 +28,9 @@ class JobLifecycleService
 {
     /** States a checkpoint can no longer be completed or skipped out of. */
     private const RESOLVED_STATES = ['done', 'skipped'];
+
+    /** Audit action written by assignMovementCrew; the notification feed reads it back. */
+    public const CREW_ASSIGNED = 'Crew assigned';
 
     public function __construct(private readonly CheckpointUploadService $uploads)
     {
@@ -354,6 +359,62 @@ class JobLifecycleService
     public function changeCrew(JobOperation $job, ?int $driverId, ?int $supervisorId, ?string $reason): bool
     {
         return DB::transaction(fn () => $this->reassignCrew($job, $driverId, $supervisorId, $reason));
+    }
+
+    /**
+     * Set a movement's vehicle, driver and supervisor, mirroring them onto its
+     * job if one exists. Unlike changeCrew, a null clears that role.
+     *
+     * @return bool whether anything actually changed
+     */
+    public function assignMovementCrew(Movement $movement, ?int $vehicleId, ?int $driverId, ?int $supervisorId): bool
+    {
+        return DB::transaction(function () use ($movement, $vehicleId, $driverId, $supervisorId) {
+            $movement->loadMissing(['vehicle', 'driver', 'fieldSupervisor', 'job']);
+
+            $vehicleName = fn (?Vehicle $v) => $v ? ($v->code ?? $v->plate_number ?? "#{$v->id}") : 'Unassigned';
+            $changes = [];
+
+            if ((int) $movement->vehicle_id !== (int) $vehicleId) {
+                $changes[] = 'Vehicle '.$vehicleName($movement->vehicle).' → '.$vehicleName($vehicleId ? Vehicle::find($vehicleId) : null);
+            }
+
+            if ((int) $movement->driver_id !== (int) $driverId) {
+                $changes[] = 'Driver '.($movement->driver?->name ?? 'Unassigned').' → '
+                    .($driverId ? (Driver::find($driverId)?->name ?? "#{$driverId}") : 'Unassigned');
+            }
+
+            if ((int) $movement->field_supervisor_id !== (int) $supervisorId) {
+                $changes[] = 'Supervisor '.($movement->fieldSupervisor?->name ?? 'Unassigned').' → '
+                    .($supervisorId ? (User::find($supervisorId)?->name ?? "#{$supervisorId}") : 'Unassigned');
+            }
+
+            if ($changes === []) {
+                return false;
+            }
+
+            $movement->update([
+                'vehicle_id' => $vehicleId,
+                'driver_id' => $driverId,
+                'field_supervisor_id' => $supervisorId,
+            ]);
+
+            $movement->job?->update([
+                'vehicle_id' => $vehicleId,
+                'driver_id' => $driverId,
+                'supervisor_id' => $supervisorId,
+            ]);
+
+            AuditLog::record(
+                action: self::CREW_ASSIGNED,
+                target: $movement->code.($movement->job ? ' · '.$movement->job->job_id : ''),
+                meta: implode('; ', $changes),
+                subject: $movement,
+                eventId: $movement->event_id,
+            );
+
+            return true;
+        });
     }
 
     /**

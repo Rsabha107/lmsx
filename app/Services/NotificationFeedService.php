@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\AuditLog;
 use App\Models\JobCheckpoint;
 use App\Models\JobIssue;
 use App\Models\Movement;
@@ -24,6 +25,7 @@ class NotificationFeedService
             $this->fromCheckpoints($eventId),
             $this->fromIssues($eventId),
             $this->fromDelayedMovements($eventId),
+            $this->fromAgencyCrewChanges($eventId),
         );
 
         usort($alerts, fn ($a, $b) => ($b['at'] ?? '') <=> ($a['at'] ?? ''));
@@ -127,6 +129,24 @@ class NotificationFeedService
                     $movement->updated_at,
                 );
             })
+            ->all();
+    }
+
+    private function fromAgencyCrewChanges(?int $eventId): array
+    {
+        return AuditLog::where('action', JobLifecycleService::CREW_ASSIGNED)
+            ->where('user_role', 'agency')
+            ->when($eventId, fn ($q) => $q->where('event_id', $eventId))
+            ->latest()
+            ->limit(self::SCAN_LIMIT)
+            ->get()
+            ->map(fn (AuditLog $log) => $this->alert(
+                'crew-'.$log->id,
+                'neutral',
+                'Agency crew change: '.$log->target,
+                $log->meta.' — '.$log->user_name,
+                $log->created_at,
+            ))
             ->all();
     }
 

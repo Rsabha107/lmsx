@@ -69,6 +69,20 @@
           </option>
         </select>
       </div>
+
+      <div class="job-search">
+        <svg-icon name="search" :size="14" />
+        <input
+          v-model="searchQuery"
+          type="search"
+          class="job-search-input"
+          placeholder="Search jobs, teams, flights, drivers, venues…"
+          aria-label="Search jobs"
+        />
+        <button v-if="searchQuery" type="button" class="job-search-clear" aria-label="Clear search" @click="searchQuery = ''">
+          <svg-icon name="x" :size="12" />
+        </button>
+      </div>
     </div>
 
     <job-stats-panel
@@ -806,6 +820,18 @@ function selectJob(job) {
   selectedJob.value = selectedJob.value?.id === job.id ? null : job;
 }
 
+// Switching event keeps this page's state, so drop the selection it can't show.
+watch(() => page.props.activeEventId, () => {
+  selectedJob.value = null;
+  statsDate.value = null;
+});
+
+// A reload hands over new job objects; follow the selected one or let it go.
+watch(() => props.schedule, (schedule) => {
+  if (!selectedJob.value) return;
+  selectedJob.value = schedule.find(j => j.id === selectedJob.value.id) || null;
+});
+
 function handleRefresh() {
   // Store the current job ID before refresh
   const currentJobId = selectedJob.value?.id;
@@ -1157,12 +1183,10 @@ const filtered = computed(() => {
     jobs = jobs.filter(j => j.date === statsDate.value);
   }
 
-  // Sort by date desc
-  jobs = [...jobs].sort((a, b) => {
-    const aTime = a.date ? new Date(a.date).getTime() : -Infinity;
-    const bTime = b.date ? new Date(b.date).getTime() : -Infinity;
-    return bTime - aTime;
-  });
+  // Sort by date and pickup time (asc, undated last)
+  const timeOf = (j) => [j.pickup, j.dep].find((t) => t && t !== '--:--') || '99:99';
+  const startOf = (j) => (j.date ? `${j.date} ${timeOf(j)}` : '\uffff');
+  jobs = [...jobs].sort((a, b) => startOf(a).localeCompare(startOf(b)));
 
   return jobs;
 });
@@ -1217,7 +1241,45 @@ const scopedJobs = computed(() => {
     }
   }
 
+  // Every word must appear somewhere on the job.
+  const terms = searchQuery.value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  if (terms.length) {
+    jobs = jobs.filter(j => {
+      const text = searchIndex.value.get(j.id) ?? '';
+      return terms.every(t => text.includes(t));
+    });
+  }
+
   return jobs;
+});
+
+const searchQuery = ref('');
+
+function collectText(value, out, depth = 0) {
+  if (value == null || depth > 4) return;
+  if (typeof value === 'string' || typeof value === 'number') {
+    out.push(String(value));
+  } else if (typeof value === 'object') {
+    for (const v of Object.values(value)) collectText(v, out, depth + 1);
+  }
+}
+
+// Every value on the job (nested flight, match, crew and checkpoints too), plus
+// the labels the list and detail panel derive from them.
+const searchIndex = computed(() => {
+  const index = new Map();
+  for (const job of props.schedule) {
+    const parts = [
+      statusLabel(job.status),
+      kindLabel(job.kind),
+      formatJobFromLocation(job),
+      formatJobToLocation(job),
+      job.date ? formatDate(job.date) : '',
+    ];
+    collectText(job, parts);
+    index.set(job.id, parts.join(' ').toLowerCase());
+  }
+  return index;
 });
 
 const resourceOptions = computed(() => {
@@ -2809,6 +2871,46 @@ function submitOverride() {
   border-color: var(--primary);
 }
 
+.job-search {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 280px;
+  padding: 0 10px;
+  height: 32px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--ink3);
+}
+
+.job-search:focus-within { border-color: var(--accent); }
+
+.job-search-input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--ink);
+  font-size: 12px;
+  font-family: inherit;
+}
+
+.job-search-input::-webkit-search-cancel-button { display: none; }
+
+.job-search-clear {
+  display: flex;
+  padding: 2px;
+  border: 0;
+  background: none;
+  color: var(--ink3);
+  cursor: pointer;
+}
+
+.job-search-clear:hover { color: var(--ink); }
+
 @media (max-width: 768px) {
   .quick-filters {
     flex-direction: column;
@@ -2818,6 +2920,11 @@ function submitOverride() {
   
   .quick-filter-section {
     flex-wrap: wrap;
+  }
+
+  .job-search {
+    margin-left: 0;
+    min-width: 0;
   }
 }
 </style>

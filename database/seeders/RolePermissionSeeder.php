@@ -13,7 +13,7 @@ class RolePermissionSeeder extends Seeder
      * plus admin/oversight — not an aspirational role list with no basis in
      * this codebase's data model.
      */
-    private const ROLES = ['admin', 'ground_control', 'transport', 'team_services', 'venue_ops'];
+    private const ROLES = ['admin', 'ground_control', 'transport', 'team_services', 'venue_ops', 'agency'];
 
     private const PERMISSIONS = [
         'movements.view',
@@ -32,6 +32,8 @@ class RolePermissionSeeder extends Seeder
         'fleet.manage',
         'plans.view',
         'plans.manage',
+        // Set a movement's vehicle, driver and supervisor, and nothing else on it.
+        'movements.assign-crew',
         'analytics.view',
         'audit.view',
         // The desktop web console: dashboard, schedule, jobs queue, tracker, etc.
@@ -77,5 +79,18 @@ class RolePermissionSeeder extends Seeder
         foreach (['transport', 'team_services', 'venue_ops'] as $scopedRole) {
             Role::findByName($scopedRole)->syncPermissions(self::SCOPED_PERMISSIONS);
         }
+
+        // The outside crew agency: sees everything, changes only crew. No
+        // jobs.view, because the job policy treats it as a grant to act on jobs.
+        // RestrictAgencyToCrewAssignment closes the write routes guarded only by a view permission.
+        Role::findByName('agency')->syncPermissions([
+            'movements.view',
+            'movements.view-all-functional-areas',
+            'events.view',
+            'fleet.view',
+            'plans.view',
+            'console.view',
+            'movements.assign-crew',
+        ]);
     }
 }

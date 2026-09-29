@@ -25,6 +25,7 @@ use App\Models\Plan;
 use App\Models\Movement;
 use App\Services\JobLifecycleService;
 use App\Services\DailySummaryService;
+use App\Services\DriverDayStatusService;
 use App\Services\NotificationFeedService;
 use App\Services\SettingsService;
 use Carbon\Carbon;
@@ -769,12 +770,15 @@ class LmsController extends Controller
         ]);
     }
 
-    public function fleet(): Response
+    public function fleet(DriverDayStatusService $driverStatus): Response
     {
+        $drivers = Driver::with('provider:id,name')->get();
+        $today = $driverStatus->forDrivers($drivers);
+
         return Inertia::render('Fleet', [
             'vehicles' => Vehicle::all(),
             'providers' => FleetProvider::withCount(['vehicles', 'drivers'])->get(),
-            'drivers' => Driver::with('provider:id,name')->get(),
+            'drivers' => $drivers->map(fn (Driver $d) => $d->toArray() + ['today' => $today[$d->id]])->values(),
         ]);
     }
 

@@ -7,10 +7,16 @@
  * Plans contain movements which are converted to executable jobs.
  */
 
+use App\Http\Controllers\ConflictController;
+use App\Http\Controllers\MovementCrewController;
 use App\Http\Controllers\PlanManagementController;
 use Illuminate\Support\Facades\Route;
 
 Route::middleware(['auth'])->group(function () {
+
+    Route::get('/crew-assignment', [MovementCrewController::class, 'index'])
+        ->middleware('permission:movements.assign-crew')
+        ->name('crew-assignment');
     
     /*
     |--------------------------------------------------------------------------
@@ -50,12 +56,26 @@ Route::middleware(['auth'])->group(function () {
             ->middleware('permission:plans.view')
             ->name('checkpoints');
 
+        Route::get('/{movement}/crew-options', [ConflictController::class, 'crewOptions'])
+            ->middleware('permission:plans.view')
+            ->name('crew-options');
+
+        Route::patch('/{movement}/crew', [MovementCrewController::class, 'update'])
+            ->middleware('permission:movements.assign-crew|plans.manage')
+            ->name('assign-crew');
+
         Route::middleware('permission:plans.manage')->group(function () {
+            Route::post('/{movement}/recompute-window', [ConflictController::class, 'recomputeWindow'])->name('recompute-window');
             Route::delete('/bulk-delete', [PlanManagementController::class, 'deleteMovementsBulk'])->name('bulk-delete');
             Route::put('/{movement}/checkpoint-template', [PlanManagementController::class, 'updateCheckpointTemplate'])->name('update-checkpoint-template');
             Route::put('/{movement}', [PlanManagementController::class, 'updateMovement'])->name('update');
             Route::delete('/{movement}', [PlanManagementController::class, 'deleteMovement'])->name('delete');
         });
+    });
+
+    Route::prefix('conflicts')->name('conflicts.')->middleware('permission:plans.manage')->group(function () {
+        Route::post('/accept', [ConflictController::class, 'accept'])->name('accept');
+        Route::delete('/accept', [ConflictController::class, 'reopen'])->name('reopen');
     });
 
     /*

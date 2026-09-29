@@ -7,6 +7,7 @@ use App\Models\CheckpointTemplate;
 use App\Models\Event;
 use App\Models\MovementTemplate;
 use App\Models\MovementTemplateLeg;
+use App\Services\JobGenerationService;
 use App\Services\TemplateCopyService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -286,8 +287,11 @@ class MovementTemplateController extends Controller
 
             DB::commit();
 
+            $resized = app(JobGenerationService::class)->applyTemplateDurations($movementTemplate);
+
             return redirect()->route('library')
-                ->with('success', "Movement template '{$movementTemplate->name}' updated successfully");
+                ->with('success', "Movement template '{$movementTemplate->name}' updated successfully"
+                    .($resized ? " · {$resized} movement window(s) resized" : ''));
                 
         } catch (\Exception $e) {
             DB::rollBack();

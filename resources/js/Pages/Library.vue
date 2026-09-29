@@ -174,8 +174,8 @@
           </div>
         </div>
         
-        <div style="display: grid; grid-template-columns: 100px 1fr 100px 2.5fr 100px 100px; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--border); font-size: 11px; font-weight: 700; color: var(--ink3); letter-spacing: 0.6px; text-transform: uppercase; position: sticky; top: 0; background: var(--surface);">
-          <div>Code</div><div>Name</div><div>Movement Type</div><div>Checkpoint Sequence</div><div>Est. Duration</div><div>Actions</div>
+        <div style="display: grid; grid-template-columns: 100px 1fr 100px 2.5fr 100px; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--border); font-size: 11px; font-weight: 700; color: var(--ink3); letter-spacing: 0.6px; text-transform: uppercase; position: sticky; top: 0; background: var(--surface);">
+          <div>Code</div><div>Name</div><div>Movement Type</div><div>Checkpoint Sequence</div><div>Actions</div>
         </div>
         
         <div v-if="!checkpointTemplates || checkpointTemplates.length === 0" style="padding: 40px; text-align: center; color: var(--ink3);">
@@ -188,7 +188,7 @@
           :key="template.id"
           :style="{
             display: 'grid', 
-            gridTemplateColumns: '100px 1fr 100px 2.5fr 100px 100px', 
+            gridTemplateColumns: '100px 1fr 100px 2.5fr 100px', 
             gap: '10px',
             padding: '12px 14px',
             borderBottom: i === checkpointTemplates.length - 1 ? 'none' : '1px solid var(--border)',
@@ -227,7 +227,6 @@
             </span>
             <span v-if="!template.checkpoints || template.checkpoints.length === 0" style="font-size: 11px; color: var(--ink3); font-style: italic;">No checkpoints</span>
           </div>
-          <div style="font-size: 12px; color: var(--ink2);">{{ template.estimated_duration_minutes || 0 }} min</div>
           <div style="display: flex; gap: 4px;">
             <TableActions
               @edit="editCheckpointTemplate(template)"
@@ -294,7 +293,7 @@
               </div>
             </div>
             <div style="font-size: 12px; color: var(--ink2); text-align: center;">{{ template.total_legs || 0 }}</div>
-            <div style="font-size: 12px; color: var(--ink2);">{{ template.estimated_duration_minutes || 0 }} min</div>
+            <div style="font-size: 12px; color: var(--ink2);">{{ legsDuration(template) }} min</div>
             <div style="display: flex; gap: 4px;" @click.stop>
               <TableActions 
                 @edit="editMovementTemplate(template)" 
@@ -316,7 +315,7 @@
                 <div style="font-size: 16px; font-weight: 700; color: var(--ink); margin-bottom: 4px;">{{ selectedMovementTemplate.name }}</div>
                 <div style="font-size: 12px; color: var(--ink3);">
                   {{ selectedMovementTemplate.scenario_type.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase()) }}
-                  <span v-if="selectedMovementTemplate.estimated_duration_minutes"> · {{ selectedMovementTemplate.estimated_duration_minutes }} min</span>
+                  <span v-if="legsDuration(selectedMovementTemplate)"> · {{ legsDuration(selectedMovementTemplate) }} min</span>
                 </div>
               </div>
               <button @click="selectedMovementTemplate = null" style="padding: 4px; border: none; background: transparent; cursor: pointer; color: var(--ink3); display: flex; align-items: center; justify-content: center; border-radius: 4px;" onmouseover="this.style.background='var(--panel)'" onmouseout="this.style.background='transparent'">
@@ -337,7 +336,7 @@
               </div>
               <div style="padding: 10px; background: var(--panel); border-radius: 6px;">
                 <div style="font-size: 10px; font-weight: 700; color: var(--ink3); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;">Est. Duration</div>
-                <div style="font-size: 18px; font-weight: 700; color: var(--ink);">{{ selectedMovementTemplate.estimated_duration_minutes || 0 }} min</div>
+                <div style="font-size: 18px; font-weight: 700; color: var(--ink);">{{ legsDuration(selectedMovementTemplate) }} min</div>
               </div>
             </div>
           </div>
@@ -584,10 +583,6 @@
           <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px; color: var(--ink);">Description</label>
           <textarea v-model="newCheckpointTemplate.description" placeholder="Optional description" rows="3" style="width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; resize: vertical;"></textarea>
         </div>
-        <div>
-          <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px; color: var(--ink);">Estimated Duration (minutes)</label>
-          <input v-model.number="newCheckpointTemplate.estimated_duration_minutes" type="number" min="1" placeholder="30" style="width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px;" />
-        </div>
         
         <!-- Checkpoint Builder -->
         <div style="margin-top: 8px;">
@@ -704,10 +699,6 @@
         <div>
           <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px; color: var(--ink);">Description</label>
           <textarea v-model="editingCheckpointTemplate.description" rows="3" style="width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; resize: vertical;"></textarea>
-        </div>
-        <div>
-          <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px; color: var(--ink);">Estimated Duration (minutes)</label>
-          <input v-model.number="editingCheckpointTemplate.estimated_duration_minutes" type="number" min="1" style="width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px;" />
         </div>
         
         <!-- Checkpoint Builder -->
@@ -1091,7 +1082,11 @@
                     <span style="font-family: var(--mono);">{{ getCheckpointTemplateCode(leg.checkpoint_template_id) }}</span>
                     <span>•</span>
                     <span>{{ leg.transport_type }}</span>
-                    <span v-if="leg.estimated_duration_minutes">• {{ leg.estimated_duration_minutes }} min</span>
+                    <span>•</span>
+                    <label style="display: inline-flex; align-items: center; gap: 4px;">
+                      <input v-model.number="leg.estimated_duration_minutes" type="number" min="1" placeholder="30" :aria-label="`Estimated minutes for leg ${leg.order}`" style="width: 64px; padding: 2px 6px; border: 1px solid var(--border); border-radius: 4px; font-size: 11px;" />
+                      min
+                    </label>
                   </div>
                 </div>
                 <button @click="removeLegFromEditTemplate(index)" style="padding: 4px 8px; border: 1px solid var(--border); border-radius: 4px; background: var(--surface); cursor: pointer; color: #DC2626; font-size: 12px; font-weight: 600;">
@@ -1785,6 +1780,11 @@ function moveLegDown(index) {
 function getCheckpointTemplateName(templateId) {
   const template = props.checkpointTemplates.find(t => t.id === templateId);
   return template ? template.name : 'Unknown';
+}
+
+// A template's duration is its legs' durations added up.
+function legsDuration(template) {
+  return (template?.legs || []).reduce((sum, leg) => sum + (Number(leg.estimated_duration_minutes) || 0), 0);
 }
 
 function getCheckpointTemplateCode(templateId) {

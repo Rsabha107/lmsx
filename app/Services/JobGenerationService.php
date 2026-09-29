@@ -158,7 +158,8 @@ class JobGenerationService
 
     /**
      * Recompute a single movement's window from the current effective
-     * settings offset, preserving its existing duration. No-ops (returns
+     * settings offset, with its length taken from its template leg (or its
+     * existing length when the leg has none). No-ops (returns
      * false) for movements that already have a job, kinds that aren't
      * offset-driven (training/daily_ops), or movements with no resolvable
      * reference time (flight/match).
@@ -186,9 +187,10 @@ class JobGenerationService
         $firstCheckpoint = $movement->checkpointTemplate?->checkpoints->first();
         $offsetMinutes = $this->resolveOffsetMinutes($firstCheckpoint, $movement->kind, $movement->event_id);
 
-        $durationMinutes = ($movement->window_start && $movement->window_end)
-            ? $movement->window_start->diffInMinutes($movement->window_end)
-            : 30;
+        $durationMinutes = $this->templateLeg($movement)?->estimated_duration_minutes
+            ?? (($movement->window_start && $movement->window_end)
+                ? $movement->window_start->diffInMinutes($movement->window_end)
+                : 30);
 
         $newWindowStart = $referenceTime->copy()->addMinutes($offsetMinutes);
         $newWindowEnd = $newWindowStart->copy()->addMinutes($durationMinutes);
@@ -220,7 +222,7 @@ class JobGenerationService
         $movements = Movement::where('event_id', $eventId)
             ->where('kind', $movementType)
             ->withoutJob()
-            ->with(['flight', 'match', 'plan', 'checkpointTemplate.checkpoints'])
+            ->with(['flight', 'match', 'plan.movementTemplate.legs', 'checkpointTemplate.checkpoints'])
             ->get();
 
         $updatedCount = 0;
@@ -232,6 +234,51 @@ class JobGenerationService
         }
 
         return $updatedCount;
+    }
+
+    /**
+     * The template leg a movement was generated from: same plan template,
+     * same phase, preferring the leg with the movement's checkpoint sequence.
+     */
+    protected function templateLeg(Movement $movement): ?\App\Models\MovementTemplateLeg
+    {
+        $legs = $movement->plan?->movementTemplate?->legs
+            ?->where('leg_type', $movement->kind);
+
+        return $legs?->firstWhere('checkpoint_template_id', $movement->checkpoint_template_id) ?? $legs?->first();
+    }
+
+    /**
+     * After a template's leg durations change, re-end the windows of its
+     * not-yet-generated movements. Start times are left alone, so a
+     * hand-adjusted start survives. Returns how many windows changed.
+     */
+    public function applyTemplateDurations(\App\Models\MovementTemplate $template): int
+    {
+        $movements = Movement::withoutJob()
+            ->whereNotNull('window_start')
+            ->whereHas('plan', fn ($q) => $q->where('movement_template_id', $template->id))
+            ->with('plan.movementTemplate.legs')
+            ->get();
+
+        $updated = 0;
+
+        foreach ($movements as $movement) {
+            $minutes = $this->templateLeg($movement)?->estimated_duration_minutes;
+            if (!$minutes) {
+                continue;
+            }
+
+            $end = $movement->window_start->copy()->addMinutes($minutes);
+            if ($movement->window_end?->equalTo($end)) {
+                continue;
+            }
+
+            $movement->update(['window_end' => $end]);
+            $updated++;
+        }
+
+        return $updated;
     }
 
     /**

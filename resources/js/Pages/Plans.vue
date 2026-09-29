@@ -573,6 +573,15 @@
               ]"
               @click="switchView('day')"
             >
+              By Day
+            </button>
+            <button
+              :class="[
+                'toggle-btn',
+                view === 'plan' ? 'toggle-btn--active' : '',
+              ]"
+              @click="switchView('plan')"
+            >
               By Plan
             </button>
             <button
@@ -596,7 +605,7 @@
     </div>
 
     <!-- Stats grid (only show when plan is selected) -->
-    <div v-if="view === 'day' && selectedPlanObj" class="stats-grid">
+    <div v-if="view === 'plan' && selectedPlanObj" class="stats-grid">
       <!-- <MiniStat label="Plan" :value="selectedPlanObj.name" /> -->
       <MiniStat
         label="Movements"
@@ -604,13 +613,13 @@
       />
       <MiniStat label="Teams" :value="selectedPlanObj.teams_count || 0" />
       <MiniStat label="Jobs generated" :value="jobsGenerated" />
-      <MiniStat label="Conflicts" :value="conflicts.length" tone="warn" />
+      <MiniStat label="Conflicts" :value="openConflicts.length" tone="warn" />
       <MiniStat label="Passengers" :value="totalPassengers" />
 
     </div>
 
     <!-- By Plan view -->
-    <template v-if="view === 'day'">
+    <template v-if="view === 'plan'">
       <!-- Tabs (only show when a plan is selected) -->
       <div
         v-if="activePlan"
@@ -1203,7 +1212,7 @@
                   :key="date"
                   :value="date"
                 >
-                  {{ date }}
+                  {{ date }} ({{ dateMovementCount(date) }})
                 </option>
               </select>
               <select
@@ -1228,9 +1237,19 @@
                 <option value="not-ready">
                   Not Ready ({{ notReadyForGenerationCount }})
                 </option>
+                <option value="generated">
+                  Generated ({{ generatedCount }})
+                </option>
+                <option value="conflicts">
+                  Has Conflicts ({{ conflictedMovementCount }})
+                </option>
               </select>
+              <span v-if="movementsFocusIds" class="conflict-focus-chip">
+                Conflict {{ movementsFocusLabel }}
+                <button type="button" aria-label="Clear conflict focus" @click="clearConflictFocus">✕</button>
+              </span>
               <div
-                v-if="movementsTeamFilter || movementsDateFilter || movementsPhaseFilter || movementsJobFilter"
+                v-if="movementsTeamFilter || movementsDateFilter || movementsPhaseFilter || movementsJobFilter || movementsFocusIds"
                 style="font-size: 11px; color: var(--ink3)"
               >
                 Showing {{ filteredPlanMovements.length }} of
@@ -1312,7 +1331,7 @@
             <div
               style="
                 display: grid;
-                grid-template-columns: 28px 5fr 7fr 6fr 5.5fr 14fr 9fr 7fr 4fr 4.5fr 7fr 7fr;
+                grid-template-columns: 28px minmax(0, 5fr) minmax(0, 7fr) minmax(0, 6fr) minmax(0, 5.5fr) minmax(0, 14fr) minmax(0, 9fr) minmax(0, 7fr) minmax(0, 4fr) minmax(0, 4.5fr) minmax(0, 7fr) minmax(0, 7fr);
                 gap: 10px;
                 padding: 10px 14px;
                 border-bottom: 1px solid var(--border);
@@ -1344,7 +1363,7 @@
                 <InfoIcon :size="12" @click="showRefTimeInfoModal = true" />
               </div>
               <div>Team & Route</div>
-              <div title="Time of the movement's first checkpoint">Pickup</div>
+              <div title="From the first checkpoint time to that time plus the movement's duration">Window</div>
               <div>Vehicle</div>
               <div>Pax</div>
               <div>Checks</div>
@@ -1363,7 +1382,7 @@
                 :style="{
                   display: 'grid',
                   gridTemplateColumns:
-                    '28px 5fr 7fr 6fr 5.5fr 14fr 9fr 7fr 4fr 4.5fr 7fr 7fr',
+                    '28px minmax(0, 5fr) minmax(0, 7fr) minmax(0, 6fr) minmax(0, 5.5fr) minmax(0, 14fr) minmax(0, 9fr) minmax(0, 7fr) minmax(0, 4fr) minmax(0, 4.5fr) minmax(0, 7fr) minmax(0, 7fr)',
                   gap: '10px',
                   padding: '12px 14px',
                   borderBottom:
@@ -1410,6 +1429,12 @@
                     "
                   >
                     {{ mv.code || `M${i + 1}` }}
+                    <span
+                      v-if="conflictsByMovement.get(mv.id)"
+                      :class="['conflict-marker', `conflict-marker--${worstSeverity(mv.id)}`]"
+                      :title="conflictsByMovement.get(mv.id).map((c) => `${c.sev.toUpperCase()}: ${c.type}`).join('\n')"
+                      @click.stop="resolvingConflict = conflictsByMovement.get(mv.id)[0]"
+                    >⚠ {{ conflictsByMovement.get(mv.id).length }}</span>
                   </div>
                   <div
                     v-if="!activePlan && mv.plan_code"
@@ -1430,23 +1455,15 @@
                 <div style="font-size: 11px; color: var(--ink3);">
                   {{ mv.window_start ? formatDate(mv.window_start) : '—' }}
                 </div>
-                <div v-if="mv.match_id" style="display: flex; flex-direction: column; align-items: flex-start; gap: 3px; min-width: 0;">
+                <div v-if="mv.match_id || mv.kind" class="phase-cell" :title="phaseLines(mv).join(' · ')">
                   <Badge
                     type="kind"
-                    variant="match"
-                    >Match {{ mv.match?.match_number || '' }}</Badge
+                    :variant="mv.match_id ? 'match' : mv.kind"
+                    >{{ mv.match_id ? 'Match' : mv.kind }}</Badge
                   >
-                  <span
-                    style="font-size: 10.5px; color: var(--ink3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;"
-                    :title="matchLineup(mv.match)"
-                  >{{ matchLineup(mv.match) }}</span>
+                  <span v-if="phaseLines(mv)[0]" class="phase-line phase-line--ref">{{ phaseLines(mv)[0] }}</span>
+                  <span v-if="phaseLines(mv)[1]" class="phase-line">{{ phaseLines(mv)[1] }}</span>
                 </div>
-                <Badge
-                  v-else-if="mv.kind"
-                  type="kind"
-                  :variant="mv.kind"
-                  >{{ mv.kind }}</Badge
-                >
                 <span
                   v-else
                   style="
@@ -1499,7 +1516,7 @@
                   "
                 >
                   <template v-if="isBusMovement(mv)">BUS</template>
-                  <template v-else>{{ formatTime(mv.window_start) }}</template>
+                  <template v-else>{{ formatWindow(mv) }}</template>
                 </div>
                 <div style="font-size: 11px; color: var(--ink2)">
                   {{ mv.vehicle?.code || "-" }}
@@ -1639,10 +1656,10 @@
 
               <!-- Stats grid -->
               <div class="dc-stats-grid">
-                <div class="dc-stat" title="Time of the movement's first checkpoint">
-                  <div class="dc-stat-label">Pickup</div>
+                <div class="dc-stat" title="From the first checkpoint time to that time plus the movement's duration">
+                  <div class="dc-stat-label">Window</div>
                   <div class="dc-stat-value">
-                    {{ formatTime(selectedMovement.window_start) || "—" }}
+                    {{ formatWindow(selectedMovement) }}
                   </div>
                 </div>
                 <div class="dc-stat">
@@ -2042,7 +2059,7 @@
         "
       >
         <div
-          v-if="conflicts.length === 0"
+          v-if="openConflicts.length === 0"
           style="
             padding: 12px;
             background: var(--ok-soft, var(--panel));
@@ -2081,13 +2098,16 @@
             style="color: var(--warn); flex-shrink: 0"
           />
           <div style="flex: 1; font-size: 12px; color: #92400e">
-            <b>{{ conflicts.length }} conflicts detected</b> — review and
+            <b>{{ openConflicts.length }} conflicts detected</b> — review and
             resolve before generating jobs.
-            {{ conflicts.filter((c) => c.sev === "high").length }} require
+            {{ openConflicts.filter((c) => c.sev === "high").length }} require
             immediate attention.
+            <span v-if="conflicts.length > openConflicts.length">
+              {{ conflicts.length - openConflicts.length }} accepted (listed at the bottom).
+            </span>
           </div>
         </div>
-        <div v-for="c in conflicts" :key="c.id" class="plan-table-card">
+        <div v-for="c in conflicts" :key="c.id" class="plan-table-card" :style="c.accepted ? 'opacity: 0.6' : ''">
           <div
             style="
               padding: 14px;
@@ -2203,9 +2223,15 @@
                   >{{ a }}</span
                 >
               </div>
+              <div v-if="c.accepted" style="margin-top: 6px; font-size: 11.5px; color: var(--ink3)">
+                <b style="color: var(--ink2)">Accepted</b> by {{ c.accepted.by }} · {{ c.accepted.at }} — “{{ c.accepted.reason }}”
+              </div>
             </div>
             <div style="display: flex; flex-direction: column; gap: 4px">
-              <Button variant="secondary" size="sm" @click="activeTab = 'movements'"
+              <Button variant="primary" size="sm" @click="resolvingConflict = c"
+                >{{ c.accepted ? 'Review' : 'Resolve' }}</Button
+              >
+              <Button variant="secondary" size="sm" @click="viewConflict(c)"
                 >View</Button
               >
             </div>
@@ -2296,8 +2322,307 @@
       </div>
     </template>
 
+    <!-- By Day view -->
+    <template v-else-if="view === 'day'">
+      <div
+        v-if="dayViewDays.length === 0"
+        class="plan-table-card"
+        style="padding: 40px; text-align: center; color: var(--ink3)"
+      >
+        <div style="font-size: 14px; font-weight: 600; margin-bottom: 8px">
+          No scheduled movements
+        </div>
+        <div style="font-size: 12px">
+          Movements appear here once they have a time.
+        </div>
+      </div>
+
+      <div v-else class="dv">
+        <!-- Date strip -->
+        <div class="dv-strip">
+          <button
+            class="dv-strip-nav"
+            :disabled="dayViewDayIndex <= 0"
+            aria-label="Previous day"
+            @click="stepDayView(-1)"
+          >‹</button>
+          <div ref="dayStripEl" class="dv-strip-days">
+            <button
+              v-for="d in dayViewDays"
+              :key="d.key"
+              :class="['dv-day', { 'dv-day--active': d.key === dayViewDate, 'dv-day--today': d.key === dayViewToday }]"
+              @click="dayViewDate = d.key"
+            >
+              <span class="dv-day-dow">{{ dayLabel(d.key).dow }}</span>
+              <span class="dv-day-num">{{ dayLabel(d.key).day }}</span>
+              <span class="dv-day-mon">{{ dayLabel(d.key).month }}</span>
+              <span class="dv-day-count">
+                {{ d.count }}
+                <span v-if="d.attention" class="dv-day-warn" :title="`${d.attention} need attention`">●</span>
+              </span>
+            </button>
+          </div>
+          <button
+            class="dv-strip-nav"
+            :disabled="dayViewDayIndex >= dayViewDays.length - 1"
+            aria-label="Next day"
+            @click="stepDayView(1)"
+          >›</button>
+        </div>
+
+        <!-- Day summary -->
+        <div class="dv-stats">
+          <MiniStat label="Movements" :value="dayViewStats.movements" />
+          <MiniStat label="Teams moving" :value="dayViewStats.teams" />
+          <MiniStat label="Passengers" :value="dayViewStats.pax" />
+          <MiniStat label="Needs crew" :value="dayViewStats.needsCrew" :tone="dayViewStats.needsCrew ? 'warn' : null" />
+          <MiniStat label="Conflicts" :value="dayViewStats.conflicts" :tone="dayViewStats.conflicts ? 'danger' : null" />
+          <MiniStat label="Jobs generated" :value="`${dayViewStats.jobs}/${dayViewStats.movements}`" :tone="dayViewStats.jobs === dayViewStats.movements ? 'ok' : null" />
+        </div>
+
+        <!-- Filters -->
+        <div class="dv-filters">
+          <button
+            :class="['dv-chip', { 'dv-chip--active': !dayViewPhaseFilter }]"
+            @click="dayViewPhaseFilter = null"
+          >All ({{ dayViewMovements.length }})</button>
+          <button
+            v-for="p in dayViewPhases"
+            :key="p.phase"
+            :class="['dv-chip', { 'dv-chip--active': dayViewPhaseFilter === p.phase }]"
+            @click="dayViewPhaseFilter = p.phase"
+          >
+            <span :class="['dv-dot', `dv-kind--${p.phase}`]"></span>
+            {{ phaseLabels[p.phase] || p.phase }} ({{ p.count }})
+          </button>
+          <label class="dv-toggle">
+            <input v-model="dayViewAttentionOnly" type="checkbox" />
+            Needs attention only
+          </label>
+          <span v-if="dayViewUntimedCount" class="dv-muted" style="margin-left: auto">
+            {{ dayViewUntimedCount }} movement{{ dayViewUntimedCount === 1 ? '' : 's' }} without a time not shown
+          </span>
+        </div>
+
+        <div v-if="dayViewFiltered.length === 0" class="plan-table-card" style="padding: 32px; text-align: center; color: var(--ink3); font-size: 13px">
+          Nothing matches these filters on {{ formatDate(dayViewDate) }}.
+        </div>
+
+        <div v-else :class="['dv-body', { 'dv-body--panel': selectedMovement }]">
+          <div class="dv-main">
+          <!-- Timeline: one row per team -->
+          <div class="plan-table-card dv-timeline">
+            <div class="dv-card-title">Timeline · {{ formatDate(dayViewDate) }}</div>
+            <div class="dv-tl-grid">
+              <div class="dv-tl-label"></div>
+              <div class="dv-tl-axis">
+                <span
+                  v-for="h in dayViewTimeline.hours"
+                  :key="h.left"
+                  class="dv-tl-hour"
+                  :style="{ left: h.left + '%' }"
+                >{{ h.label }}</span>
+              </div>
+              <template v-for="row in dayViewTimeline.rows" :key="row.key">
+                <div class="dv-tl-label">
+                  <flag-icon :code="row.team?.country_id" />
+                  <span>{{ row.team?.team_name || 'No team' }}</span>
+                </div>
+                <div class="dv-tl-track" :style="{ height: row.lanes * 24 + 6 + 'px' }">
+                  <span
+                    v-for="h in dayViewTimeline.hours"
+                    :key="h.left"
+                    class="dv-tl-gridline"
+                    :style="{ left: h.left + '%' }"
+                  ></span>
+                  <button
+                    v-for="bar in row.bars"
+                    :key="bar.mv.id"
+                    :class="['dv-tl-bar', `dv-kind--${movementPhase(bar.mv)}`, { 'dv-tl-bar--attention': needsAttention(bar.mv), 'dv-tl-bar--selected': selectedMovement?.id === bar.mv.id }]"
+                    :style="{ left: bar.left + '%', width: bar.width + '%', top: bar.lane * 24 + 3 + 'px' }"
+                    :title="`${bar.mv.code || ''} · ${formatWindow(bar.mv)}\n${formatMovementFromLocation(bar.mv)} → ${formatMovementToLocation(bar.mv)}`"
+                    @click="selectMovement(bar.mv)"
+                  >{{ bar.mv.code }}</button>
+                </div>
+              </template>
+            </div>
+          </div>
+
+          <!-- Agenda -->
+          <div class="plan-table-card dv-agenda">
+            <div v-for="group in dayViewHourGroups" :key="group.hour" class="dv-hour">
+              <div class="dv-hour-label">{{ group.hour }}:00</div>
+              <div class="dv-hour-items">
+                <div
+                  v-for="mv in group.items"
+                  :key="mv.id"
+                  :class="['dv-row', { 'dv-row--attention': needsAttention(mv), 'dv-row--selected': selectedMovement?.id === mv.id }]"
+                  @click="selectMovement(mv)"
+                >
+                  <div class="dv-row-time">
+                    <template v-if="isBusMovement(mv)">BUS</template>
+                    <template v-else>{{ formatWindow(mv) }}</template>
+                  </div>
+                  <div class="dv-row-main">
+                    <div class="dv-row-head">
+                      <Badge type="kind" :variant="mv.match_id ? 'match' : mv.kind">{{ mv.match_id ? 'Match' : mv.kind }}</Badge>
+                      <flag-icon :code="mv.team?.country_id" />
+                      <span class="dv-row-team">{{ mv.team?.team_name || '—' }}</span>
+                      <span class="dv-row-code">{{ mv.code }}</span>
+                      <span
+                        v-if="conflictsByMovement.get(mv.id)"
+                        :class="['conflict-marker', `conflict-marker--${worstSeverity(mv.id)}`]"
+                        :title="conflictsByMovement.get(mv.id).map((c) => `${c.sev.toUpperCase()}: ${c.type}`).join('\n')"
+                        @click.stop="resolvingConflict = conflictsByMovement.get(mv.id)[0]"
+                      >⚠ {{ conflictsByMovement.get(mv.id).length }}</span>
+                      <a
+                        v-if="!activePlan && mv.plan_code"
+                        class="dv-row-plan"
+                        :title="'Open ' + mv.plan_name"
+                        @click.stop="openPlanFromDay(mv)"
+                      >{{ mv.plan_code }}</a>
+                    </div>
+                    <div class="dv-muted">
+                      {{ formatMovementFromLocation(mv) }} → {{ formatMovementToLocation(mv) }}
+                      · {{ mv.flight?.party_size_total ?? mv.passengers ?? '—' }} pax
+                      <template v-if="phaseLines(mv)[0]"> · {{ phaseLines(mv).join(' · ') }}</template>
+                    </div>
+                  </div>
+                  <div class="dv-row-crew">
+                    <span :class="['dv-crew', { 'dv-crew--missing': !mv.vehicle_id }]">🚐 {{ mv.vehicle?.code || 'No vehicle' }}</span>
+                    <span :class="['dv-crew', { 'dv-crew--missing': !mv.driver_id }]">🧑‍✈️ {{ mv.driver?.name || 'No driver' }}</span>
+                    <span :class="['dv-crew', { 'dv-crew--missing': !mv.field_supervisor_id }]">📋 {{ mv.field_supervisor?.name || 'No supervisor' }}</span>
+                  </div>
+                  <div class="dv-row-job" @click.stop>
+                    <span
+                      v-if="mv.checkpoints_total"
+                      class="dv-checks"
+                      :title="`${mv.checkpoints_completed || 0} of ${mv.checkpoints_total} checkpoints done`"
+                    >✓ {{ mv.checkpoints_completed || 0 }}/{{ mv.checkpoints_total }}</span>
+                    <span
+                      v-if="mv.job_id"
+                      class="dv-job-link"
+                      @click="$inertia.visit(`/job/${mv.job_id}`)"
+                    >{{ mv.job_id }}</span>
+                    <span v-else-if="isBusMovement(mv)" class="dv-muted" style="font-style: italic">N/A</span>
+                    <Button
+                      v-else
+                      variant="secondary"
+                      size="sm"
+                      style="padding: 3px 8px; font-size: 11px"
+                      :processing="generatingJobForMovement === mv.id"
+                      :disabled="generatingJobForMovement === mv.id || !mv.field_supervisor_id || !mv.vehicle_id"
+                      :title="!mv.field_supervisor_id ? 'Assign a supervisor before generating job' : !mv.vehicle_id ? 'Assign a vehicle before generating job' : ''"
+                      @click="generateSingleJob(mv)"
+                    >Generate</Button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          </div>
+
+          <!-- Movement Detail Panel (By Day) -->
+          <transition name="slide-card">
+            <div v-if="selectedMovement" class="movement-detail-panel dv-panel">
+              <div class="detail-card-header">
+                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px; flex-wrap: wrap">
+                  <span style="font-family: var(--mono); font-size: 13px; font-weight: 700; color: var(--ink)">
+                    {{ selectedMovement.code || "MVT" }}
+                  </span>
+                  <Badge
+                    v-if="selectedMovement.match_id || selectedMovement.kind"
+                    type="kind"
+                    :variant="selectedMovement.match_id ? 'match' : selectedMovement.kind"
+                    :custom-style="{ fontSize: '10px' }"
+                  >{{ selectedMovement.match_id ? 'Match' : selectedMovement.kind }}</Badge>
+                  <span v-if="selectedMovement.status" class="dc-pill dc-pill--ghost">{{ selectedMovement.status }}</span>
+                </div>
+                <div style="font-size: 15px; font-weight: 700; color: var(--ink); margin-bottom: 3px; display: flex; align-items: center; gap: 6px">
+                  <flag-icon :code="selectedMovement.team?.country_id" />
+                  {{ selectedMovement.team?.team_name || "—" }}
+                </div>
+                <div style="font-size: 12px; color: var(--ink3)">
+                  {{ formatMovementFromLocation(selectedMovement) || "Origin" }} →
+                  {{ formatMovementToLocation(selectedMovement) || "Destination" }}
+                </div>
+                <div class="dc-stats-grid">
+                  <div class="dc-stat" style="grid-column: span 2">
+                    <div class="dc-stat-label">Window</div>
+                    <div class="dc-stat-value">{{ formatWindow(selectedMovement) }}</div>
+                  </div>
+                  <div class="dc-stat">
+                    <div class="dc-stat-label">Pax</div>
+                    <div class="dc-stat-value">{{ selectedMovement.flight?.party_size_total ?? selectedMovement.passengers ?? "—" }}</div>
+                  </div>
+                  <div v-if="selectedMovement.flight?.planned_bags" class="dc-stat">
+                    <div class="dc-stat-label">Bags</div>
+                    <div class="dc-stat-value">{{ selectedMovement.flight.planned_bags }}</div>
+                  </div>
+                </div>
+                <button
+                  class="detail-card-close"
+                  style="position: absolute; top: 14px; right: 14px"
+                  aria-label="Close"
+                  @click="selectedMovement = null"
+                >
+                  <svg-icon name="x" :size="16" />
+                </button>
+              </div>
+
+              <div class="detail-card-content">
+                <div v-if="checkpointsLoading" style="padding: 24px; text-align: center; font-size: 12px; color: var(--ink3)">
+                  Loading checkpoints…
+                </div>
+                <CheckpointTimeline
+                  v-else
+                  :checkpoints="selectedMovement.checkpoints || []"
+                  title="Checkpoints"
+                  empty-message="No checkpoints defined"
+                />
+
+                <div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border)">
+                  <div class="dv-card-title" style="margin-bottom: 8px">Crew</div>
+                  <div class="detail-row">
+                    <span class="detail-label">Vehicle</span>
+                    <span :class="['detail-value', { 'dv-missing-text': !selectedMovement.vehicle_id }]">{{ selectedMovement.vehicle?.code || "Not assigned" }}</span>
+                  </div>
+                  <div class="detail-row">
+                    <span class="detail-label">Driver</span>
+                    <span :class="['detail-value', { 'dv-missing-text': !selectedMovement.driver_id }]">{{ selectedMovement.driver?.name || "Not assigned" }}</span>
+                  </div>
+                  <div class="detail-row">
+                    <span class="detail-label">Field Supervisor</span>
+                    <span :class="['detail-value', { 'dv-missing-text': !selectedMovement.field_supervisor_id }]">{{ selectedMovement.field_supervisor?.name || "Not assigned" }}</span>
+                  </div>
+                  <div v-if="selectedMovement.job_id" class="detail-row">
+                    <span class="detail-label">Job ID</span>
+                    <span
+                      class="detail-value mono"
+                      style="color: var(--accent); cursor: pointer"
+                      @click="$inertia.visit(`/job/${selectedMovement.job_id}`)"
+                    >{{ selectedMovement.job_id }}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="detail-card-footer">
+                <Button variant="secondary" size="sm" @click="selectedMovement = null">Close</Button>
+                <div style="flex: 1"></div>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  @click="editMovement(selectedMovement); selectedMovement = null"
+                >Edit Movement</Button>
+              </div>
+            </div>
+          </transition>
+        </div>
+      </div>
+    </template>
+
     <!-- By Team view -->
-    <template v-else>
+    <template v-else-if="view === 'team'">
       <div
         v-if="movementsByTeamLoading"
         style="
@@ -2773,7 +3098,7 @@
                 </div>
                 <div>Type</div>
                 <div>From → To</div>
-                <div title="Planned pickup (first checkpoint), with the actual time underneath">Pickup</div>
+                <div title="Planned window (first checkpoint to that time plus the movement's duration), with the actual time underneath">Window</div>
                 <div>Source</div>
                 <div>Linked Job</div>
                 <div>Status</div>
@@ -2911,7 +3236,7 @@
                   >
                     <div style="color: var(--ink3)">
                       <template v-if="isBusMovement(mv)">BUS</template>
-                      <template v-else>{{ mv.dep }}</template>
+                      <template v-else>{{ formatWindow(mv) }}</template>
                     </div>
                     <div
                       :style="{
@@ -3049,14 +3374,10 @@
 
                 <!-- Stats grid -->
                 <div class="dc-stats-grid">
-                  <div class="dc-stat" title="Time of the movement's first checkpoint">
-                    <div class="dc-stat-label">Pickup</div>
+                  <div class="dc-stat" title="From the first checkpoint time to that time plus the movement's duration">
+                    <div class="dc-stat-label">Window</div>
                     <div class="dc-stat-value">
-                      {{
-                        selectedMovement.dep ||
-                        formatTime(selectedMovement.window_start) ||
-                        "—"
-                      }}
+                      {{ formatWindow(selectedMovement) }}
                     </div>
                   </div>
                   <div class="dc-stat">
@@ -5219,10 +5540,10 @@
                 </div>
               </div>
 
-              <div v-if="conflicts.length > 0" class="gen-conflict-banner">
+              <div v-if="openConflicts.length > 0" class="gen-conflict-banner">
                 <svg-icon name="warn" :size="14" style="flex-shrink: 0" />
                 <span
-                  ><b>{{ conflicts.length }} unresolved conflicts</b> — jobs
+                  ><b>{{ openConflicts.length }} unresolved conflicts</b> — jobs
                   will be generated with warnings. Review in the Conflicts tab
                   to resolve before dispatch.</span
                 >
@@ -7598,12 +7919,18 @@
       @close="showGenerateSkipConfirm = false"
       @confirm="openGenerateJobsModal"
     />
+
+    <ConflictResolvePanel
+      :conflict="resolvingConflict"
+      :conflicts="conflicts"
+      @close="resolvingConflict = null"
+    />
     </div>
   </app-layout>
 </template>
 
 <script setup>
-import { ref, computed, watch } from "vue";
+import { ref, computed, watch, nextTick } from "vue";
 import { router, usePage } from "@inertiajs/vue3";
 import { useToast } from "../Composables/useToast";
 import axios from "axios";
@@ -7616,6 +7943,7 @@ import RefreshButton from "../Components/RefreshButton.vue";
 import TableActions from "../Components/TableActions.vue";
 import CheckpointTimeline from "../Components/CheckpointTimeline.vue";
 import Badge from "../Components/Badge.vue";
+import ConflictResolvePanel from "../Components/ConflictResolvePanel.vue";
 import InfoIcon from "../Components/InfoIcon.vue";
 import FlagIcon from "../Components/FlagIcon.vue";
 import ConfirmModal from "../Components/ConfirmModal.vue";
@@ -7662,7 +7990,7 @@ const prerequisiteHint = computed(() =>
     : `Add ${missingPrerequisites.value.map(p => p.label.toLowerCase()).join(', ')} for this event first`
 );
 
-const view = ref("day");
+const view = ref("plan");
 const showNewPlan = ref(false);
 const newPlanMode = ref("single"); // 'single' or 'bulk' or 'matches'
 const newPlanDate = ref("");
@@ -7887,10 +8215,18 @@ const plansByDate = computed(() => {
     });
   });
   
-  // Convert to array and sort by date (descending)
+  // Dates ascending; within a day, by the plan's first movement time.
+  const firstStart = (plan) => Math.min(
+    ...(plan.movements || []).map((mv) => (mv.window_start ? new Date(mv.window_start).getTime() : Infinity)),
+    Infinity,
+  );
+  Object.values(grouped).forEach((group) => {
+    group.plans.sort((a, b) => firstStart(a) - firstStart(b) || (a.name || '').localeCompare(b.name || ''));
+  });
+
   return Object.values(grouped).sort((a, b) => {
     if (!a.date || !b.date) return 0;
-    return b.date.localeCompare(a.date);
+    return a.date.localeCompare(b.date);
   });
 });
 
@@ -8212,8 +8548,8 @@ const tabs = computed(() => {
     {
       id: "conflicts",
       label: "Conflicts",
-      count: conflicts.value.length,
-      danger: conflicts.value.some((c) => c.sev === "high"),
+      count: openConflicts.value.length,
+      danger: openConflicts.value.some((c) => c.sev === "high"),
     },
     { id: "templates", label: "Templates", count: 5 },
   ];
@@ -8237,6 +8573,9 @@ const checkpoints = [
 ];
 
 const conflicts = computed(() => props.conflicts);
+// Accepted conflicts stay listed but no longer count or mark rows.
+const openConflicts = computed(() => conflicts.value.filter((c) => !c.accepted));
+const resolvingConflict = ref(null);
 
 const templates = [
   {
@@ -8428,6 +8767,43 @@ const sevTone = {
   medium: "warn",
   low: "neutral",
 };
+
+// movement id -> the conflicts it's part of
+const conflictsByMovement = computed(() => {
+  const map = new Map();
+  for (const c of openConflicts.value) {
+    for (const id of c.movement_ids || []) {
+      if (!map.has(id)) map.set(id, []);
+      map.get(id).push(c);
+    }
+  }
+  return map;
+});
+
+function worstSeverity(movementId) {
+  const sevs = (conflictsByMovement.value.get(movementId) || []).map((c) => c.sev);
+  return ["high", "medium", "low"].find((s) => sevs.includes(s)) || "low";
+}
+
+// Set by a conflict's View button: just the movements that conflict involves.
+const movementsFocusIds = ref(null);
+const movementsFocusLabel = ref("");
+
+function viewConflict(c) {
+  activePlan.value = null;
+  movementsTeamFilter.value = null;
+  movementsDateFilter.value = null;
+  movementsPhaseFilter.value = null;
+  movementsJobFilter.value = null;
+  movementsFocusIds.value = new Set(c.movement_ids || []);
+  movementsFocusLabel.value = `${c.type} · ${(c.affects || []).join(", ")}`;
+  activeTab.value = "movements";
+}
+
+function clearConflictFocus() {
+  movementsFocusIds.value = null;
+  movementsFocusLabel.value = "";
+}
 
 const teamGroups = computed(() => {
   // Use database data
@@ -8919,6 +9295,10 @@ const totalPassengers = computed(() => {
 // Filtered movements based on team and date filters
 const filteredPlanMovements = computed(() => {
   let movements = selectedPlanMovements.value;
+
+  if (movementsFocusIds.value) {
+    movements = movements.filter((mv) => movementsFocusIds.value.has(mv.id));
+  }
   
   // Apply team filter
   if (movementsTeamFilter.value) {
@@ -8939,17 +9319,21 @@ const filteredPlanMovements = computed(() => {
     movements = movements.filter((mv) => movementPhase(mv) === movementsPhaseFilter.value);
   }
 
-  // Apply job-generation-readiness filter
-  if (movementsJobFilter.value) {
+  // Apply job-generation filter
+  if (movementsJobFilter.value === 'conflicts') {
+    movements = movements.filter((mv) => conflictsByMovement.value.has(mv.id));
+  } else if (movementsJobFilter.value === 'generated') {
+    movements = movements.filter((mv) => mv.job_id);
+  } else if (movementsJobFilter.value) {
     const wantReady = movementsJobFilter.value === 'ready';
-    movements = movements.filter((mv) => isReadyForGeneration(mv) === wantReady);
+    movements = movements.filter((mv) => !mv.job_id && isReadyForGeneration(mv) === wantReady);
   }
 
-  // Sort by date (desc), then phase
+  // Sort by date and time (asc, untimed last), then phase
   movements = [...movements].sort((a, b) => {
-    const aTime = a.window_start ? new Date(a.window_start).getTime() : -Infinity;
-    const bTime = b.window_start ? new Date(b.window_start).getTime() : -Infinity;
-    if (aTime !== bTime) return bTime - aTime;
+    const aTime = a.window_start ? new Date(a.window_start).getTime() : Infinity;
+    const bTime = b.window_start ? new Date(b.window_start).getTime() : Infinity;
+    if (aTime !== bTime) return aTime - bTime;
 
     const aPhase = phaseLabels[movementPhase(a)] || movementPhase(a) || '';
     const bPhase = phaseLabels[movementPhase(b)] || movementPhase(b) || '';
@@ -8983,6 +9367,190 @@ function toggleMovementSelection(id) {
     next.add(id);
   }
   selectedMovementIds.value = next;
+}
+
+// ---- By Day view: one operational day at a time, across every plan in scope ----
+const dayViewDate = ref(null); // 'YYYY-MM-DD'
+const dayViewPhaseFilter = ref(null);
+const dayViewAttentionOnly = ref(false);
+const dayStripEl = ref(null);
+
+// Read as text, like formatTime/formatWindow, so no timezone shift moves a movement to another day.
+function movementDayKey(mv) {
+  return mv.window_start ? String(mv.window_start).slice(0, 10) : null;
+}
+
+function missingCrew(mv) {
+  if (mv.job_id || isBusMovement(mv)) return [];
+  return [
+    !mv.vehicle_id && "vehicle",
+    !mv.driver_id && "driver",
+    !mv.field_supervisor_id && "supervisor",
+  ].filter(Boolean);
+}
+
+function needsAttention(mv) {
+  return missingCrew(mv).length > 0 || conflictsByMovement.value.has(mv.id);
+}
+
+const dayViewToday = (() => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+})();
+
+const dayViewDays = computed(() => {
+  const days = new Map();
+  for (const mv of selectedPlanMovements.value) {
+    const key = movementDayKey(mv);
+    if (!key) continue;
+    if (!days.has(key)) days.set(key, { key, count: 0, attention: 0 });
+    const day = days.get(key);
+    day.count++;
+    if (needsAttention(mv)) day.attention++;
+  }
+  return [...days.values()].sort((a, b) => a.key.localeCompare(b.key));
+});
+
+const dayViewUntimedCount = computed(
+  () => selectedPlanMovements.value.filter((mv) => !mv.window_start).length
+);
+
+// Keep the chosen day if it still has movements; otherwise today, the next upcoming day, or the last one.
+watch(
+  dayViewDays,
+  (days) => {
+    if (days.some((d) => d.key === dayViewDate.value)) return;
+    dayViewDate.value =
+      (days.find((d) => d.key >= dayViewToday) ?? days[days.length - 1])?.key ?? null;
+  },
+  { immediate: true }
+);
+
+watch([dayViewDate, view], () => {
+  dayViewPhaseFilter.value = null;
+  if (selectedMovement.value && movementDayKey(selectedMovement.value) !== dayViewDate.value) {
+    selectedMovement.value = null;
+  }
+  nextTick(() => {
+    const strip = dayStripEl.value;
+    const active = strip?.querySelector(".dv-day--active");
+    if (strip && active) {
+      strip.scrollLeft = active.offsetLeft - strip.clientWidth / 2 + active.clientWidth / 2;
+    }
+  });
+});
+
+const dayViewDayIndex = computed(() =>
+  dayViewDays.value.findIndex((d) => d.key === dayViewDate.value)
+);
+
+function stepDayView(delta) {
+  const next = dayViewDays.value[dayViewDayIndex.value + delta];
+  if (next) dayViewDate.value = next.key;
+}
+
+function dayLabel(key) {
+  const d = new Date(`${key}T00:00:00`);
+  return {
+    dow: d.toLocaleDateString("en-GB", { weekday: "short" }),
+    day: d.getDate(),
+    month: d.toLocaleDateString("en-GB", { month: "short" }),
+  };
+}
+
+const dayViewMovements = computed(() =>
+  selectedPlanMovements.value
+    .filter((mv) => movementDayKey(mv) === dayViewDate.value)
+    .sort((a, b) => String(a.window_start).localeCompare(String(b.window_start)))
+);
+
+const dayViewFiltered = computed(() =>
+  dayViewMovements.value.filter(
+    (mv) =>
+      (!dayViewPhaseFilter.value || movementPhase(mv) === dayViewPhaseFilter.value) &&
+      (!dayViewAttentionOnly.value || needsAttention(mv))
+  )
+);
+
+const dayViewPhases = computed(() => {
+  const counts = new Map();
+  for (const mv of dayViewMovements.value) {
+    const phase = movementPhase(mv);
+    if (phase) counts.set(phase, (counts.get(phase) || 0) + 1);
+  }
+  return [...counts].map(([phase, count]) => ({ phase, count }));
+});
+
+const dayViewStats = computed(() => {
+  const mvs = dayViewMovements.value;
+  return {
+    movements: mvs.length,
+    teams: new Set(mvs.map((mv) => mv.team_id).filter(Boolean)).size,
+    pax: mvs.reduce((sum, mv) => sum + (Number(mv.flight?.party_size_total ?? mv.passengers) || 0), 0),
+    needsCrew: mvs.filter((mv) => missingCrew(mv).length > 0).length,
+    conflicts: mvs.filter((mv) => conflictsByMovement.value.has(mv.id)).length,
+    jobs: mvs.filter((mv) => mv.job_id).length,
+  };
+});
+
+const dayViewHourGroups = computed(() => {
+  const groups = [];
+  for (const mv of dayViewFiltered.value) {
+    const hour = formatTime(mv.window_start).slice(0, 2);
+    const last = groups[groups.length - 1];
+    if (last?.hour === hour) last.items.push(mv);
+    else groups.push({ hour, items: [mv] });
+  }
+  return groups;
+});
+
+function minutesOfDay(dateString) {
+  const [h, m] = formatTime(dateString).split(":").map(Number);
+  return h * 60 + m;
+}
+
+const dayViewTimeline = computed(() => {
+  const spans = dayViewFiltered.value.map((mv) => {
+    const start = minutesOfDay(mv.window_start);
+    let end = mv.window_end ? minutesOfDay(mv.window_end) : start + 30;
+    if (mv.window_end && String(mv.window_end).slice(0, 10) > movementDayKey(mv)) end += 1440;
+    return { mv, start, end: Math.max(end, start + 15) };
+  });
+  if (spans.length === 0) return { hours: [], rows: [] };
+
+  const from = Math.floor(Math.min(...spans.map((s) => s.start)) / 60) * 60;
+  const to = Math.max(from + 240, Math.ceil(Math.max(...spans.map((s) => s.end)) / 60) * 60);
+  const pct = (minutes) => ((minutes - from) / (to - from)) * 100;
+
+  const rows = new Map();
+  for (const s of spans) {
+    const key = s.mv.team_id ?? "none";
+    if (!rows.has(key)) rows.set(key, { key, team: s.mv.team, bars: [], laneEnds: [] });
+    const row = rows.get(key);
+    // Overlapping legs of the same team stack into separate lanes.
+    let lane = row.laneEnds.findIndex((laneEnd) => laneEnd <= s.start);
+    if (lane === -1) lane = row.laneEnds.length;
+    row.laneEnds[lane] = s.end;
+    row.bars.push({ mv: s.mv, lane, left: pct(s.start), width: pct(s.end) - pct(s.start) });
+  }
+
+  const hours = [];
+  for (let t = from; t <= to; t += 60) {
+    hours.push({ label: `${String((t / 60) % 24).padStart(2, "0")}:00`, left: pct(t) });
+  }
+
+  return {
+    hours,
+    rows: [...rows.values()]
+      .map((row) => ({ ...row, lanes: row.laneEnds.length }))
+      .sort((a, b) => (a.team?.team_name || "").localeCompare(b.team?.team_name || "")),
+  };
+});
+
+function openPlanFromDay(mv) {
+  selectPlan(mv.plan_id);
+  movementsDateFilter.value = formatDate(mv.window_start);
+  view.value = "plan";
 }
 
 // Get unique teams that have movements in the current plan
@@ -9044,6 +9612,11 @@ function phaseMovementCount(phase) {
     .length;
 }
 
+function dateMovementCount(date) {
+  return selectedPlanMovements.value.filter((mv) => mv.window_start && formatDate(mv.window_start) === date)
+    .length;
+}
+
 // Ready = not already generated, schedulable (BUS legs have no reference time),
 // and fully crewed — vehicle, driver and supervisor all assigned.
 function isReadyForGeneration(mv) {
@@ -9060,8 +9633,17 @@ const readyForGenerationCount = computed(
   () => selectedPlanMovements.value.filter(isReadyForGeneration).length
 );
 
+const generatedCount = computed(
+  () => selectedPlanMovements.value.filter((mv) => mv.job_id).length
+);
+
+const conflictedMovementCount = computed(
+  () => selectedPlanMovements.value.filter((mv) => conflictsByMovement.value.has(mv.id)).length
+);
+
+// Generated movements have their own option, so they aren't "not ready".
 const notReadyForGenerationCount = computed(
-  () => selectedPlanMovements.value.length - readyForGenerationCount.value
+  () => selectedPlanMovements.value.length - readyForGenerationCount.value - generatedCount.value
 );
 
 const selectedNewPlanTemplate = computed(() => {
@@ -9092,6 +9674,19 @@ const matchStartOffsetSource = computed(
 function matchLineup(match) {
   const side = (team) => team?.code || team?.team_name || "TBD";
   return `${side(match?.team1)} vs ${side(match?.team2)}`;
+}
+
+// Phase column lines under the badge: what it's for, then who or where.
+function phaseLines(mv) {
+  if (mv.match_id) {
+    return [mv.match?.match_number, mv.match ? matchLineup(mv.match) : null].filter(Boolean);
+  }
+  if ((mv.kind === "arrival" || mv.kind === "departure") && mv.flight) {
+    const code = (a) => a?.code || a?.iata || (typeof a === "string" ? a : null);
+    const route = [code(mv.flight.origin_airport), code(mv.flight.destination_airport)].filter(Boolean).join(" → ");
+    return [mv.flight.flight_number, route].filter(Boolean);
+  }
+  return [];
 }
 
 function describeKickoffOffset(minutes) {
@@ -9579,6 +10174,15 @@ function formatTime(dateString) {
   return `${hours}:${minutes}`;
 }
 
+// "12:30 – 14:30": the first checkpoint time, then that plus the movement's duration.
+function formatWindow(mv) {
+  if (!mv?.window_start) return "—";
+  if (!mv.window_end) return formatTime(mv.window_start);
+  // Compared as text, like formatTime, so no timezone shift creeps in.
+  const nextDay = mv.window_end.slice(0, 10) > mv.window_start.slice(0, 10);
+  return `${formatTime(mv.window_start)} – ${formatTime(mv.window_end)}${nextDay ? " +1" : ""}`;
+}
+
 
 function selectPlan(planId) {
   activePlan.value = planId;
@@ -9597,7 +10201,7 @@ function selectAllPlans() {
 
 function viewAllPlans() {
   activePlan.value = null;
-  view.value = "day"; // Switch to day view so tabs are visible
+  view.value = "plan"; // Switch to plan view so tabs are visible
   activeTab.value = "plans";
   showPlanDropdown.value = false;
 }
@@ -11013,6 +11617,179 @@ function statusLabel(s) {
 </script>
 
 <style scoped>
+.phase-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 0;
+  overflow: hidden;
+}
+.phase-line {
+  font-size: 10.5px;
+  color: var(--ink3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+.phase-line--ref {
+  font-family: var(--mono);
+  font-weight: 600;
+  color: var(--ink2);
+}
+
+.conflict-marker {
+  display: inline-block;
+  margin-left: 4px;
+  padding: 0 4px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.conflict-marker--high { background: var(--danger-soft); color: var(--danger); }
+.conflict-marker--medium { background: var(--warn-soft); color: var(--warn); }
+.conflict-marker--low { background: var(--panel); color: var(--ink3); }
+
+/* By Day view */
+.dv { display: flex; flex-direction: column; gap: 12px; }
+.dv-muted { font-size: 11px; color: var(--ink3); }
+.dv-card-title {
+  font-size: 11px; font-weight: 700; color: var(--ink3);
+  letter-spacing: 0.6px; text-transform: uppercase; margin-bottom: 10px;
+}
+.dv-strip {
+  display: flex; align-items: stretch; gap: 6px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 8px;
+}
+.dv-strip-nav {
+  border: 1px solid var(--border); background: var(--surface); border-radius: 6px;
+  width: 28px; font-size: 18px; color: var(--ink2); cursor: pointer; flex-shrink: 0;
+}
+.dv-strip-nav:disabled { opacity: 0.35; cursor: default; }
+.dv-strip-days { display: flex; gap: 6px; overflow-x: auto; flex: 1; scroll-behavior: smooth; }
+.dv-day {
+  display: flex; flex-direction: column; align-items: center; gap: 1px;
+  min-width: 58px; padding: 6px 8px; border-radius: 8px; flex-shrink: 0;
+  border: 1px solid var(--border); background: var(--surface); cursor: pointer; color: var(--ink2);
+}
+.dv-day:hover { background: var(--panel); }
+.dv-day--today { border-color: var(--accent); }
+.dv-day--active, .dv-day--active:hover { background: var(--accent); border-color: var(--accent); color: #fff; }
+.dv-day-dow, .dv-day-mon { font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; opacity: 0.8; }
+.dv-day-num { font-size: 17px; font-weight: 700; line-height: 1.1; }
+.dv-day-count { font-size: 10.5px; font-family: var(--mono); font-weight: 600; }
+.dv-day-warn { color: var(--warn); }
+.dv-day--active .dv-day-warn { color: #FDE68A; }
+.dv-stats { display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; }
+@media (max-width: 1024px) { .dv-stats { grid-template-columns: repeat(3, 1fr); } }
+.dv-filters { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.dv-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 10px; border: 1px solid var(--border); border-radius: 6px;
+  background: var(--surface); color: var(--ink3); font-size: 11px; font-weight: 600; cursor: pointer;
+}
+.dv-chip--active { background: var(--accent); border-color: var(--accent); color: #fff; }
+.dv-dot { width: 8px; height: 8px; border-radius: 50%; }
+.dv-toggle { display: inline-flex; align-items: center; gap: 6px; margin-left: 8px; font-size: 12px; color: var(--ink2); cursor: pointer; }
+
+.dv-kind--arrival { background: #3B82F6; }
+.dv-kind--departure { background: #8B5CF6; }
+.dv-kind--transfer { background: #10B981; }
+.dv-kind--match { background: #F59E0B; }
+.dv-kind--training { background: #06B6D4; }
+.dv-kind--daily_ops { background: #64748B; }
+.dv-kind--undefined, .dv-kind--null { background: #94A3B8; }
+
+.dv-timeline { padding: 14px 16px; }
+.dv-tl-grid { display: grid; grid-template-columns: 180px 1fr; row-gap: 4px; }
+.dv-tl-label {
+  display: flex; align-items: center; gap: 6px; min-width: 0; padding-right: 8px;
+  font-size: 12px; font-weight: 600; color: var(--ink);
+}
+.dv-tl-label span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dv-tl-axis { position: relative; height: 18px; border-bottom: 1px solid var(--border); }
+.dv-tl-hour {
+  position: absolute; transform: translateX(-50%);
+  font-size: 10px; font-family: var(--mono); color: var(--ink3);
+}
+.dv-tl-track { position: relative; background: var(--panel); border-radius: 6px; }
+.dv-tl-gridline { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--border); }
+.dv-tl-bar {
+  position: absolute; height: 20px; min-width: 6px; padding: 0 5px;
+  border: none; border-radius: 4px; color: #fff; cursor: pointer;
+  font-size: 10px; font-family: var(--mono); font-weight: 700; text-align: left;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.dv-tl-bar:hover { filter: brightness(1.1); z-index: 1; }
+.dv-tl-bar--attention { box-shadow: 0 0 0 2px var(--danger); }
+
+.dv-agenda { overflow: hidden; }
+.dv-hour { display: grid; grid-template-columns: 64px 1fr; border-bottom: 1px solid var(--border); }
+.dv-hour:last-child { border-bottom: none; }
+.dv-hour-label {
+  padding: 12px 10px; font-family: var(--mono); font-size: 12px; font-weight: 700;
+  color: var(--ink3); background: var(--panel); border-right: 1px solid var(--border);
+}
+.dv-row {
+  display: grid; grid-template-columns: 110px minmax(0, 1fr) minmax(0, 360px) 90px;
+  gap: 12px; align-items: center; padding: 10px 14px;
+  border-left: 3px solid transparent; cursor: pointer;
+}
+.dv-row + .dv-row { border-top: 1px solid var(--border); }
+.dv-row:hover { background: var(--panel); }
+.dv-row--attention { border-left-color: var(--warn); }
+.dv-row-time { font-family: var(--mono); font-size: 12px; font-weight: 600; color: var(--ink); }
+.dv-row-main { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.dv-row-main > .dv-muted { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dv-row-head { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.dv-row-team { font-size: 13px; font-weight: 700; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dv-row-code { font-family: var(--mono); font-size: 11px; color: var(--ink3); }
+.dv-row-plan { font-family: var(--mono); font-size: 10px; color: var(--accent); text-decoration: underline; cursor: pointer; }
+.dv-row-crew { display: flex; flex-wrap: wrap; gap: 4px; }
+.dv-crew {
+  font-size: 11px; padding: 2px 6px; border-radius: 4px;
+  background: var(--panel); color: var(--ink2); white-space: nowrap;
+}
+.dv-crew--missing { background: var(--warn-soft); color: var(--warn); font-weight: 600; }
+.dv-row-job { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+.dv-checks { font-family: var(--mono); font-size: 11px; color: var(--ink3); }
+.dv-row--selected, .dv-row--selected:hover { background: var(--accent-soft, #EEF0FE); }
+.dv-tl-bar--selected { outline: 2px solid var(--ink); outline-offset: 1px; z-index: 2; }
+.dv-missing-text { color: var(--warn); font-weight: 600; }
+
+.dv-body { display: flex; gap: 12px; align-items: flex-start; }
+.dv-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 12px; }
+.movement-detail-panel.dv-panel { position: sticky; top: 12px; height: auto; max-height: calc(100vh - 120px); }
+/* With the panel open it shows the full crew, so rows keep only what's missing. */
+.dv-body--panel .dv-row { grid-template-columns: 100px minmax(0, 1fr) auto 80px; }
+.dv-body--panel .dv-crew:not(.dv-crew--missing) { display: none; }
+.dv-body--panel .dv-tl-grid { grid-template-columns: 130px 1fr; }
+.dv-job-link { font-family: var(--mono); font-size: 11px; color: var(--accent); font-weight: 600; cursor: pointer; }
+
+.conflict-focus-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 320px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: var(--warn-soft);
+  color: var(--ink2);
+  font-size: 11.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.conflict-focus-chip button {
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: var(--ink3);
+  padding: 0;
+}
+
 .page-header {
   display: flex;
   align-items: flex-start;

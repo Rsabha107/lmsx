@@ -21,6 +21,9 @@
       <mini-stat label="Available" :value="vehicles.filter(v => v.status === 'available').length" tone="ok" />
       <mini-stat label="Maintenance" :value="vehicles.filter(v => v.status === 'maintenance').length" tone="warn" />
       <mini-stat label="Total drivers" :value="props.drivers.length" />
+      <mini-stat label="Drivers on job" :value="driversIn('on_job')" tone="live" />
+      <mini-stat label="Drivers on shift" :value="driversIn('on_shift')" tone="ok" />
+      <mini-stat label="Drivers idle" :value="driversIn('idle')" />
     </div>
 
     <!-- Tabs -->
@@ -67,7 +70,7 @@
       <div class="table-card">
         <table class="data-table">
           <thead><tr>
-            <th>Name</th><th>Phone</th><th>License</th><th>Provider</th><th>Status</th><th style="text-align: center;">Actions</th>
+            <th>Name</th><th>Phone</th><th>License</th><th>Provider</th><th>Today</th><th style="text-align: center;">Actions</th>
           </tr></thead>
           <tbody>
             <tr v-for="d in props.drivers" :key="d.id">
@@ -82,7 +85,10 @@
               <td class="mono">{{ d.phone || '—' }}</td>
               <td class="mono">{{ d.license_number || '—' }}</td>
               <td>{{ d.provider?.name || '—' }}</td>
-              <td><status-pill :tone="d.status === 'on_shift' ? 'ok' : d.status === 'available' ? 'primary' : 'neutral'">{{ d.status }}</status-pill></td>
+              <td>
+                <status-pill :tone="driverTone(d.today)">{{ d.today?.label ?? d.status }}</status-pill>
+                <div v-if="d.today?.detail" class="status-detail">{{ d.today.detail }}</div>
+              </td>
               <td class="cell-actions">
                 <TableActions @edit="openEditDriver(d)" @delete="confirmDelete('driver', d)" />
               </td>
@@ -284,12 +290,11 @@
           </div>
           <div class="form-row">
             <div class="form-group">
-              <label class="form-label">Status</label>
+              <label class="form-label">Availability</label>
               <select v-model="driverForm.status" class="form-input">
                 <option value="available">Available</option>
-                <option value="on_shift">On Shift</option>
                 <option value="off">Off</option>
-                <option value="rest">Rest</option>
+                <option value="rest">Rest day</option>
               </select>
             </div>
             <div class="form-group">
@@ -552,6 +557,16 @@ function initials(name) {
   return name.split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase();
 }
 
+const driverTones = { on_job: 'live', on_shift: 'ok', scheduled: 'primary', rest: 'warn', done: 'neutral', idle: 'neutral', off: 'neutral' };
+
+function driverTone(today) {
+  // Marked off or resting yet still on the schedule needs someone's attention.
+  if (['off', 'rest'].includes(today?.state) && today.jobs_today > 0) return 'danger';
+  return driverTones[today?.state] ?? 'neutral';
+}
+
+const driversIn = (state) => props.drivers.filter((d) => d.today?.state === state).length;
+
 function selectVehicle(v) {
   selected.value = selected.value?.code === v.code ? null : v;
 }
@@ -612,7 +627,8 @@ function openEditDriver(d) {
     name: d.name ?? '',
     phone: d.phone ?? '',
     license_number: d.license_number ?? '',
-    status: d.status ?? 'available',
+    // On shift is now derived from the schedule; only the planning overrides are stored.
+    status: ['off', 'rest'].includes(d.status) ? d.status : 'available',
     provider_id: d.provider_id ?? null,
   };
   showDriverModal.value = true;
@@ -742,7 +758,7 @@ function reloadFleet() {
 
 .stats-grid {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 10px;
   margin-bottom: 14px;
 }
@@ -847,6 +863,7 @@ function reloadFleet() {
   display: flex; align-items: center; justify-content: center; flex-shrink: 0;
 }
 .driver-name { font-weight: 600; color: var(--ink); }
+.status-detail { font-size: 11.5px; color: var(--ink3); margin-top: 3px; }
 .driver-phone { font-size: 11.5px; color: var(--ink3); }
 .provider-name { font-weight: 600; color: var(--ink); }
 .provider-type { font-size: 11.5px; color: var(--ink3); }

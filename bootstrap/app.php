@@ -50,6 +50,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->web(append: [
             \App\Http\Middleware\HandleInertiaRequests::class,
             \App\Http\Middleware\CheckInactivity::class,
+            \App\Http\Middleware\RestrictAgencyToCrewAssignment::class,
         ]);
 
         // Spatie's route middleware aliases aren't auto-registered in

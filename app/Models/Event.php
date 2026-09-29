@@ -96,10 +96,13 @@ class Event extends Model
         return $query->where('active_flag', true);
     }
 
-    /** The event running today, else the latest one that isn't cancelled. */
+    /** The event running today, else the next to start, else the most recent. */
     public static function defaultId(): ?int
     {
+        $today = today()->toDateString();
+
         return static::active()->current()->orderByDesc('start_date')->value('id')
+            ?: static::active()->whereDate('start_date', '>', $today)->orderBy('start_date')->value('id')
             ?: static::active()->latest('start_date')->latest('id')->value('id');
     }
 

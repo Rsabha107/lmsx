@@ -85,9 +85,17 @@
       </div>
     </div>
 
+    <job-day-timeline
+      :jobs="scopedJobs"
+      :selected-job-id="selectedJob?.id"
+      v-model:selected-date="statsDate"
+      @select="selectJob"
+    />
+
     <job-stats-panel
       :jobs="scopedJobs"
       :kind="activeKind"
+      :day-picker="false"
       v-model:selected-date="statsDate"
     />
 
@@ -716,6 +724,7 @@ import CheckpointTimeline from '../Components/CheckpointTimeline.vue';
 import FlagIcon from '../Components/FlagIcon.vue';
 import ConfirmModal from '../Components/ConfirmModal.vue';
 import JobStatsPanel from '../Components/JobStatsPanel.vue';
+import JobDayTimeline from '../Components/JobDayTimeline.vue';
 
 const page = usePage();
 const hasActiveEvent = computed(() => !!page.props.activeEventId);

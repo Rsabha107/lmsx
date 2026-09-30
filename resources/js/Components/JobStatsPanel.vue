@@ -16,7 +16,7 @@
       </div>
 
       <!-- Mini chart doubles as the day picker when collapsed -->
-      <div v-if="!open && byDate.length > 1" class="spark" :title="`${byDate.length} days`">
+      <div v-if="dayPicker && !open && byDate.length > 1" class="spark" :title="`${byDate.length} days`">
         <button
           v-for="day in byDate"
           :key="day.date"
@@ -29,7 +29,7 @@
         />
       </div>
 
-      <span v-if="selectedDate" class="ops-chip">
+      <span v-if="dayPicker && selectedDate" class="ops-chip">
         {{ selectedLabel }}
         <button type="button" class="ops-chip-x" aria-label="Clear day filter" @click="toggleDay(selectedDate)">
           <svg-icon name="x" :size="10" />
@@ -94,6 +94,8 @@ const props = defineProps({
   jobs: { type: Array, default: () => [] },
   kind: { type: String, default: null },
   selectedDate: { type: String, default: null },
+  // Off when the page already shows its own day picker.
+  dayPicker: { type: Boolean, default: true },
 });
 
 const emit = defineEmits(['update:selectedDate']);

@@ -264,6 +264,9 @@ class LmsController extends Controller
                     // The first checkpoint's time; the movement start is derived from the same checkpoint.
                     'pickup' => ($job->checkpoints->sortBy('order')->first()?->scheduled_at ?? $movement?->window_start)?->format('H:i'),
                     'pickup_checkpoint' => $job->checkpoints->sortBy('order')->first()?->name,
+                    // Local "Y-m-d H:i" bounds for the day timeline: first to last checkpoint, else the movement window.
+                    'span_start' => ($job->checkpoints->sortBy('order')->first()?->scheduled_at ?? $movement?->window_start)?->format('Y-m-d H:i'),
+                    'span_end' => ($job->checkpoints->sortBy('order')->last()?->scheduled_at ?? $movement?->window_end)?->format('Y-m-d H:i'),
                     'event_name' => $job->event?->name ?? null,
                     'event_code' => $job->event?->code ?? null,
                     'functional_area' => $job->functional_area ?? null,

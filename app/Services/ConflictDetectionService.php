@@ -203,6 +203,42 @@ class ConflictDetectionService
         ];
     }
 
+    /**
+     * Each live movement's whole span (waiting included) and the unaccepted
+     * double-bookings it is part of, by role — for the crew roster.
+     *
+     * @return array<int, array{start: ?Carbon, end: ?Carbon, clashes: array<string, array<int, string>>}>
+     */
+    public function crewSchedule(int $eventId): array
+    {
+        $movements = $this->eventMovements($eventId);
+        if ($movements->isEmpty()) {
+            return [];
+        }
+
+        $spans = $this->occupations($movements);
+        $out = [];
+        foreach ($movements as $m) {
+            $span = $this->wholeSpan($m, $spans);
+            $out[$m->id] = ['start' => $span[0] ?? null, 'end' => $span[1] ?? null, 'clashes' => []];
+        }
+
+        $roles = ['Vehicle Double-Booked' => 'vehicle', 'Driver Double-Booked' => 'driver', 'Supervisor Double-Booked' => 'supervisor'];
+        $accepted = ConflictAcceptance::where('event_id', $eventId)->pluck('conflict_id')->flip();
+
+        foreach (array_merge($this->resourceClashes($movements, $spans), $this->crewClashes($movements, $spans)) as $c) {
+            $role = $roles[$c['type']] ?? null;
+            if (!$role || $accepted->has($c['id'])) {
+                continue;
+            }
+            foreach ($c['movement_ids'] as $id) {
+                $out[$id]['clashes'][$role][] = $c['text'];
+            }
+        }
+
+        return $out;
+    }
+
     /** Every live movement of an event with what the checks need. */
     private function eventMovements(int $eventId): Collection
     {

@@ -150,6 +150,11 @@
                       style="color: var(--ink4); font-style: italic;"
                       title="Estimated — not yet scheduled">~{{ formatTime(cp.estimated_at) }}</span>
               </span>
+              <span v-if="getVisualState(cp, idx) === 'done' && varianceOf(cp) !== null"
+                    :class="['dc-cp-diff', `dc-cp-diff--${varianceTone(varianceOf(cp))}`]"
+                    :title="`Planned ${formatTime(cp.scheduled_at)} · actual ${formatTime(cp.completed_at)}`">
+                {{ varianceLabel(varianceOf(cp)) }}
+              </span>
               <span v-if="cp.requires_baggage_count && bagCountLine(cp)"
                     style="font-size: 10px; color: var(--ink4); font-family: var(--mono); white-space: nowrap;">
                 {{ bagCountLine(cp) }}
@@ -269,9 +274,11 @@ function formatTime(value) {
 }
 
 function getTimeColor(cp) {
+  const v = varianceOf(cp);
+  if (v !== null) return v > 0 ? 'var(--danger, #dc2626)' : '#16a34a';
   // Use timestamps for accurate comparison (handles dates and midnight crossover)
   if (cp.completed_ts && cp.scheduled_ts) {
-    return cp.completed_ts > cp.scheduled_ts ? '#d97706' : '#16a34a';
+    return cp.completed_ts > cp.scheduled_ts ? 'var(--danger, #dc2626)' : '#16a34a';
   }
   
   // Fallback for old data without timestamps
@@ -291,13 +298,38 @@ function getTimeColor(cp) {
   
   if (actualMinutes === null || estimateMinutes === null) return 'var(--ink3)';
   
-  // Late: amber, On-time or early: green
-  return actualMinutes > estimateMinutes ? '#d97706' : '#16a34a';
+  // Late: red, On-time or early: green
+  return actualMinutes > estimateMinutes ? 'var(--danger, #dc2626)' : '#16a34a';
 }
 
 const hasMobileUpdates = computed(() =>
   props.checkpoints.some(cp => cp.completion_method === 'mobile')
 );
+
+// Plans sends "Y-m-d H:i:s" strings; read as text so no timezone shift applies.
+function stampMinutes(value) {
+  const m = String(value ?? '').match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/);
+  return m ? Date.UTC(+m[1], m[2] - 1, +m[3], +m[4], +m[5]) / 60000 : null;
+}
+
+/** Actual minus planned, in minutes: positive is late, negative early. */
+function varianceOf(cp) {
+  if (cp.completed_ts && cp.scheduled_ts) return Math.round((cp.completed_ts - cp.scheduled_ts) / 60);
+  const done = stampMinutes(cp.completed_at);
+  const planned = stampMinutes(cp.scheduled_at);
+  return done !== null && planned !== null ? done - planned : null;
+}
+
+function varianceTone(v) {
+  return v > 0 ? 'late' : v < 0 ? 'early' : 'ontime';
+}
+
+function varianceLabel(v) {
+  if (v === 0) return 'On time';
+  const abs = Math.abs(v);
+  const text = abs >= 60 ? `${Math.floor(abs / 60)}h${abs % 60 ? ` ${abs % 60}m` : ''}` : `${abs}m`;
+  return v > 0 ? `${text} late` : `${text} early`;
+}
 </script>
 
 <style scoped>
@@ -310,6 +342,14 @@ const hasMobileUpdates = computed(() =>
 .dc-cp-dot--pending { background: var(--panel); border: 2px solid var(--borderStrong, #d0d5df); }
 .dc-cp-dot--skipped { background: var(--ink4); border: 2px solid var(--ink4); }
 .dc-cp-line { width: 2px; flex: 1; min-height: 16px; }
+
+.dc-cp-diff {
+  font-size: 10px; font-weight: 700; font-family: var(--mono); white-space: nowrap;
+  padding: 1px 6px; border-radius: 4px;
+}
+.dc-cp-diff--late   { background: var(--danger-soft, #fdecec); color: var(--danger-strong, #b91c1c); }
+.dc-cp-diff--early,
+.dc-cp-diff--ontime { background: var(--ok-soft, #e6f6ec); color: var(--ok, #16a34a); }
 
 /* Evidence badge hover effect */
 .evidence-badge-clickable:hover {

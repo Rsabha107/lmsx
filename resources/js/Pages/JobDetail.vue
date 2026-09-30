@@ -447,7 +447,7 @@ const varianceText = computed(() => {
   const diff = (ah * 60 + am) - (ph * 60 + pm);
   if (diff === 0) return 'On time';
   const abs = Math.abs(diff);
-  return diff < 0 ? `-${abs} min early` : `+${abs} min late`;
+  return diff < 0 ? `${abs} min early` : `${abs} min late`;
 });
 
 const completedCount = computed(() => 

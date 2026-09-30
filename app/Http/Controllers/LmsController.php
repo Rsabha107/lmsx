@@ -220,6 +220,7 @@ class LmsController extends Controller
     public function jobs(Request $request): Response
     {
         $activeEventId = $request->session()->get('active_event_id');
+        $settings = app(\App\Services\SettingsService::class);
 
         // Build job query - scoped to the active event, if one is selected
         $jobsQuery = JobOperation::with([
@@ -245,9 +246,13 @@ class LmsController extends Controller
 
         $jobs = $jobsQuery->orderBy('created_at', 'desc')
             ->get()
-            ->map(function ($job) {
+            ->map(function ($job) use ($settings) {
                 $movement = $job->movement;
                 $team = $movement?->team;
+                // Checkpoints of a flight job are re-timed from these when the flight moves.
+                $offsetOf = fn ($cp) => $movement?->flight && $cp->checkpoint_id && in_array($movement->kind, ['arrival', 'departure'], true)
+                    ? $settings->getCheckpointOffset($cp->checkpoint_id, $movement->kind, $movement->event_id)
+                    : null;
 
                 return [
                     'id' => $job->job_id ?? 'J-' . $job->id,
@@ -272,6 +277,12 @@ class LmsController extends Controller
                     'functional_area' => $job->functional_area ?? null,
                     'pax' => $movement?->passengers ?? $movement?->flight?->party_size_total ?? $team?->party_size_total ?? 0,
                     'vehicle' => $job->vehicle ? ($job->vehicle->code ?? $job->vehicle->plate_number ?? $job->vehicle->vehicle_type ?? 'Unassigned') : 'Unassigned',
+                    'vehicle_id' => $job->vehicle_id,
+                    'vehicle_detail' => $job->vehicle ? collect([
+                        $job->vehicle->plate_number,
+                        $job->vehicle->vehicle_type,
+                        $job->vehicle->capacity ? $job->vehicle->capacity.' seats' : null,
+                    ])->filter()->unique()->implode(' · ') : null,
                     'status' => $job->status,
                     'delay' => $movement?->delay_minutes,
                     'jobId' => $job->job_id,
@@ -334,7 +345,7 @@ class LmsController extends Controller
                         'reported_at' => $issue->created_at?->format('d M H:i'),
                         'resolved_at' => $issue->resolved_at?->format('d M H:i'),
                     ])->values(),
-                    'checkpoints' => $job->checkpoints->map(function ($checkpoint) {
+                    'checkpoints' => $job->checkpoints->map(function ($checkpoint) use ($offsetOf) {
                         // Determine the time to display
                         $displayTime = null;
 
@@ -358,6 +369,8 @@ class LmsController extends Controller
                             'completed_at' => $checkpoint->completed_at?->format('H:i'),
                             'scheduled_ts' => $checkpoint->scheduled_at?->timestamp,
                             'completed_ts' => $checkpoint->completed_at?->timestamp,
+                            'flight_offset' => $offsetOf($checkpoint),
+                            'scheduled_local' => $checkpoint->scheduled_at?->format('Y-m-d\TH:i'),
                             'by' => $checkpoint->completedBy?->name ?? ($checkpoint->state === 'done' ? 'System' : null),
                             'skip_reason' => $checkpoint->skip_reason,
                             'skipped_at' => $checkpoint->skipped_at?->format('H:i'),
@@ -387,6 +400,7 @@ class LmsController extends Controller
             // Same pools the Planning movement editor offers, for crew changes in the override modal.
             'drivers' => Driver::select('id', 'name')->orderBy('name')->get(),
             'supervisors' => User::select('id', 'name')->orderBy('name')->get(),
+            'vehicles' => Vehicle::select('id', 'code', 'plate_number', 'vehicle_type', 'capacity')->orderBy('code')->get(),
         ]);
     }
 
@@ -926,41 +940,60 @@ class LmsController extends Controller
                 'update_flight_actual' => 'nullable|string', // Flag to update team flight actual_at
                 'driver_id' => 'nullable|integer|exists:drivers,id',
                 'supervisor_id' => 'nullable|integer|exists:users,id',
+                'vehicle_id' => 'nullable|integer|exists:vehicles,id',
+                'flight_number' => 'nullable|string|max:20',
+                'flight_scheduled_at' => 'nullable|date_format:Y-m-d\TH:i',
+                'flight_terminal' => 'nullable|string|max:50',
+                'flight_gate' => 'nullable|string|max:50',
             ]);
 
-            $checkpoint = JobCheckpoint::with(['job.movement', 'checkpoint'])->findOrFail($checkpointId);
+            $checkpoint = JobCheckpoint::with(['job.movement.flight', 'checkpoint'])->findOrFail($checkpointId);
 
             $this->authorize('override', $checkpoint->job);
 
             $driverId = isset($validated['driver_id']) ? (int) $validated['driver_id'] : null;
             $supervisorId = isset($validated['supervisor_id']) ? (int) $validated['supervisor_id'] : null;
+            $vehicleId = isset($validated['vehicle_id']) ? (int) $validated['vehicle_id'] : null;
 
-            // No new state: this is a crew change only, and the checkpoint is left as it is.
+            // Only the flight fields the modal actually sent (i.e. edited) are changed.
+            $flightChanges = [];
+            $flightFields = ['flight_number' => 'flight_number', 'flight_scheduled_at' => 'scheduled_at', 'flight_terminal' => 'terminal', 'flight_gate' => 'gate'];
+            foreach ($flightFields as $key => $column) {
+                if ($request->exists($key)) {
+                    $flightChanges[$column] = $validated[$key] ?? null;
+                }
+            }
+            $lifecycle = app(JobLifecycleService::class);
+
+            // No new state: this is a crew or flight change only, and the checkpoint is left as it is.
             if (empty($validated['state'])) {
-                $changed = app(JobLifecycleService::class)->changeCrew(
+                $crewChanged = $lifecycle->changeCrew(
                     $checkpoint->job,
                     $driverId,
                     $supervisorId,
                     $validated['reason'] ?? null,
+                    $vehicleId,
                 );
+                $flightChanged = $lifecycle->changeFlight($checkpoint->job, $flightChanges, $validated['reason'] ?? null);
 
-                if (! $changed) {
+                if (! $crewChanged && ! $flightChanged) {
                     throw \Illuminate\Validation\ValidationException::withMessages([
-                        'state' => 'Pick a new state, or change the driver or supervisor.',
+                        'state' => 'Pick a new state, or change the vehicle, driver, supervisor or flight.',
                     ]);
                 }
 
                 return response()->json([
                     'success' => true,
-                    'message' => 'Crew updated successfully',
+                    'message' => $flightChanged && ! $crewChanged ? 'Flight updated successfully' : 'Crew updated successfully',
                     'checkpoint' => $checkpoint->fresh(),
                 ]);
             }
 
-            $checkpoint = app(JobLifecycleService::class)->overrideCheckpoint(
-                $checkpoint,
-                $request->user(),
-                [
+            // Flight first, so a completion in the same save is judged against the moved schedule.
+            $checkpoint = \Illuminate\Support\Facades\DB::transaction(function () use ($lifecycle, $checkpoint, $flightChanges, $validated, $request, $driverId, $supervisorId, $vehicleId) {
+                $lifecycle->changeFlight($checkpoint->job, $flightChanges, $validated['reason']);
+
+                return $lifecycle->overrideCheckpoint($checkpoint, $request->user(), [
                     'state' => $validated['state'],
                     'reason' => $validated['reason'],
                     'notes' => $validated['notes'] ?? null,
@@ -976,8 +1009,9 @@ class LmsController extends Controller
                     'oversized_pieces' => $validated['oversized_pieces'] ?? null,
                     'driver_id' => $driverId,
                     'supervisor_id' => $supervisorId,
-                ],
-            );
+                    'vehicle_id' => $vehicleId,
+                ]);
+            });
 
             if ($request->filled('update_flight_actual') && $checkpoint->completed_at) {
                 $this->syncTeamFlightArrival($checkpoint);

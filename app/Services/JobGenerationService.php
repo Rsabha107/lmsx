@@ -170,6 +170,45 @@ class JobGenerationService
             return false;
         }
 
+        return $this->applyWindowFromReference($movement);
+    }
+
+    /**
+     * After a job's flight moves, re-time the job from the current settings the
+     * same way generation did: its movement window and every outstanding
+     * checkpoint that has a configured offset. Finished checkpoints keep their times.
+     *
+     * @return int how many checkpoints were re-timed
+     */
+    public function rescheduleJob(JobOperation $job): int
+    {
+        $movement = $job->movement;
+        if (!$movement || $movement->isBusMovement()) {
+            return 0;
+        }
+
+        $movement->loadMissing(['checkpointTemplate.checkpoints', 'plan.movementTemplate.legs']);
+        $this->applyWindowFromReference($movement);
+
+        $referenceTime = $this->resolveReferenceTime($movement);
+        $templates = $movement->checkpointTemplate?->checkpoints->keyBy('id') ?? collect();
+        $moved = 0;
+
+        foreach ($job->checkpoints()->whereNotIn('state', ['done', 'skipped'])->get() as $cp) {
+            $template = $templates->get($cp->checkpoint_id) ?? Checkpoint::find($cp->checkpoint_id);
+            $time = $template ? $this->computeCheckpointTimeFromReference($movement, $template, $referenceTime) : null;
+
+            if ($time && !$cp->scheduled_at?->equalTo($time)) {
+                $cp->update(['scheduled_at' => $time]);
+                $moved++;
+            }
+        }
+
+        return $moved;
+    }
+
+    private function applyWindowFromReference(Movement $movement): bool
+    {
         if (!in_array($movement->kind, ['arrival', 'departure', 'transfer', 'match', 'training'], true)) {
             return false;
         }

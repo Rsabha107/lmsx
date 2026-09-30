@@ -31,6 +31,8 @@ final class FlightSummary
             'scheduled_at' => $flight->scheduled_at?->toIso8601String(),
             'scheduled_time' => $flight->scheduled_at?->format('H:i'),
             'scheduled_date' => $flight->scheduled_at?->format('D j M'),
+            // For <input type="datetime-local"> in the override modal.
+            'scheduled_local' => $flight->scheduled_at?->format('Y-m-d\TH:i'),
             'estimated_time' => $flight->estimated_at?->format('H:i'),
             'actual_time' => $flight->actual_at?->format('H:i'),
             'delay_minutes' => $flight->delay_minutes > 0 ? $flight->delay_minutes : null,

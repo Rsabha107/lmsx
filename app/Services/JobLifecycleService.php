@@ -339,7 +339,7 @@ class JobLifecycleService
                 );
 
                 if ($checkpoint->job) {
-                    $this->reassignCrew($checkpoint->job, $data['driver_id'] ?? null, $data['supervisor_id'] ?? null, $data['reason']);
+                    $this->reassignCrew($checkpoint->job, $data['driver_id'] ?? null, $data['supervisor_id'] ?? null, $data['reason'], $data['vehicle_id'] ?? null);
                 }
 
                 return $checkpoint->fresh();
@@ -356,9 +356,69 @@ class JobLifecycleService
      *
      * @return bool whether anything actually changed
      */
-    public function changeCrew(JobOperation $job, ?int $driverId, ?int $supervisorId, ?string $reason): bool
+    public function changeCrew(JobOperation $job, ?int $driverId, ?int $supervisorId, ?string $reason, ?int $vehicleId = null): bool
     {
-        return DB::transaction(fn () => $this->reassignCrew($job, $driverId, $supervisorId, $reason));
+        return DB::transaction(fn () => $this->reassignCrew($job, $driverId, $supervisorId, $reason, $vehicleId));
+    }
+
+    /**
+     * Correct the flight behind a job. Only the keys present in $changes are touched.
+     *
+     * @param  array{flight_number?: ?string, scheduled_at?: ?string, terminal?: ?string, gate?: ?string}  $changes
+     * @return bool whether anything actually changed
+     */
+    public function changeFlight(JobOperation $job, array $changes, ?string $reason): bool
+    {
+        $flight = $job->movement?->flight;
+
+        if (! $flight || $changes === []) {
+            return false;
+        }
+
+        return DB::transaction(function () use ($job, $flight, $changes, $reason) {
+            $labels = ['flight_number' => 'Flight', 'scheduled_at' => 'Scheduled', 'terminal' => 'Terminal', 'gate' => 'Gate'];
+            $show = fn ($v) => $v instanceof Carbon ? $v->format('D j M H:i') : ($v === null || $v === '' ? '—' : $v);
+            $log = [];
+
+            foreach ($changes as $field => $value) {
+                $value = $field === 'scheduled_at' && $value ? Carbon::parse($value) : ($value === '' ? null : $value);
+                $before = $flight->{$field};
+                $same = $before instanceof Carbon && $value instanceof Carbon ? $before->equalTo($value) : $before == $value;
+                if ($same) {
+                    continue;
+                }
+                $log[] = "{$labels[$field]} {$show($before)} → {$show($value)}";
+                $flight->{$field} = $value;
+            }
+
+            if ($log === []) {
+                return false;
+            }
+
+            $timeChanged = $flight->isDirty('scheduled_at');
+
+            $flight->save();
+
+            // The movement keeps its own copy of the number for Planning and search.
+            if (array_key_exists('flight_number', $changes)) {
+                $job->movement->update(['flight_number' => $flight->flight_number]);
+            }
+
+            if ($timeChanged) {
+                $moved = app(JobGenerationService::class)->rescheduleJob($job);
+                $log[] = sprintf('%d checkpoint%s and the movement window re-timed from settings', $moved, $moved === 1 ? '' : 's');
+            }
+
+            AuditLog::record(
+                action: 'Job flight changed',
+                target: $job->job_id ?? 'JOB',
+                meta: implode('; ', $log).' · '.($reason ?: 'no reason given'),
+                subject: $job,
+                eventId: $job->event_id,
+            );
+
+            return true;
+        });
     }
 
     /**
@@ -421,9 +481,16 @@ class JobLifecycleService
      * Swap the driver and/or supervisor on a job, mirroring the change onto its
      * movement so Planning shows the same crew. A null id leaves that role as is.
      */
-    private function reassignCrew(JobOperation $job, ?int $driverId, ?int $supervisorId, ?string $reason): bool
+    private function reassignCrew(JobOperation $job, ?int $driverId, ?int $supervisorId, ?string $reason, ?int $vehicleId = null): bool
     {
         $changes = [];
+        $vehicleName = fn (?Vehicle $v) => $v ? ($v->code ?? $v->plate_number ?? "#{$v->id}") : 'Unassigned';
+
+        if ($vehicleId !== null && $vehicleId !== $job->vehicle_id) {
+            $from = $vehicleName($job->vehicle);
+            $job->vehicle_id = $vehicleId;
+            $changes[] = "Vehicle {$from} → " . $vehicleName(Vehicle::find($vehicleId));
+        }
 
         if ($driverId !== null && $driverId !== $job->driver_id) {
             $from = $job->driver?->name ?? 'Unassigned';
@@ -443,6 +510,7 @@ class JobLifecycleService
 
         $job->save();
         $job->movement?->update([
+            'vehicle_id' => $job->vehicle_id,
             'driver_id' => $job->driver_id,
             'field_supervisor_id' => $job->supervisor_id,
         ]);
@@ -615,11 +683,12 @@ class JobLifecycleService
 
         [$hours, $minutes] = array_map('intval', explode(':', $actualTime));
 
-        $base = $excludeDate && $checkpoint->scheduled_at
-            ? $checkpoint->scheduled_at->copy()
-            : Carbon::today();
+        // Time of day only: the nearest day to the plan, as the override modal previews it.
+        if ($excludeDate && $checkpoint->scheduled_at) {
+            return $this->alignTimeOfDayTo(Carbon::today()->setTime($hours, $minutes), $checkpoint->scheduled_at);
+        }
 
-        $completedAt = $base->copy()->setTime($hours, $minutes);
+        $completedAt = Carbon::today()->setTime($hours, $minutes);
 
         if ($checkpoint->scheduled_at && $checkpoint->scheduled_at->hour >= 18 && $hours < 6) {
             $completedAt->addDay();

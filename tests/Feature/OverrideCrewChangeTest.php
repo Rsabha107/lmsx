@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\Driver;
 use App\Models\Event;
 use App\Models\User;
+use App\Models\Vehicle;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Spatie\Permission\Models\Permission;
 use Tests\Concerns\CreatesOperationsFixtures;
@@ -62,6 +63,26 @@ class OverrideCrewChangeTest extends TestCase
             'action' => 'Job crew changed',
             'target' => $job->job_id,
         ]);
+    }
+
+    public function test_a_vehicle_can_be_swapped_on_the_job_and_its_movement(): void
+    {
+        $event = $this->createEvent();
+        $team = $this->createTeam($event);
+        $old = Vehicle::create(['code' => 'BUS-01', 'plate_number' => 'P-1', 'vehicle_type' => 'bus', 'capacity' => 50]);
+        $new = Vehicle::create(['code' => 'BUS-02', 'plate_number' => 'P-2', 'vehicle_type' => 'bus', 'capacity' => 50]);
+
+        $movement = $this->createMovement($event, $this->createPlan($event), $team, ['vehicle_id' => $old->id]);
+        $job = $this->createJob($event, $movement, $team, ['vehicle_id' => $old->id]);
+        $checkpoint = $this->createCheckpoint($event, $job);
+
+        $this->actingAsOverrider($event)
+            ->postJson("/jobs/checkpoint/{$checkpoint->id}/override", ['vehicle_id' => $new->id])
+            ->assertOk();
+
+        $this->assertSame($new->id, $job->refresh()->vehicle_id);
+        $this->assertSame($new->id, $movement->refresh()->vehicle_id);
+        $this->assertDatabaseHas('audit_logs', ['action' => 'Job crew changed', 'meta' => 'Vehicle BUS-01 → BUS-02 · no reason given']);
     }
 
     public function test_an_override_without_crew_fields_leaves_the_crew_alone(): void

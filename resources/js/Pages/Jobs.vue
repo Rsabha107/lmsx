@@ -309,12 +309,13 @@
             </div>
             <div class="crew-list">
               <div v-for="(person, label) in crewMembers" :key="label" class="crew-item">
-                <div class="crew-avatar">
-                  {{ getInitials(person.name) }}
+                <div :class="['crew-avatar', { 'crew-avatar--vehicle': person.vehicle }]">
+                  <svg v-if="person.vehicle" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M3 11h18"/><circle cx="7.5" cy="19.5" r="1.5"/><circle cx="16.5" cy="19.5" r="1.5"/></svg>
+                  <template v-else>{{ getInitials(person.name) }}</template>
                 </div>
                 <div class="crew-info">
                   <div class="crew-name">{{ person.name }}</div>
-                  <div class="crew-role">{{ label }}</div>
+                  <div class="crew-role">{{ label }}<template v-if="person.detail"> · {{ person.detail }}</template></div>
                   <a v-if="person.phone" :href="`tel:${person.phone}`" class="crew-phone">
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                       <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/>
@@ -322,7 +323,7 @@
                     {{ person.phone }}
                   </a>
                 </div>
-                <status-pill tone="ok" :dot="true" size="sm">On shift</status-pill>
+                <status-pill v-if="!person.vehicle" tone="ok" :dot="true" size="sm">On shift</status-pill>
               </div>
             </div>
           </div>
@@ -483,7 +484,11 @@
       <template #title>
         <span class="override-modal-title-wrap">
           <span class="override-privileged-badge">PRIVILEGED ACTION · {{ selectedJob?.id }}</span>
-          Override checkpoint
+          Job override
+          <span v-if="overrideJobStart" class="override-job-start">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+            Starts {{ overrideJobStart }}
+          </span>
         </span>
       </template>
 
@@ -493,8 +498,23 @@
           <span>Field supervisors normally log checkpoints from the mobile app. Overrides bypass that — they're logged to the audit trail with your name, role, and reason.</span>
         </div>
 
+        <!-- 1 · Checkpoint -->
+        <section :class="['ovs', { 'ovs--active': overrideState }]">
+          <header class="ovs-head">
+            <span class="ovs-icon ovs-icon--checkpoint">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>
+            </span>
+            <div class="ovs-heading">
+              <h4 class="ovs-title">Checkpoint</h4>
+              <p class="ovs-sub">{{ overrideState ? (overrideCheckpoint?.label || overrideCheckpoint?.name || 'Pick the checkpoint to override') : 'Optional — pick Done or Skipped to override it' }}</p>
+            </div>
+            <span v-if="overrideState" :class="['ovs-chip', overrideState === 'done' ? 'ovs-chip--ok' : 'ovs-chip--muted']">
+              {{ overrideState === 'done' ? 'Mark done' : 'Skip' }}
+            </span>
+          </header>
+
+          <div class="ovs-body">
         <div class="override-field">
-          <label class="override-label">NEW STATE (OPTIONAL)</label>
           <div class="override-states" :style="{ gridTemplateColumns: `repeat(${overrideStates.length}, 1fr)` }">
             <button v-for="s in overrideStates" :key="s.value"
               type="button"
@@ -510,9 +530,7 @@
               <small>{{ s.desc }}</small>
             </button>
           </div>
-          <div class="override-field-hint">
-            {{ overrideState ? 'Click it again to leave the checkpoint as it is.' : 'Leave unselected to change only the driver or supervisor.' }}
-          </div>
+          <div class="override-field-hint" v-if="overrideState">Click it again to leave the checkpoint as it is.</div>
         </div>
 
         <div v-if="overrideState" class="override-field">
@@ -538,7 +556,7 @@
             <div class="override-field-hint">When it actually happened</div>
           </div>
           <div class="override-field">
-            <label class="override-label">VARIANCE VS. PLANNED ({{ overrideCheckpoint?.scheduled_at || overrideCheckpoint?.at || '—' }})</label>
+            <label class="override-label">VARIANCE VS. PLANNED ({{ overridePlannedLabel }})</label>
             <div class="override-variance" :class="overrideVarianceMinutes > 0 ? 'is-late' : overrideVarianceMinutes < 0 ? 'is-early' : ''">
               {{ overrideVarianceText }}
             </div>
@@ -547,6 +565,19 @@
               <span>Exclude date from calculation (compare time of day only)</span>
             </label>
           </div>
+        </div>
+
+        <div v-if="overrideState" class="override-field">
+          <label class="override-label">REASON (REQUIRED)</label>
+          <select v-model="overrideReason" class="override-select">
+            <option value="" disabled>Select a reason…</option>
+            <option value="no_signal">No signal</option>
+            <option value="device_offline">Device offline</option>
+            <option value="supervisor_error">Supervisor error</option>
+            <option value="late_arrival">Late arrival</option>
+            <option value="operational_change">Operational change</option>
+            <option value="other">Other</option>
+          </select>
         </div>
 
         <!-- Baggage Count (if required) -->
@@ -571,46 +602,6 @@
             <input type="number" v-model.number="overrideOversizedPieces" min="0" class="override-input" placeholder="0" />
             <div class="override-field-hint">Number of oversized items</div>
           </div>
-        </div>
-
-        <div class="override-two-col">
-          <div class="override-field">
-            <label class="override-label">DRIVER</label>
-            <select v-model="overrideDriverId" class="override-select">
-              <option :value="null" disabled>Unassigned — pick a driver</option>
-              <option v-for="d in props.drivers" :key="d.id" :value="d.id">{{ d.name }}</option>
-            </select>
-            <div v-if="overrideDriverId !== (selectedJob?.driver_id ?? null)" class="override-field-hint override-field-hint--change">
-              Changes from {{ selectedJob?.driver || 'Unassigned' }}
-            </div>
-          </div>
-          <div class="override-field">
-            <label class="override-label">SUPERVISOR</label>
-            <select v-model="overrideSupervisorId" class="override-select">
-              <option :value="null" disabled>Unassigned — pick a supervisor</option>
-              <option v-for="s in props.supervisors" :key="s.id" :value="s.id">{{ s.name }}</option>
-            </select>
-            <div v-if="overrideSupervisorId !== (selectedJob?.supervisor_id ?? null)" class="override-field-hint override-field-hint--change">
-              Changes from {{ selectedJob?.supervisor || 'Unassigned' }}
-            </div>
-          </div>
-        </div>
-
-        <div v-if="overrideState" class="override-field">
-          <label class="override-label">REASON (REQUIRED)</label>
-          <select v-model="overrideReason" class="override-select">
-            <option value="" disabled>Select a reason…</option>
-            <option value="no_signal">No signal</option>
-            <option value="device_offline">Device offline</option>
-            <option value="supervisor_error">Supervisor error</option>
-            <option value="late_arrival">Late arrival</option>
-            <option value="operational_change">Operational change</option>
-            <option value="other">Other</option>
-          </select>
-        </div>
-
-        <div class="override-field">
-          <textarea v-model="overrideNotes" class="override-textarea" placeholder="Additional notes (optional)" rows="3" />
         </div>
 
         <!-- Photo Upload (if required) -->
@@ -653,6 +644,109 @@
           </div>
           <div class="override-field-hint">Sign with your mouse or finger</div>
         </div>
+          </div>
+        </section>
+
+        <!-- 2 · Driver & supervisor -->
+        <section :class="['ovs', { 'ovs--active': overrideCrewChanged }]">
+          <header class="ovs-head">
+            <span class="ovs-icon ovs-icon--crew">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+            </span>
+            <div class="ovs-heading">
+              <h4 class="ovs-title">Vehicle, driver &amp; supervisor</h4>
+              <p class="ovs-sub">Now: {{ selectedJob?.vehicle || 'Unassigned' }} · {{ selectedJob?.driver || 'Unassigned' }} · {{ selectedJob?.supervisor || 'Unassigned' }}</p>
+            </div>
+            <span v-if="overrideCrewChanged" class="ovs-chip ovs-chip--accent">Changed</span>
+          </header>
+
+          <div class="ovs-body">
+        <div class="override-field">
+          <label class="override-label">VEHICLE</label>
+          <select v-model="overrideVehicleId" class="override-select">
+            <option :value="null" disabled>Unassigned — pick a vehicle</option>
+            <option v-for="v in props.vehicles" :key="v.id" :value="v.id">{{ vehicleOptionLabel(v) }}</option>
+          </select>
+          <div v-if="overrideVehicleId !== (selectedJob?.vehicle_id ?? null)" class="override-field-hint override-field-hint--change">
+            Changes from {{ selectedJob?.vehicle || 'Unassigned' }}
+          </div>
+        </div>
+        <div class="override-two-col">
+          <div class="override-field">
+            <label class="override-label">DRIVER</label>
+            <select v-model="overrideDriverId" class="override-select">
+              <option :value="null" disabled>Unassigned — pick a driver</option>
+              <option v-for="d in props.drivers" :key="d.id" :value="d.id">{{ d.name }}</option>
+            </select>
+            <div v-if="overrideDriverId !== (selectedJob?.driver_id ?? null)" class="override-field-hint override-field-hint--change">
+              Changes from {{ selectedJob?.driver || 'Unassigned' }}
+            </div>
+          </div>
+          <div class="override-field">
+            <label class="override-label">SUPERVISOR</label>
+            <select v-model="overrideSupervisorId" class="override-select">
+              <option :value="null" disabled>Unassigned — pick a supervisor</option>
+              <option v-for="s in props.supervisors" :key="s.id" :value="s.id">{{ s.name }}</option>
+            </select>
+            <div v-if="overrideSupervisorId !== (selectedJob?.supervisor_id ?? null)" class="override-field-hint override-field-hint--change">
+              Changes from {{ selectedJob?.supervisor || 'Unassigned' }}
+            </div>
+          </div>
+        </div>
+          </div>
+        </section>
+
+        <!-- 3 · Flight -->
+        <section v-if="isFlightJob(selectedJob)" :class="['ovs', { 'ovs--active': overrideFlightChanged }]">
+          <header class="ovs-head">
+            <span class="ovs-icon ovs-icon--flight">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"/></svg>
+            </span>
+            <div class="ovs-heading">
+              <h4 class="ovs-title">{{ selectedJob.flight.direction === 'arrival' ? 'Arrival flight' : 'Departure flight' }}</h4>
+              <p class="ovs-sub">
+                {{ selectedJob.flight.flight_number || 'Flight TBC' }}<template v-if="flightRoute(selectedJob.flight)"> · {{ flightRoute(selectedJob.flight) }}</template><template v-if="selectedJob.flight.scheduled_time"> · {{ selectedJob.flight.scheduled_date }} {{ selectedJob.flight.scheduled_time }}</template>
+              </p>
+            </div>
+            <span v-if="overrideFlightChanged" class="ovs-chip ovs-chip--accent">Changed</span>
+          </header>
+
+          <div class="ovs-body">
+          <div class="override-flight-grid">
+            <div class="override-field">
+              <span class="override-sublabel">Flight no.</span>
+              <input v-model="overrideFlight.flight_number" type="text" maxlength="20" placeholder="e.g. QR123"
+                :class="['override-input', { 'override-input--changed': 'flight_number' in overrideFlightChanges }]" />
+            </div>
+            <div class="override-field">
+              <span class="override-sublabel">{{ selectedJob.flight.direction === 'arrival' ? 'Scheduled arrival' : 'Scheduled departure' }}</span>
+              <input v-model="overrideFlight.scheduled" type="datetime-local"
+                :class="['override-input', { 'override-input--changed': 'flight_scheduled_at' in overrideFlightChanges }]" />
+            </div>
+            <div class="override-field">
+              <span class="override-sublabel">Terminal</span>
+              <input v-model="overrideFlight.terminal" type="text" maxlength="50"
+                :class="['override-input', { 'override-input--changed': 'flight_terminal' in overrideFlightChanges }]" />
+            </div>
+            <div class="override-field">
+              <span class="override-sublabel">Gate</span>
+              <input v-model="overrideFlight.gate" type="text" maxlength="50"
+                :class="['override-input', { 'override-input--changed': 'flight_gate' in overrideFlightChanges }]" />
+            </div>
+          </div>
+          <div v-if="overrideFlightChanged" class="override-field-hint override-field-hint--change">
+            <template v-if="overrideFlightTimeChanged">
+              Outstanding checkpoints and the movement window will be re-timed from the checkpoint settings.
+            </template>
+            Flight changes are saved to the team's flight and logged to the audit trail.
+          </div>
+          </div>
+        </section>
+
+        <div class="override-field">
+          <label class="override-label">NOTES</label>
+          <textarea v-model="overrideNotes" class="override-textarea" placeholder="Additional notes (optional)" rows="3" />
+        </div>
 
         <label class="override-notify">
           <input type="checkbox" v-model="overrideNotify" class="override-notify-check" />
@@ -668,7 +762,7 @@
           <span class="override-signed-as">Signed as <strong>{{ page.props.auth?.user?.name || 'Unknown user' }}</strong></span>
           <div style="display:flex;gap:8px;">
             <Button variant="secondary" size="sm" @click="showOverrideModal = false" :disabled="overrideProcessing">Cancel</Button>
-            <Button variant="primary" size="sm" :disabled="!canSubmitOverride" :processing="overrideProcessing" @click="submitOverride">{{ overrideState ? 'Override & log' : 'Save crew change' }}</Button>
+            <Button variant="primary" size="sm" :disabled="!canSubmitOverride" :processing="overrideProcessing" @click="submitOverride">{{ overrideState ? 'Override & log' : overrideFlightChanged && !overrideCrewChanged ? 'Save flight change' : 'Save changes' }}</Button>
           </div>
         </div>
       </template>
@@ -733,6 +827,7 @@ const props = defineProps({
   schedule: { type: Array, default: () => [] },
   drivers: { type: Array, default: () => [] },
   supervisors: { type: Array, default: () => [] },
+  vehicles: { type: Array, default: () => [] },
 });
 
 const selectedJob = ref(null);
@@ -911,13 +1006,13 @@ const timeVariance = computed(() => {
   if (!hasVariance) return null;
   
   if (totalVarianceMinutes === 0) return 'On time';
-  if (totalVarianceMinutes > 0) return `+${totalVarianceMinutes} min`;
-  return `${totalVarianceMinutes} min`;
+  if (totalVarianceMinutes > 0) return `${totalVarianceMinutes} min late`;
+  return `${Math.abs(totalVarianceMinutes)} min early`;
 });
 
 const timeVarianceTone = computed(() => {
   if (!timeVariance.value || timeVariance.value === 'On time') return 'ok';
-  if (timeVariance.value.startsWith('+')) return 'warn';
+  if (timeVariance.value.endsWith('late')) return 'warn';
   return 'ok'; // Early completion
 });
 
@@ -931,6 +1026,11 @@ const crewMembers = computed(() => {
     Driver: {
       name: selectedJob.value.driver,
       phone: selectedJob.value.driver_phone,
+    },
+    Vehicle: {
+      name: selectedJob.value.vehicle,
+      detail: selectedJob.value.vehicle_detail,
+      vehicle: true,
     },
   };
 });
@@ -1323,6 +1423,8 @@ const overrideNotes = ref('');
 const overrideNotify = ref(true);
 const overrideDriverId = ref(null);
 const overrideSupervisorId = ref(null);
+const overrideVehicleId = ref(null);
+const overrideFlight = ref({ flight_number: '', scheduled: '', terminal: '', gate: '' });
 const overridePlannedBags = ref(0);
 const overrideBagsLoaded = ref(0);
 const overrideFoodBags = ref(0);
@@ -1386,6 +1488,8 @@ function openOverrideModal() {
   overrideNotify.value = true;
   overrideDriverId.value = selectedJob.value?.driver_id ?? null;
   overrideSupervisorId.value = selectedJob.value?.supervisor_id ?? null;
+  overrideVehicleId.value = selectedJob.value?.vehicle_id ?? null;
+  overrideFlight.value = flightDraftOf(selectedJob.value?.flight);
   syncOverrideBaggageFields();
   overridePhoto.value = null;
   overridePhotoPreview.value = null;
@@ -1402,6 +1506,7 @@ function openOverrideModal() {
 
 const overrideVarianceMinutes = computed(() => {
   if (!overrideCheckpoint.value?.scheduled_ts || !overrideTime.value) return null;
+  const shift = overrideCheckpointShift.value;
 
   // Parse the time input (HH:mm)
   const [ah, am] = overrideTime.value.split(':').map(Number);
@@ -1417,7 +1522,7 @@ const overrideVarianceMinutes = computed(() => {
     const schedStr = overrideCheckpoint.value?.scheduled_at || overrideCheckpoint.value?.at;
     const schedMatch = schedStr?.match(/^(\d{1,2}):(\d{2})/);
     if (!schedMatch) return null;
-    const scheduledMinutes = Number(schedMatch[1]) * 60 + Number(schedMatch[2]);
+    const scheduledMinutes = Number(schedMatch[1]) * 60 + Number(schedMatch[2]) + shift;
     const actualMinutes = ah * 60 + am;
     let diff = actualMinutes - scheduledMinutes;
     // Wrap around midnight to the shortest signed difference
@@ -1427,7 +1532,7 @@ const overrideVarianceMinutes = computed(() => {
   }
 
   // Get scheduled timestamp and extract scheduled hour
-  const scheduledDate = new Date(overrideCheckpoint.value.scheduled_ts * 1000);
+  const scheduledDate = new Date((overrideCheckpoint.value.scheduled_ts + shift * 60) * 1000);
   const scheduledHour = scheduledDate.getHours();
 
   // Create actual datetime using TODAY's date (matching backend logic)
@@ -1440,7 +1545,7 @@ const overrideVarianceMinutes = computed(() => {
   }
 
   // Calculate variance in minutes using timestamps
-  const varianceSeconds = Math.floor(actualDate.getTime() / 1000) - overrideCheckpoint.value.scheduled_ts;
+  const varianceSeconds = Math.floor(actualDate.getTime() / 1000) - (overrideCheckpoint.value.scheduled_ts + shift * 60);
   return Math.round(varianceSeconds / 60);
 });
 
@@ -1449,19 +1554,73 @@ const overrideVarianceText = computed(() => {
   if (v === null) return '—';
   if (v === 0) return 'On time';
   const abs = Math.abs(v);
-  return v > 0 ? `+${abs} min late` : `${abs} min early`;
+  return v > 0 ? `${abs} min late` : `${abs} min early`;
 });
 
 const overrideCrewChanged = computed(() =>
-  (overrideDriverId.value !== null && overrideDriverId.value !== (selectedJob.value?.driver_id ?? null))
+  (overrideVehicleId.value !== null && overrideVehicleId.value !== (selectedJob.value?.vehicle_id ?? null))
+  || (overrideDriverId.value !== null && overrideDriverId.value !== (selectedJob.value?.driver_id ?? null))
   || (overrideSupervisorId.value !== null && overrideSupervisorId.value !== (selectedJob.value?.supervisor_id ?? null))
 );
+
+// Read as text so the event's wall-clock time shows, whatever the browser's timezone.
+const overrideJobStart = computed(() => {
+  const m = selectedJob.value?.span_start?.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}:\d{2})/);
+  if (!m) return null;
+  const day = new Date(Date.UTC(+m[1], m[2] - 1, +m[3]))
+    .toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
+  return `${day}, ${m[4]}`;
+});
+
+function vehicleOptionLabel(v) {
+  const name = v.code || v.plate_number || v.vehicle_type || `#${v.id}`;
+  return [name, v.code && v.plate_number ? v.plate_number : null, v.capacity ? `${v.capacity} seats` : null].filter(Boolean).join(' · ');
+}
+
+function flightDraftOf(flight) {
+  return {
+    flight_number: flight?.flight_number ?? '',
+    scheduled: flight?.scheduled_local ?? '',
+    terminal: flight?.terminal ?? '',
+    gate: flight?.gate ?? '',
+  };
+}
+
+// Only edited fields are sent, keyed as the override endpoint expects.
+const overrideFlightChanges = computed(() => {
+  if (!isFlightJob(selectedJob.value)) return {};
+  const before = flightDraftOf(selectedJob.value.flight);
+  const keys = { flight_number: 'flight_number', scheduled: 'flight_scheduled_at', terminal: 'flight_terminal', gate: 'flight_gate' };
+  return Object.fromEntries(Object.entries(keys)
+    .filter(([field]) => (overrideFlight.value[field] ?? '').trim() !== (before[field] ?? '').trim())
+    .map(([field, key]) => [key, (overrideFlight.value[field] ?? '').trim()]));
+});
+const overrideFlightChanged = computed(() => Object.keys(overrideFlightChanges.value).length > 0);
+
+const overrideFlightTimeChanged = computed(() => 'flight_scheduled_at' in overrideFlightChanges.value && !!overrideFlight.value.scheduled);
+
+// On save the server re-times outstanding checkpoints to new flight time + their configured offset.
+const overrideCheckpointShift = computed(() => {
+  const cp = overrideCheckpoint.value;
+  if (!overrideFlightTimeChanged.value || !cp || ['done', 'skipped'].includes(cp.state)) return 0;
+  if (cp.flight_offset == null || !cp.scheduled_local) return 0;
+  const planned = new Date(overrideFlight.value.scheduled).getTime() + cp.flight_offset * 60000;
+  return Math.round((planned - new Date(cp.scheduled_local).getTime()) / 60000);
+});
+
+const overridePlannedLabel = computed(() => {
+  const label = overrideCheckpoint.value?.scheduled_at || overrideCheckpoint.value?.at;
+  const m = label?.match(/^(\d{1,2}):(\d{2})/);
+  if (!m || !overrideCheckpointShift.value) return label || '—';
+  const t = (((Number(m[1]) * 60 + Number(m[2]) + overrideCheckpointShift.value) % 1440) + 1440) % 1440;
+  return `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}, was ${label}`;
+});
 
 const canSubmitOverride = computed(() => {
   if (overrideProcessing.value) return false;
 
-  // Without a new state there is only a crew change to save.
-  if (!overrideState.value) return overrideCrewChanged.value;
+  // Without a new state there is only a crew or flight change to save.
+  if (!overrideState.value) return overrideCrewChanged.value || overrideFlightChanged.value;
 
   if (!overrideCheckpoint.value || !overrideReason.value) return false;
   
@@ -1699,6 +1858,12 @@ function submitOverride() {
   }
   if (overrideSupervisorId.value !== null && overrideSupervisorId.value !== (selectedJob.value?.supervisor_id ?? null)) {
     formData.append('supervisor_id', overrideSupervisorId.value);
+  }
+  if (overrideVehicleId.value !== null && overrideVehicleId.value !== (selectedJob.value?.vehicle_id ?? null)) {
+    formData.append('vehicle_id', overrideVehicleId.value);
+  }
+  for (const [key, value] of Object.entries(overrideFlightChanges.value)) {
+    formData.append(key, value);
   }
 
   // Add actual time only for 'done' state
@@ -2453,6 +2618,7 @@ function submitOverride() {
   font-size: 11px; font-weight: 700; flex-shrink: 0;
   display: flex; align-items: center; justify-content: center;
 }
+.crew-avatar--vehicle { border-radius: 8px; background: var(--live-soft); color: var(--live); }
 
 .crew-info {
   flex: 1;
@@ -2501,10 +2667,49 @@ function submitOverride() {
   font-size: 10px; font-weight: 700; letter-spacing: 0.8px;
   text-transform: uppercase; color: #b45309;
 }
+.override-job-start {
+  display: inline-flex; align-items: center; gap: 5px; width: fit-content; margin-top: 2px;
+  font-size: 11.5px; font-weight: 600; color: var(--ink2);
+  padding: 2px 8px; border-radius: 6px; background: var(--panel); border: 1px solid var(--border);
+}
+.override-job-start svg { color: var(--ink3); }
 
 .override-body {
-  display: flex; flex-direction: column; gap: 16px;
+  display: flex; flex-direction: column; gap: 14px;
 }
+
+/* Override modal sections */
+.ovs {
+  border: 1px solid var(--border); border-radius: 12px; background: var(--surface);
+  overflow: hidden; transition: border-color 0.15s, box-shadow 0.15s;
+}
+.ovs--active { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-ring); }
+.ovs-head {
+  display: flex; align-items: center; gap: 12px; padding: 12px 16px;
+  background: linear-gradient(180deg, var(--panel), transparent);
+  border-bottom: 1px solid var(--border);
+}
+.ovs-icon {
+  width: 32px; height: 32px; border-radius: 9px; flex-shrink: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.ovs-icon--checkpoint { background: var(--ok-soft); color: var(--ok); }
+.ovs-icon--crew { background: var(--accent-soft); color: var(--accent-fg); }
+.ovs-icon--flight { background: var(--live-soft); color: var(--live); }
+.ovs-heading { flex: 1; min-width: 0; }
+.ovs-title { margin: 0; font-size: 13.5px; font-weight: 700; color: var(--ink); }
+.ovs-sub {
+  margin: 1px 0 0; font-size: 11.5px; color: var(--ink3);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.ovs-chip {
+  flex-shrink: 0; font-size: 10.5px; font-weight: 700; letter-spacing: 0.3px;
+  padding: 3px 9px; border-radius: 999px; text-transform: uppercase;
+}
+.ovs-chip--ok { background: var(--ok-soft); color: var(--ok); }
+.ovs-chip--muted { background: var(--panel); color: var(--ink3); border: 1px solid var(--border); }
+.ovs-chip--accent { background: var(--accent-soft); color: var(--accent-fg); }
+.ovs-body { display: flex; flex-direction: column; gap: 14px; padding: 14px 16px 16px; }
 
 .override-warning {
   display: flex; gap: 10px; align-items: flex-start;
@@ -2606,6 +2811,13 @@ function submitOverride() {
 .override-four-col {
   display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 12px;
 }
+
+.override-flight { display: flex; flex-direction: column; gap: 8px; }
+.override-flight-grid { display: grid; grid-template-columns: 1fr 1.4fr 0.8fr 0.8fr; gap: 12px; }
+.override-flight-grid .override-field { gap: 4px; }
+.override-sublabel { font-size: 10.5px; font-weight: 600; color: var(--ink3); text-transform: uppercase; letter-spacing: 0.04em; }
+.override-input--changed { border-color: var(--accent); }
+@media (max-width: 640px) { .override-flight-grid { grid-template-columns: 1fr 1fr; } }
 
 .override-variance {
   padding: 8px 10px; border-radius: 7px;

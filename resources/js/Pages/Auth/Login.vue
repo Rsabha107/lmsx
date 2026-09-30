@@ -8,6 +8,10 @@
       {{ $page.props.flash.status }}
     </div>
 
+    <div v-if="$page.props.flash?.error" class="alert alert--err" role="alert">
+      {{ $page.props.flash.error }}
+    </div>
+
     <form @submit.prevent="submit" class="auth-form">
       <div class="form-group">
         <label class="form-label" for="email">Email address</label>
@@ -69,6 +73,18 @@
         <span v-if="processing" class="submit-spinner" />
         <span v-else>Sign in</span>
       </button>
+
+      <div class="sso-divider"><span>Or sign in with</span></div>
+
+      <a href="/auth/microsoft/redirect" class="btn-sso" title="Sign in with Microsoft">
+        <svg width="16" height="16" viewBox="0 0 23 23" aria-hidden="true">
+          <path fill="#f25022" d="M0 0h11v11H0z"/>
+          <path fill="#7fba00" d="M12 0h11v11H12z"/>
+          <path fill="#00a4ef" d="M0 12h11v11H0z"/>
+          <path fill="#ffb900" d="M12 12h11v11H12z"/>
+        </svg>
+        <span>Microsoft</span>
+      </a>
     </form>
   </auth-layout>
 </template>
@@ -113,6 +129,23 @@ function submit() {
   font-size: 13px; margin-bottom: 18px;
 }
 .alert--ok { background: var(--ok-soft); color: var(--ok); border: 1px solid color-mix(in srgb, var(--ok) 20%, transparent); }
+.alert--err { background: color-mix(in srgb, var(--danger) 8%, transparent); color: var(--danger); border: 1px solid color-mix(in srgb, var(--danger) 20%, transparent); }
+
+.sso-divider {
+  display: flex; align-items: center; gap: 10px;
+  margin: 18px 0 14px; font-size: 12px; color: var(--ink4);
+}
+.sso-divider::before, .sso-divider::after {
+  content: ''; flex: 1; height: 1px; background: var(--border);
+}
+.btn-sso {
+  width: 100%; min-height: 42px; box-sizing: border-box;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  font-size: 13.5px; font-weight: 600; color: var(--ink);
+  background: var(--bg); border: 1px solid var(--border); border-radius: 9px;
+  text-decoration: none; transition: border-color 0.15s, background 0.15s;
+}
+.btn-sso:hover { border-color: var(--accent); }
 
 .auth-form { display: flex; flex-direction: column; gap: 0; }
 

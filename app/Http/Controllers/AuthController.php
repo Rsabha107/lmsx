@@ -11,6 +11,8 @@ use Illuminate\Auth\Events\PasswordReset;
 use Illuminate\Support\Str;
 use Inertia\Inertia;
 use Inertia\Response;
+use Laravel\Socialite\Facades\Socialite;
+use Symfony\Component\HttpFoundation\Response as HttpResponse;
 
 class AuthController extends Controller
 {
@@ -45,11 +47,21 @@ class AuthController extends Controller
         ])->onlyInput('email');
     }
 
-    public function logout(Request $request): RedirectResponse
+    public function logout(Request $request): RedirectResponse|HttpResponse
     {
+        $viaMicrosoft = $request->session()->get('login_method') === 'microsoft';
+
         Auth::logout();
         $request->session()->invalidate();
         $request->session()->regenerateToken();
+
+        if ($viaMicrosoft) {
+            /** @var \SocialiteProviders\Microsoft\Provider $microsoft */
+            $microsoft = Socialite::driver('microsoft');
+
+            return Inertia::location($microsoft->getLogoutUrl(route('login')));
+        }
+
         return redirect()->route('login');
     }
 

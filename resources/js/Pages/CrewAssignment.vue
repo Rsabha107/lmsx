@@ -30,9 +30,20 @@
       <nav class="wn">
         <button type="button" class="wn-nav" aria-label="Previous week" @click="shiftWeek(-7)">‹</button>
         <button v-for="d in weekTabs" :key="d.date" type="button"
-          :class="['wn-day', { 'wn-day--active': d.date === selectedDate }]" @click="onDateChange(d.date)">
+          :class="['wn-day', {
+            'wn-day--active': d.date === selectedDate,
+            'wn-day--empty': !d.total,
+            'wn-day--need': d.total && d.unassigned,
+            'wn-day--ok': d.total && !d.unassigned,
+          }]" @click="onDateChange(d.date)">
           <span class="wn-label">{{ d.label }}<span v-if="d.clashes" class="wn-conf">{{ d.clashes }}</span></span>
-          <span class="wn-sub">{{ d.sub }}</span>
+          <span class="wn-sub">
+            <template v-if="d.total !== null">
+              <span class="wn-count">{{ d.total }} movement{{ d.total === 1 ? '' : 's' }}</span>
+              <span :class="['wn-crew', d.unassigned ? 'wn-crew--need' : 'wn-crew--ok']">{{ d.unassigned }} need crew</span>
+            </template>
+            <span v-else class="wn-count">No movements</span>
+          </span>
         </button>
         <button type="button" class="wn-nav" aria-label="Next week" @click="shiftWeek(7)">›</button>
       </nav>
@@ -335,7 +346,8 @@ const weekTabs = computed(() => weekDates.value.map((date) => {
   return {
     date: key,
     label: key === todayIso() ? `${label} · Today` : label,
-    sub: info ? `${info.total} movement${info.total === 1 ? '' : 's'} · ${info.unassigned} need crew` : 'No movements',
+    total: info ? info.total : null,
+    unassigned: info?.unassigned ?? 0,
     clashes: info?.clashes ?? 0,
   };
 }));
@@ -391,9 +403,17 @@ const selectedSpan = computed(() => {
   border-radius: 8px; padding: 8px 12px; display: flex; flex-direction: column; gap: 2px; min-width: 0;
 }
 .wn-day:hover { background: var(--panel); }
-.wn-day--active, .wn-day--active:hover { background: var(--ink); border-color: var(--ink); color: var(--surface); }
+.wn-day--empty { background: var(--panel); border-style: dashed; color: var(--ink3); }
+.wn-day--empty:hover { background: var(--bg); }
+.wn-day--need { border-color: var(--warn); box-shadow: inset 0 0 0 1px var(--warn); }
+.wn-day--ok { border-color: var(--ok); box-shadow: inset 0 0 0 1px var(--ok); }
+.wn-day--active, .wn-day--active:hover { background: var(--ink); border-color: var(--ink); border-style: solid; color: var(--surface); }
 .wn-label { display: flex; justify-content: space-between; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; white-space: nowrap; }
-.wn-sub { font-size: 12px; opacity: 0.75; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wn-sub { display: flex; align-items: center; gap: 6px; font-size: 12px; white-space: nowrap; overflow: hidden; }
+.wn-count { opacity: 0.75; overflow: hidden; text-overflow: ellipsis; }
+.wn-crew { flex-shrink: 0; font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 10px; }
+.wn-crew--need { background: var(--warn-soft); color: var(--warn); }
+.wn-crew--ok { background: var(--ok-soft); color: var(--ok); }
 .wn-conf {
   background: #c8322b; color: #fff; font-family: var(--font-mono, monospace);
   font-size: 11px; font-weight: 600; padding: 1px 6px; border-radius: 10px;

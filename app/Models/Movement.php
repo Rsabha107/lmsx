@@ -12,6 +12,29 @@ class Movement extends Model
 {
     use SoftDeletes;
 
+    /** "M" is avoided: M1, M2… already mean something else to the business. */
+    public const CODE_PREFIX = 'TRP-';
+
+    /**
+     * Next number in the global code sequence, from the highest code in use
+     * (not the highest id, which diverges after deletes). Includes soft-deleted
+     * rows because the unique index still holds their codes.
+     */
+    public static function nextCodeNumber(): int
+    {
+        $max = static::withTrashed()
+            ->where('code', 'like', self::CODE_PREFIX.'%')
+            ->selectRaw('MAX(CAST(SUBSTRING(code, ?) AS UNSIGNED)) as max_number', [strlen(self::CODE_PREFIX) + 1])
+            ->value('max_number');
+
+        return ((int) $max) + 1;
+    }
+
+    public static function formatCode(int $number): string
+    {
+        return sprintf('%s%05d', self::CODE_PREFIX, $number);
+    }
+
     protected $fillable = [
         'code',
         'plan_id',

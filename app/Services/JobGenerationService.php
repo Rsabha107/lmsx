@@ -1140,22 +1140,7 @@ class JobGenerationService
      */
     protected function generateMovementCode(Plan $plan): string
     {
-        // Generate globally unique movement code. Must derive the next
-        // number from the highest CODE in use, not the highest row id —
-        // once movements get deleted, id order and code order diverge (the
-        // row with the highest id is not necessarily the row with the
-        // highest M-number), so "latest by id + 1" can recompute a code
-        // that's still held by an older, undeleted row and collide on the
-        // unique constraint. Must also include soft-deleted rows
-        // (withTrashed): Movement uses SoftDeletes, so a "deleted" movement's
-        // code is still physically in the table and still enforced by the
-        // DB's unique index, which doesn't know about deleted_at.
-        $maxNumber = Movement::withTrashed()
-            ->whereNotNull('code')
-            ->selectRaw("MAX(CAST(SUBSTRING(code, 2) AS UNSIGNED)) as max_number")
-            ->value('max_number');
-
-        return sprintf('M%d', ($maxNumber ?? 0) + 1);
+        return Movement::formatCode(Movement::nextCodeNumber());
     }
 
     /**

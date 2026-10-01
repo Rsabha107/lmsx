@@ -12,6 +12,7 @@ use App\Services\TemplateCopyService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 
 /**
@@ -19,6 +20,8 @@ use Inertia\Inertia;
  */
 class MovementTemplateController extends Controller
 {
+    private const NAME_TAKEN = ['name.unique' => 'A movement template with this name already exists in this event.'];
+
     /**
      * Display a listing of movement templates.
      */
@@ -88,7 +91,8 @@ class MovementTemplateController extends Controller
         
         $validated = $request->validate([
             'code' => 'required|string|max:50|unique:movement_templates,code',
-            'name' => 'required|string|max:255',
+            'name' => ['required', 'string', 'max:255', Rule::unique('movement_templates', 'name')
+                ->where('event_id', $request->session()->get('active_event_id'))],
             'description' => 'nullable|string',
             'scenario_type' => 'required|in:match_day,training_day,arrival_day,departure_day,full_day,custom,operation_day',
             'functional_area' => 'nullable|in:LOG,AND,MOB',
@@ -102,7 +106,7 @@ class MovementTemplateController extends Controller
             'legs.*.to_location' => 'nullable|string|max:255',
             'legs.*.transport_type' => 'required|in:bus,coach,van,walk,car,other',
             'legs.*.estimated_duration_minutes' => 'nullable|integer|min:1',
-        ]);
+        ], self::NAME_TAKEN);
 
         Log::info('Validated movement template data', ['validated' => $validated]);
 
@@ -233,7 +237,9 @@ class MovementTemplateController extends Controller
     {
         $validated = $request->validate([
             'code' => 'required|string|max:50|unique:movement_templates,code,' . $movementTemplate->id,
-            'name' => 'required|string|max:255',
+            'name' => ['required', 'string', 'max:255', Rule::unique('movement_templates', 'name')
+                ->where('event_id', $movementTemplate->event_id)
+                ->ignore($movementTemplate->id)],
             'description' => 'nullable|string',
             'scenario_type' => 'required|in:match_day,training_day,arrival_day,departure_day,full_day,custom,operation_day',
             'functional_area' => 'nullable|in:LOG,AND,MOB',
@@ -247,7 +253,7 @@ class MovementTemplateController extends Controller
             'legs.*.to_location' => 'nullable|string|max:255',
             'legs.*.transport_type' => 'required|in:bus,coach,van,walk,car,other',
             'legs.*.estimated_duration_minutes' => 'nullable|integer|min:1',
-        ]);
+        ], self::NAME_TAKEN);
 
         try {
             DB::beginTransaction();

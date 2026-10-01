@@ -527,6 +527,50 @@ class JobLifecycleService
     }
 
     /**
+     * Permanently delete jobs with their checkpoints and issues (FK cascade),
+     * freeing their movements so jobs can be generated for them again.
+     *
+     * @param  iterable<JobOperation>  $jobs
+     */
+    public function deleteJobs(iterable $jobs): int
+    {
+        $evidence = [];
+
+        $count = DB::transaction(function () use ($jobs, &$evidence) {
+            $count = 0;
+
+            foreach ($jobs as $job) {
+                foreach ($job->checkpoints()->get(['photo_path', 'signature_path']) as $checkpoint) {
+                    $evidence[] = $checkpoint->photo_path;
+                    $evidence[] = $checkpoint->signature_path;
+                }
+
+                Movement::withTrashed()
+                    ->where('job_id', $job->job_id)
+                    ->update(['job_id' => null, 'job_generated_at' => null]);
+
+                AuditLog::record(
+                    action: 'Job deleted',
+                    target: $job->job_id.($job->team ? ' · '.$job->team->team_name : ''),
+                    meta: "Status was {$job->status}",
+                    subject: $job,
+                    eventId: $job->event_id,
+                );
+
+                $job->delete();
+                $count++;
+            }
+
+            return $count;
+        });
+
+        // Only once the rows are gone, so a rolled-back delete keeps its files.
+        $this->discardEvidence(array_filter($evidence));
+
+        return $count;
+    }
+
+    /**
      * Recount progress and move the job along if the checkpoints imply it.
      */
     public function syncJobProgress(?JobOperation $job, bool $autoComplete = true): void

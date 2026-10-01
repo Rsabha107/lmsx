@@ -779,12 +779,33 @@
           </div>
 
         <div class="plan-table-card">
+          <div v-if="visiblePlans.length" class="plans-bulk-bar">
+            <label class="plans-bulk-select">
+              <input
+                type="checkbox"
+                :checked="allVisiblePlansSelected"
+                :indeterminate="selectedVisiblePlans.length > 0 && !allVisiblePlansSelected"
+                @change="toggleSelectAllPlans"
+              />
+              Select all ({{ visiblePlans.length }})
+            </label>
+            <template v-if="selectedVisiblePlans.length">
+              <span class="plans-bulk-count">{{ selectedVisiblePlans.length }} selected</span>
+              <Button variant="secondary" size="sm" @click="selectedPlanIds = new Set()">Clear</Button>
+              <Button
+                variant="primary"
+                size="sm"
+                style="background: #dc2626; border-color: #dc2626"
+                @click="openBulkDeletePlans"
+              >Delete selected</Button>
+            </template>
+          </div>
           <!-- TABLE VIEW HEADER -->
           <div
             v-if="plansPageView === 'table'"
             style="
               display: grid;
-              grid-template-columns: 80px 120px 1.5fr 1fr 120px 100px 120px;
+              grid-template-columns: 28px 80px 120px 1.5fr 1fr 120px 100px 120px;
               gap: 10px;
               padding: 10px 14px;
               border-bottom: 1px solid var(--border);
@@ -798,6 +819,7 @@
               background: var(--surface);
             "
           >
+            <div></div>
             <div>Type</div>
             <div>Code</div>
             <div>Name</div>
@@ -929,7 +951,7 @@
               @click="selectPlan(plan.id)"
               :style="{
                 display: 'grid',
-                gridTemplateColumns: '80px 120px 1.5fr 1fr 120px 100px 120px',
+                gridTemplateColumns: '28px 80px 120px 1.5fr 1fr 120px 100px 120px',
                 gap: '10px',
                 padding: '12px 14px',
                 borderBottom:
@@ -941,6 +963,14 @@
               @mouseenter="$event.currentTarget.style.background = 'var(--panel)'"
               @mouseleave="$event.currentTarget.style.background = 'transparent'"
             >
+              <div @click.stop>
+                <input
+                  type="checkbox"
+                  :checked="selectedPlanIds.has(plan.id)"
+                  :aria-label="`Select ${plan.name}`"
+                  @change="togglePlanSelection(plan)"
+                />
+              </div>
               <!-- Type Badge -->
               <div>
                 <Badge type="plan-type" :variant="plan.planType">
@@ -992,7 +1022,7 @@
                 :show-duplicate="true"
                 @duplicate="duplicatePlan(plan)"
                 @edit="editPlan(plan)"
-                @delete="confirmDeletePlan(plan)"
+                @delete="deletePlan(plan)"
               />
             </div>
           </div>
@@ -1040,19 +1070,28 @@
                   >
                     <!-- Header: Type + Actions -->
                     <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px;">
-                      <Badge type="plan-type" :variant="plan.planType">
-                        <template v-if="plan.planType === 'arrival'">✈️</template>
-                        <template v-else-if="plan.planType === 'match'">⚽</template>
-                        <template v-else-if="plan.planType === 'departure'">🛫</template>
-                        <template v-else-if="plan.planType === 'transfer'">🚌</template>
-                        <template v-else>📋</template>
-                      </Badge>
+                      <div style="display: flex; align-items: center; gap: 8px;">
+                        <input
+                          type="checkbox"
+                          :checked="selectedPlanIds.has(plan.id)"
+                          :aria-label="`Select ${plan.name}`"
+                          @click.stop
+                          @change="togglePlanSelection(plan)"
+                        />
+                        <Badge type="plan-type" :variant="plan.planType">
+                          <template v-if="plan.planType === 'arrival'">✈️</template>
+                          <template v-else-if="plan.planType === 'match'">⚽</template>
+                          <template v-else-if="plan.planType === 'departure'">🛫</template>
+                          <template v-else-if="plan.planType === 'transfer'">🚌</template>
+                          <template v-else>📋</template>
+                        </Badge>
+                      </div>
                       <div @click.stop>
                         <TableActions
                           :show-duplicate="true"
                           @duplicate="duplicatePlan(plan)"
                           @edit="editPlan(plan)"
-                          @delete="confirmDeletePlan(plan)"
+                          @delete="deletePlan(plan)"
                         />
                       </div>
                     </div>
@@ -1428,7 +1467,7 @@
                       font-weight: 700;
                     "
                   >
-                    {{ mv.code || `M${i + 1}` }}
+                    {{ mv.code || formatMovementCode(i + 1) }}
                     <span
                       v-if="conflictsByMovement.get(mv.id)"
                       :class="['conflict-marker', `conflict-marker--${worstSeverity(mv.id)}`]"
@@ -3747,7 +3786,7 @@
                       :key="index"
                       :value="index"
                     >
-                      M{{ nextMovementNumber + index }}:
+                      {{ formatMovementCode(nextMovementNumber + index) }}:
                       <template v-if="leg.from_location && leg.to_location">
                         {{ leg.from_location }} → {{ leg.to_location }}
                       </template>
@@ -3761,7 +3800,7 @@
                   </select>
                   <div style="font-size: 11px; color: var(--ink3); margin-top: 6px;">
                     <template v-if="newPlanMovementPosition !== null">
-                      Only movement M{{ nextMovementNumber + newPlanMovementPosition }} will be created from this template
+                      Only movement {{ formatMovementCode(nextMovementNumber + newPlanMovementPosition) }} will be created from this template
                     </template>
                     <template v-else>
                       All {{ selectedNewPlanTemplate.legs.length }} movements will be created in order
@@ -5459,7 +5498,7 @@
                     class="gen-checkbox"
                   />
                   <div class="gen-mv-id">
-                    {{ mv.code || `M${genMovements.indexOf(mv) + 1}` }}
+                    {{ mv.code || formatMovementCode(genMovements.indexOf(mv) + 1) }}
                   </div>
                   <div v-if="mv.match_id" style="display: flex; flex-direction: column; align-items: flex-start; gap: 2px;">
                     <Badge
@@ -7262,6 +7301,108 @@
       </div>
     </teleport>
 
+    <!-- Bulk Delete Plans Modal -->
+    <teleport to="body">
+      <div
+        v-if="showBulkDeletePlans"
+        v-dialog="cancelBulkDeletePlans"
+        class="modal-backdrop"
+        @click.self="cancelBulkDeletePlans"
+      >
+        <div class="modal">
+          <div class="modal-header">
+            <span class="modal-title" style="color: #dc2626">
+              Delete {{ selectedVisiblePlans.length }} plan(s)
+            </span>
+            <button class="modal-close" @click="cancelBulkDeletePlans">
+              <svg-icon name="x" />
+            </button>
+          </div>
+          <div class="modal-body">
+            <p style="font-size: 14px; color: var(--ink); margin-bottom: 12px">
+              Are you sure you want to delete
+              <strong>{{ bulkDeleteSummary.deletable.length }}</strong> plan(s)?
+            </p>
+            <div
+              v-if="bulkDeleteSummary.movements > 0"
+              style="
+                font-size: 13px;
+                color: #92400e;
+                background: #fef3c7;
+                border: 1px solid #fcd34d;
+                border-radius: 6px;
+                padding: 10px 12px;
+                margin-bottom: 12px;
+              "
+            >
+              <strong>{{ bulkDeleteSummary.movements }}</strong>
+              movement(s) already exist in these plans and will be deleted as well.
+            </div>
+            <div
+              v-if="bulkDeleteSummary.blocked.length"
+              style="
+                font-size: 13px;
+                color: #991b1b;
+                background: #fee2e2;
+                border: 1px solid #fca5a5;
+                border-radius: 6px;
+                padding: 10px 12px;
+                margin-bottom: 12px;
+              "
+            >
+              {{ bulkDeleteSummary.blocked.length }} plan(s) have movements with
+              generated jobs and will be skipped:
+              {{ bulkDeleteSummary.blocked.map((p) => p.name).join(", ") }}
+            </div>
+            <div
+              v-if="bulkDeleteSummary.movements > 0"
+              class="form-field"
+              style="margin-bottom: 12px"
+            >
+              <label for="bulk-delete-plans-confirm">
+                Type <strong>DELETE</strong> to confirm
+              </label>
+              <input
+                id="bulk-delete-plans-confirm"
+                v-model="bulkDeleteConfirm"
+                type="text"
+                autocomplete="off"
+                @input="bulkDeleteError = ''"
+                @keydown.enter.prevent="canConfirmBulkDelete && confirmBulkDeletePlans()"
+              />
+            </div>
+            <p
+              v-if="bulkDeleteError"
+              style="font-size: 12px; color: #dc2626; margin-bottom: 6px"
+            >
+              {{ bulkDeleteError }}
+            </p>
+            <p style="font-size: 13px; color: #dc2626; font-weight: 600">
+              This action cannot be undone.
+            </p>
+          </div>
+          <div class="modal-footer">
+            <Button
+              variant="secondary"
+              size="sm"
+              :disabled="bulkDeleteProcessing"
+              @click="cancelBulkDeletePlans"
+              >Cancel</Button
+            >
+            <Button
+              variant="primary"
+              size="sm"
+              :disabled="bulkDeleteProcessing || !canConfirmBulkDelete"
+              style="background: #dc2626; border-color: #dc2626"
+              @click="confirmBulkDeletePlans"
+            >
+              {{ bulkDeleteProcessing ? "Deleting..." : `Delete ${bulkDeleteSummary.deletable.length} Plan(s)` }}
+            </Button>
+          </div>
+        </div>
+      </div>
+    </teleport>
+
     <!-- Delete Confirmation Modal -->
     <teleport to="body">
       <div
@@ -7300,20 +7441,89 @@
               <strong>{{ deletingPlan.name }}</strong
               >?
             </p>
-            <p style="font-size: 13px; color: var(--ink2); margin-bottom: 8px">
-              This will also delete:
-            </p>
-            <ul
-              style="
-                font-size: 13px;
-                color: var(--ink2);
-                margin-left: 20px;
-                margin-bottom: 12px;
-              "
+
+            <p
+              v-if="deleteStep === 'checking'"
+              style="font-size: 13px; color: var(--ink2)"
             >
-              <li>{{ deletingPlan.movements_count || 0 }} movement(s)</li>
-              <li>All associated jobs and checkpoints</li>
-            </ul>
+              Checking for existing movements...
+            </p>
+
+            <template v-if="deleteStep === 'verify'">
+              <div
+                v-if="deleteCheck.movements_count > 0"
+                style="
+                  font-size: 13px;
+                  color: #92400e;
+                  background: #fef3c7;
+                  border: 1px solid #fcd34d;
+                  border-radius: 6px;
+                  padding: 10px 12px;
+                  margin-bottom: 12px;
+                "
+              >
+                <strong>{{ deleteCheck.movements_count }}</strong>
+                movement(s) already exist in this plan and will be deleted as
+                well.
+              </div>
+              <p
+                v-else
+                style="font-size: 13px; color: var(--ink2); margin-bottom: 12px"
+              >
+                This plan has no movements.
+              </p>
+
+              <div
+                v-if="deleteCheck.jobs_count > 0"
+                style="
+                  font-size: 13px;
+                  color: #991b1b;
+                  background: #fee2e2;
+                  border: 1px solid #fca5a5;
+                  border-radius: 6px;
+                  padding: 10px 12px;
+                  margin-bottom: 12px;
+                "
+              >
+                {{ deleteCheck.jobs_count }} movement(s) have generated jobs.
+                Delete those jobs first before deleting this plan.
+              </div>
+
+              <div v-else-if="deleteCheck.movements_count > 0" class="form-field" style="margin-bottom: 12px">
+                <label for="delete-plan-confirm-name">
+                  Type <strong>{{ deletingPlan.name }}</strong> to confirm
+                </label>
+                <input
+                  id="delete-plan-confirm-name"
+                  v-model="deleteConfirmName"
+                  type="text"
+                  autocomplete="off"
+                  :style="deletePlanError ? { borderColor: '#DC2626' } : {}"
+                  @input="deletePlanError = ''"
+                  @keydown.enter.prevent="deleteNameMatches && confirmDeletePlan()"
+                />
+                <p
+                  v-if="deletePlanError"
+                  style="font-size: 12px; color: #dc2626; margin-top: 4px"
+                >
+                  {{ deletePlanError }}
+                </p>
+              </div>
+              <p
+                v-else-if="deletePlanError"
+                style="font-size: 12px; color: #dc2626; margin-bottom: 6px"
+              >
+                {{ deletePlanError }}
+              </p>
+            </template>
+
+            <p
+              v-if="deleteStep === 'confirm' && deletePlanError"
+              style="font-size: 12px; color: #dc2626; margin-bottom: 6px"
+            >
+              {{ deletePlanError }}
+            </p>
+
             <p style="font-size: 13px; color: #dc2626; font-weight: 600">
               This action cannot be undone.
             </p>
@@ -7327,10 +7537,25 @@
               >Cancel</Button
             >
             <Button
+              v-if="deleteStep !== 'verify'"
+              variant="primary"
+              size="sm"
+              @click="checkPlanBeforeDelete"
+              :disabled="deleteStep === 'checking'"
+              style="background: #dc2626; border-color: #dc2626"
+            >
+              {{ deleteStep === "checking" ? "Checking..." : "Yes, continue" }}
+            </Button>
+            <Button
+              v-else
               variant="primary"
               size="sm"
               @click="confirmDeletePlan"
-              :disabled="deletePlanProcessing"
+              :disabled="
+                deletePlanProcessing ||
+                !deleteNameMatches ||
+                deleteCheck.jobs_count > 0
+              "
               style="background: #dc2626; border-color: #dc2626"
             >
               {{ deletePlanProcessing ? "Deleting..." : "Delete Plan" }}
@@ -7376,7 +7601,7 @@
             <p style="font-size: 14px; color: var(--ink); margin-bottom: 12px">
               Are you sure you want to delete movement
               <strong>{{
-                deletingMovement.code || `M${deletingMovement.id}`
+                deletingMovement.code || formatMovementCode(deletingMovement.id)
               }}</strong
               >?
             </p>
@@ -7968,6 +8193,9 @@ const props = defineProps({
   nextMovementNumber: { type: Number, default: 1 },
 });
 
+// Mirrors Movement::formatCode() on the server.
+const formatMovementCode = (n) => `TRP-${String(n).padStart(5, "0")}`;
+
 // A plan can't be built without these, so the New Plan actions stay disabled
 // until they exist. Venues are listed for completeness but aren't required —
 // a movement can be created with free-text locations.
@@ -8034,6 +8262,105 @@ const editPlanErrors = ref({});
 const showDeleteConfirmation = ref(false);
 const deletingPlan = ref(null);
 const deletePlanProcessing = ref(false);
+// 'confirm' -> 'checking' -> 'verify'
+const deleteStep = ref("confirm");
+const deleteCheck = ref({ movements_count: 0, jobs_count: 0 });
+const deleteConfirmName = ref("");
+const deletePlanError = ref("");
+const deleteNameMatches = computed(
+  () =>
+    !!deletingPlan.value &&
+    // An empty plan loses nothing, so it needs no typed confirmation.
+    (deleteCheck.value.movements_count === 0 ||
+      deleteConfirmName.value.trim() === (deletingPlan.value.name || "").trim())
+);
+
+// Bulk plan deletion ("View All Plans")
+const selectedPlanIds = ref(new Set());
+const visiblePlans = computed(() => plansByDate.value.flatMap((group) => group.plans));
+// Only what's on screen counts, so a filter change never deletes hidden plans.
+const selectedVisiblePlans = computed(() =>
+  visiblePlans.value.filter((plan) => selectedPlanIds.value.has(plan.id))
+);
+const allVisiblePlansSelected = computed(
+  () =>
+    visiblePlans.value.length > 0 &&
+    selectedVisiblePlans.value.length === visiblePlans.value.length
+);
+const showBulkDeletePlans = ref(false);
+const bulkDeleteConfirm = ref("");
+const bulkDeleteError = ref("");
+const bulkDeleteProcessing = ref(false);
+
+const planJobCount = (plan) => (plan.movements || []).filter((mv) => mv.job_id).length;
+
+const bulkDeleteSummary = computed(() => {
+  const plans = selectedVisiblePlans.value;
+  const deletable = plans.filter((plan) => planJobCount(plan) === 0);
+  return {
+    deletable,
+    blocked: plans.filter((plan) => planJobCount(plan) > 0),
+    movements: deletable.reduce(
+      (sum, plan) => sum + (plan.movements?.length ?? plan.movements_count ?? 0),
+      0
+    ),
+  };
+});
+
+// Mirrors PlanManagementController::destroyBulk: typing is only demanded when movements would be lost.
+const canConfirmBulkDelete = computed(
+  () =>
+    bulkDeleteSummary.value.deletable.length > 0 &&
+    (bulkDeleteSummary.value.movements === 0 || bulkDeleteConfirm.value.trim() === "DELETE")
+);
+
+function togglePlanSelection(plan) {
+  const next = new Set(selectedPlanIds.value);
+  next.has(plan.id) ? next.delete(plan.id) : next.add(plan.id);
+  selectedPlanIds.value = next;
+}
+
+function toggleSelectAllPlans() {
+  selectedPlanIds.value = allVisiblePlansSelected.value
+    ? new Set()
+    : new Set(visiblePlans.value.map((plan) => plan.id));
+}
+
+function openBulkDeletePlans() {
+  bulkDeleteConfirm.value = "";
+  bulkDeleteError.value = "";
+  showBulkDeletePlans.value = true;
+}
+
+function cancelBulkDeletePlans() {
+  if (!bulkDeleteProcessing.value) showBulkDeletePlans.value = false;
+}
+
+function confirmBulkDeletePlans() {
+  if (!canConfirmBulkDelete.value) return;
+
+  const ids = bulkDeleteSummary.value.deletable.map((plan) => plan.id);
+  bulkDeleteProcessing.value = true;
+
+  router.delete("/plans/bulk-delete", {
+    data: { ids, confirm: bulkDeleteConfirm.value.trim() },
+    preserveScroll: true,
+    onSuccess: () => {
+      showBulkDeletePlans.value = false;
+      selectedPlanIds.value = new Set();
+      if (ids.includes(activePlan.value)) {
+        activePlan.value = null;
+        activeTab.value = "plans";
+      }
+    },
+    onError: (errors) => {
+      bulkDeleteError.value = errors.confirm || "Failed to delete the selected plans.";
+    },
+    onFinish: () => {
+      bulkDeleteProcessing.value = false;
+    },
+  });
+}
 
 // Edit movement state
 const showEditMovement = ref(false);
@@ -10448,6 +10775,7 @@ async function checkMatchDuplicates() {
           // For match legs, check match duplicates
           if (legType === 'match' && team.match_id) {
             checkData.match_id = team.match_id;
+            checkData.checkpoint_template_id = leg.checkpoint_template_id || null;
             checks.push(checkData);
             teamIdByKey.set(key, team.team_id);
           }
@@ -11016,16 +11344,44 @@ function updatePlan() {
 
 function deletePlan(plan) {
   deletingPlan.value = plan;
+  deleteStep.value = "confirm";
+  deleteCheck.value = { movements_count: 0, jobs_count: 0 };
+  deleteConfirmName.value = "";
+  deletePlanError.value = "";
   showDeleteConfirmation.value = true;
 }
 
-function confirmDeletePlan() {
+async function checkPlanBeforeDelete() {
   if (!deletingPlan.value) return;
 
+  deleteStep.value = "checking";
+  deletePlanError.value = "";
+  try {
+    const { data } = await axios.get(
+      `/plans/${deletingPlan.value.id}/delete-check`
+    );
+    deleteCheck.value = {
+      movements_count: data.movements_count || 0,
+      jobs_count: data.jobs_count || 0,
+    };
+    deleteStep.value = "verify";
+    nextTick(() => document.getElementById("delete-plan-confirm-name")?.focus());
+  } catch (e) {
+    deleteStep.value = "confirm";
+    deletePlanError.value = "Could not check the plan's movements. Please try again.";
+  }
+}
+
+function confirmDeletePlan() {
+  if (!deletingPlan.value || !deleteNameMatches.value) return;
+
   deletePlanProcessing.value = true;
+  deletePlanError.value = "";
   const deletedPlanId = deletingPlan.value.id; // Store ID before clearing
 
   router.delete(`/plans/${deletedPlanId}`, {
+    data: { confirm_name: deleteConfirmName.value },
+    preserveScroll: true,
     onSuccess: () => {
       showDeleteConfirmation.value = false;
       deletingPlan.value = null;
@@ -11036,7 +11392,8 @@ function confirmDeletePlan() {
       }
     },
     onError: (errors) => {
-      console.error("Failed to delete plan:", errors);
+      deletePlanError.value =
+        errors.confirm_name || "Failed to delete plan.";
     },
     onFinish: () => {
       deletePlanProcessing.value = false;
@@ -11047,6 +11404,8 @@ function confirmDeletePlan() {
 function cancelDeletePlan() {
   showDeleteConfirmation.value = false;
   deletingPlan.value = null;
+  deleteConfirmName.value = "";
+  deletePlanError.value = "";
 }
 
 // "By Team" data isn't sent on the initial page load anymore — it's a
@@ -12064,6 +12423,30 @@ function statusLabel(s) {
   border-radius: 10px;
   overflow: hidden;
   overflow-x: auto;
+}
+
+.plans-bulk-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+}
+.plans-bulk-select {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink2);
+  cursor: pointer;
+  margin-right: auto;
+}
+.plans-bulk-count {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ink);
 }
 
 .plan-table-card :deep(.action-btn--delete) {

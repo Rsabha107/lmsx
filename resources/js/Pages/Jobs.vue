@@ -101,8 +101,28 @@
 
     <div class="jobs-layout" :class="{ 'jobs-layout--full': !selectedJob }">
       <!-- Job list -->
-      <div class="jobs-list-card">
+      <div :class="['jobs-list-card', { 'jobs-list-card--selectable': canDeleteJobs }]">
+        <div v-if="canDeleteJobs && selectedVisibleJobs.length" class="job-bulk-bar">
+          <span class="job-bulk-count">{{ selectedVisibleJobs.length }} selected</span>
+          <Button variant="secondary" size="sm" @click="selectedJobIds = new Set()">Clear</Button>
+          <Button
+            variant="primary"
+            size="sm"
+            style="background: var(--danger); border-color: var(--danger);"
+            @click="promptDeleteJobs(selectedVisibleJobs)"
+          >Delete selected</Button>
+        </div>
         <div class="job-list-header">
+          <div v-if="canDeleteJobs" class="jl-col-select">
+            <input
+              type="checkbox"
+              :checked="allVisibleSelected"
+              :indeterminate="selectedVisibleJobs.length > 0 && !allVisibleSelected"
+              :disabled="filtered.length === 0"
+              aria-label="Select all visible jobs"
+              @change="toggleSelectAll"
+            />
+          </div>
           <div class="jl-col-job">JOB</div>
           <div class="jl-col-stage">STAGE</div>
           <div class="jl-col-route">TEAM · ROUTE</div>
@@ -131,6 +151,14 @@
             @click="selectJob(job)"
             :class="['job-item', selectedJob?.id === job.id ? 'job-item--active' : '']"
           >
+            <div v-if="canDeleteJobs" class="jl-col-select" @click.stop>
+              <input
+                type="checkbox"
+                :checked="selectedJobIds.has(job.db_id)"
+                :aria-label="`Select ${job.id}`"
+                @change="toggleJobSelection(job)"
+              />
+            </div>
             <div class="jl-col-job">
               <span class="jl-job-id" :title="job.id">{{ job.id }}</span>
               <div style="display: flex; align-items: center; gap: 4px; flex-wrap: nowrap;">
@@ -230,6 +258,13 @@
                 size="sm"
                 @click="promptStartJob">Start Job</Button>
               <Button v-if="canOverride" variant="primary" size="sm" @click="openOverrideModal">Override</Button>
+              <Button
+                v-if="canDeleteJobs"
+                variant="secondary"
+                size="sm"
+                style="color: var(--danger);"
+                @click="promptDeleteJobs([selectedJob])"
+              >Delete</Button>
             </div>
           </div>
           <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 14px; flex-wrap: wrap;">
@@ -790,6 +825,37 @@
       @close="pendingStatusChange = null"
       @confirm="confirmStatusChange"
     />
+
+    <Modal :show="pendingDelete !== null" max-width="500px" @close="closeDeleteJobs">
+      <template #title>{{ pendingDelete?.length === 1 ? 'Delete Job?' : 'Delete Jobs?' }}</template>
+      <p style="margin: 0; color: var(--ink2); font-size: 14px;" v-html="deleteMessage"></p>
+      <div v-if="deleteNeedsTyping" style="margin-top: 14px;">
+        <label for="delete-jobs-confirm" style="display: block; font-size: 13px; color: var(--ink2); margin-bottom: 6px;">
+          Type <strong>{{ deleteConfirmPhrase }}</strong> to confirm
+        </label>
+        <input
+          id="delete-jobs-confirm"
+          v-model="deleteConfirmText"
+          type="text"
+          class="override-input"
+          autocomplete="off"
+          @keydown.enter.prevent="canConfirmDelete && confirmDeleteJobs()"
+        />
+      </div>
+      <p v-if="deleteError" style="margin: 8px 0 0; color: var(--danger); font-size: 12px;">{{ deleteError }}</p>
+      <p style="margin: 12px 0 0; color: var(--ink3); font-size: 13px;">This action cannot be undone.</p>
+      <template #footer>
+        <Button variant="secondary" size="sm" :disabled="deletingJobs" @click="closeDeleteJobs">Cancel</Button>
+        <Button
+          variant="primary"
+          size="sm"
+          style="background: var(--danger); border-color: var(--danger);"
+          :processing="deletingJobs"
+          :disabled="deletingJobs || !canConfirmDelete"
+          @click="confirmDeleteJobs"
+        >{{ pendingDelete?.length === 1 ? 'Delete Job' : `Delete ${pendingDelete?.length || 0} Jobs` }}</Button>
+      </template>
+    </Modal>
 
     <ConfirmModal
       :show="showStatusError"
@@ -1412,6 +1478,87 @@ const resourceOptions = computed(() => {
 
 // Override modal
 const canOverride = computed(() => page.props.auth?.can?.['jobs.override'] === true);
+
+// Job deletion (single from the detail panel, many via the list checkboxes)
+const canDeleteJobs = computed(() => page.props.auth?.can?.['plans.manage'] === true);
+const selectedJobIds = ref(new Set());
+// Only what's on screen counts, so a filter change never deletes hidden jobs.
+const selectedVisibleJobs = computed(() => filtered.value.filter(j => selectedJobIds.value.has(j.db_id)));
+const allVisibleSelected = computed(() =>
+  filtered.value.length > 0 && selectedVisibleJobs.value.length === filtered.value.length);
+const pendingDelete = ref(null);
+const deletingJobs = ref(false);
+const deleteConfirmText = ref('');
+const deleteError = ref('');
+
+const isStartedJob = (j) => ['in-progress', 'completed'].includes(j.status);
+// Mirrors LmsController::destroyJobs: typing is only demanded when field records would be lost.
+const deleteNeedsTyping = computed(() => (pendingDelete.value || []).some(isStartedJob));
+const deleteConfirmPhrase = computed(() =>
+  pendingDelete.value?.length === 1 ? pendingDelete.value[0].id : 'DELETE');
+const canConfirmDelete = computed(() =>
+  !deleteNeedsTyping.value || deleteConfirmText.value.trim() === deleteConfirmPhrase.value);
+
+function toggleJobSelection(job) {
+  const next = new Set(selectedJobIds.value);
+  next.has(job.db_id) ? next.delete(job.db_id) : next.add(job.db_id);
+  selectedJobIds.value = next;
+}
+
+function toggleSelectAll() {
+  selectedJobIds.value = allVisibleSelected.value
+    ? new Set()
+    : new Set(filtered.value.map(j => j.db_id));
+}
+
+function promptDeleteJobs(jobs) {
+  if (!jobs.length) return;
+  deleteConfirmText.value = '';
+  deleteError.value = '';
+  pendingDelete.value = [...jobs];
+}
+
+function closeDeleteJobs() {
+  if (!deletingJobs.value) pendingDelete.value = null;
+}
+
+const escapeHtml = (s) => String(s ?? '').replace(/[&<>"']/g, c => `&#${c.charCodeAt(0)};`);
+
+const deleteMessage = computed(() => {
+  const jobs = pendingDelete.value || [];
+  const started = jobs.filter(isStartedJob).length;
+  const subject = jobs.length === 1
+    ? `job <strong>${escapeHtml(jobs[0].id)}</strong>`
+    : `<strong>${jobs.length}</strong> jobs`;
+
+  return `This will permanently delete ${subject} together with their checkpoints, captured photos/signatures and field issues.<br><br>`
+    + 'The movements are kept and jobs can be generated for them again.'
+    + (started
+      ? `<br><br><strong style="color: var(--danger);">${started} ${started === 1 ? 'job is' : 'jobs are'} in progress or completed</strong> — their field records will be lost.`
+      : '');
+});
+
+function confirmDeleteJobs() {
+  const ids = (pendingDelete.value || []).map(j => j.db_id);
+  if (!ids.length || !canConfirmDelete.value) return;
+
+  deletingJobs.value = true;
+  router.delete('/jobs', {
+    data: { ids, confirm: deleteConfirmText.value.trim() },
+    preserveScroll: true,
+    preserveState: true,
+    onSuccess: () => {
+      pendingDelete.value = null;
+      selectedJobIds.value = new Set();
+    },
+    onError: (errors) => {
+      deleteError.value = errors.confirm || 'Failed to delete the selected job(s).';
+    },
+    onFinish: () => {
+      deletingJobs.value = false;
+    },
+  });
+}
 const showOverrideModal = ref(false);
 const overrideProcessing = ref(false);
 const overrideCheckpoint = ref(null);
@@ -2126,6 +2273,20 @@ function submitOverride() {
   background: var(--accent-soft);
 }
 .job-item:last-child { border-bottom: none; }
+
+.jobs-list-card--selectable .job-list-header,
+.jobs-list-card--selectable .job-item {
+  grid-template-columns: 16px minmax(78px, 1fr) minmax(88px, 0.8fr) minmax(100px, 3fr) minmax(108px, 1.2fr) minmax(62px, 0.7fr) minmax(52px, 0.6fr);
+}
+.jl-col-select { display: flex; align-items: center; justify-content: center; }
+.jl-col-select input { margin: 0; cursor: pointer; }
+.job-bulk-bar {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--accent-soft);
+}
+.job-bulk-count { font-size: 12px; font-weight: 700; color: var(--ink); margin-right: auto; }
 
 .jl-col-job {
   display: flex; flex-direction: column; gap: 2px; min-width: 0;

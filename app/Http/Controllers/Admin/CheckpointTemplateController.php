@@ -9,6 +9,7 @@ use App\Models\Event;
 use App\Services\TemplateCopyService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 
 /**
@@ -16,6 +17,8 @@ use Inertia\Inertia;
  */
 class CheckpointTemplateController extends Controller
 {
+    private const NAME_TAKEN = ['name.unique' => 'A checkpoint template with this name already exists in this event.'];
+
     /**
      * Display a listing of checkpoint templates.
      */
@@ -77,7 +80,8 @@ class CheckpointTemplateController extends Controller
     {
         $validated = $request->validate([
             'code' => 'required|string|max:50|unique:checkpoint_templates,code',
-            'name' => 'required|string|max:255',
+            'name' => ['required', 'string', 'max:255', Rule::unique('checkpoint_templates', 'name')
+                ->where('event_id', $request->session()->get('active_event_id'))],
             'movement_type' => 'required|in:arrival,departure,transfer,training,match,daily_ops',
             'description' => 'nullable|string',
             'estimated_duration_minutes' => 'nullable|integer|min:1',
@@ -87,7 +91,7 @@ class CheckpointTemplateController extends Controller
             'checkpoints.*.order' => 'required|integer|min:1',
             'checkpoints.*.is_required' => 'boolean',
             'checkpoints.*.estimated_minutes' => 'nullable|integer|min:1',
-        ]);
+        ], self::NAME_TAKEN);
 
         $template = CheckpointTemplate::create([
             'event_id' => $request->session()->get('active_event_id'),
@@ -177,7 +181,9 @@ class CheckpointTemplateController extends Controller
     {
         $validated = $request->validate([
             'code' => 'required|string|max:50|unique:checkpoint_templates,code,' . $checkpointTemplate->id,
-            'name' => 'required|string|max:255',
+            'name' => ['required', 'string', 'max:255', Rule::unique('checkpoint_templates', 'name')
+                ->where('event_id', $checkpointTemplate->event_id)
+                ->ignore($checkpointTemplate->id)],
             'movement_type' => 'required|in:arrival,departure,transfer,training,match,daily_ops',
             'description' => 'nullable|string',
             'estimated_duration_minutes' => 'nullable|integer|min:1',
@@ -187,7 +193,7 @@ class CheckpointTemplateController extends Controller
             'checkpoints.*.order' => 'required|integer|min:1',
             'checkpoints.*.is_required' => 'boolean',
             'checkpoints.*.estimated_minutes' => 'nullable|integer|min:1',
-        ]);
+        ], self::NAME_TAKEN);
 
         $checkpointTemplate->update([
             'code' => $validated['code'],

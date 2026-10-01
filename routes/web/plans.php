@@ -36,6 +36,8 @@ Route::middleware(['auth'])->group(function () {
             Route::post('/bulk-matches', [PlanManagementController::class, 'bulkMatchStore'])->name('bulk-match-store');
             Route::post('/', [PlanManagementController::class, 'store'])->name('store');
             Route::put('/{plan}', [PlanManagementController::class, 'update'])->name('update');
+            Route::get('/{plan}/delete-check', [PlanManagementController::class, 'deleteCheck'])->name('delete-check');
+            Route::delete('/bulk-delete', [PlanManagementController::class, 'destroyBulk'])->name('bulk-destroy');
             Route::delete('/{plan}', [PlanManagementController::class, 'destroy'])->name('destroy');
 
             // Plan Actions

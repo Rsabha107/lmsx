@@ -31,6 +31,7 @@ use App\Services\SettingsService;
 use Carbon\Carbon;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Validation\ValidationException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -256,6 +257,7 @@ class LmsController extends Controller
 
                 return [
                     'id' => $job->job_id ?? 'J-' . $job->id,
+                    'db_id' => $job->id,
                     'team' => $team?->team_name ?? 'Unknown Team',
                     'code' => $team?->code ?? 'UNK',
                     'country_code' => $team?->country_id,
@@ -1271,5 +1273,36 @@ class LmsController extends Controller
             'message' => "Job status updated to {$to}",
             'status' => $to,
         ]);
+    }
+
+    /**
+     * Delete one or many jobs; their movements stay and can be regenerated.
+     */
+    public function destroyJobs(Request $request, JobLifecycleService $lifecycle): RedirectResponse
+    {
+        $validated = $request->validate([
+            'ids' => ['required', 'array', 'min:1'],
+            'ids.*' => ['integer', 'distinct'],
+            'confirm' => ['nullable', 'string'],
+        ]);
+
+        $jobs = JobOperation::with('team')->whereIn('id', $validated['ids'])->get();
+
+        foreach ($jobs as $job) {
+            $this->authorize('delete', $job);
+        }
+
+        // Started or finished jobs carry field records, so the user must type to confirm.
+        if ($jobs->contains(fn ($job) => in_array($job->status, ['in-progress', 'completed'], true))) {
+            $phrase = $jobs->count() === 1 ? $jobs->first()->job_id : 'DELETE';
+
+            if (trim((string) ($validated['confirm'] ?? '')) !== $phrase) {
+                throw ValidationException::withMessages(['confirm' => "Type {$phrase} to confirm."]);
+            }
+        }
+
+        $deleted = $lifecycle->deleteJobs($jobs);
+
+        return back()->with('success', "Deleted {$deleted} job(s).");
     }
 }

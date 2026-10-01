@@ -19,7 +19,7 @@ class TemplateCopyService
         $copy = CheckpointTemplate::create([
             'event_id' => $targetEventId,
             'code' => $this->uniqueCode(CheckpointTemplate::class, $source->code),
-            'name' => $source->name,
+            'name' => $this->uniqueName(CheckpointTemplate::class, $source->name, $targetEventId),
             'movement_type' => $source->movement_type,
             'description' => $source->description,
             'estimated_duration_minutes' => $source->estimated_duration_minutes,
@@ -46,7 +46,7 @@ class TemplateCopyService
         $copy = MovementTemplate::create([
             'event_id' => $targetEventId,
             'code' => $this->uniqueCode(MovementTemplate::class, $source->code),
-            'name' => $source->name,
+            'name' => $this->uniqueName(MovementTemplate::class, $source->name, $targetEventId),
             'description' => $source->description,
             'scenario_type' => $source->scenario_type,
             'functional_area' => $source->functional_area,
@@ -99,5 +99,20 @@ class TemplateCopyService
         }
 
         return $code;
+    }
+
+    /**
+     * Find a name that isn't already taken in the target event (names are unique per event).
+     */
+    private function uniqueName(string $modelClass, string $baseName, int $eventId): string
+    {
+        $name = $baseName;
+        $suffix = 2;
+        while ($modelClass::where('event_id', $eventId)->where('name', $name)->exists()) {
+            $name = "{$baseName} ({$suffix})";
+            $suffix++;
+        }
+
+        return $name;
     }
 }

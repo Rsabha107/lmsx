@@ -43,4 +43,10 @@ class JobOperationPolicy
     {
         return $this->update($user, $job) && $user->can('jobs.override');
     }
+
+    /** Deleting discards the job's field record, so it needs planning rights too. */
+    public function delete(User $user, JobOperation $job): bool
+    {
+        return $this->update($user, $job) && $user->can('plans.manage');
+    }
 }

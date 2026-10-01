@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\UppercasesCode;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -9,6 +10,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class CheckpointTemplate extends Model
 {
+    use UppercasesCode;
+
     protected $fillable = [
         'event_id',
         'code',

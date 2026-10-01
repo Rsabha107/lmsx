@@ -343,14 +343,24 @@
 
           <!-- Legs & Checkpoints Card -->
           <div style="background: var(--surface); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; flex: 1; display: flex; flex-direction: column;">
-            <div style="padding: 14px 16px; border-bottom: 1px solid var(--border);">
-              <div style="font-size: 14px; font-weight: 700; color: var(--ink);">Movement Legs</div>
-              <div style="font-size: 11px; color: var(--ink3); margin-top: 2px;">Route and checkpoints</div>
+            <div style="padding: 14px 16px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; gap: 8px;">
+              <div>
+                <div style="font-size: 14px; font-weight: 700; color: var(--ink);">Movement Legs</div>
+                <div style="font-size: 11px; color: var(--ink3); margin-top: 2px;">Route and checkpoints</div>
+              </div>
+              <Button variant="secondary" size="sm" @click="editMovementTemplate(selectedMovementTemplate)">
+                <template #icon><svg-icon name="plus" :size="14" /></template>
+                Add / edit legs
+              </Button>
             </div>
             
             <div v-if="!selectedMovementTemplate.legs || selectedMovementTemplate.legs.length === 0" style="padding: 40px; text-align: center; color: var(--ink3);">
               <div style="font-size: 13px; font-weight: 600; margin-bottom: 4px;">No legs defined</div>
-              <div style="font-size: 11px;">Add legs to this template</div>
+              <div style="font-size: 11px; margin-bottom: 12px;">Add legs to this template</div>
+              <Button variant="primary" size="sm" @click="editMovementTemplate(selectedMovementTemplate)">
+                <template #icon><svg-icon name="plus" :size="14" style="color: #fff;" /></template>
+                Add leg
+              </Button>
             </div>
             
             <div v-else style="overflow: auto; flex: 1;">
@@ -482,7 +492,7 @@
       <div style="display: flex; flex-direction: column; gap: 12px;">
         <div>
           <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px; color: var(--ink);">Code</label>
-          <input v-model="editingCheckpoint.code" type="text" style="width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px;" />
+          <input v-model="editingCheckpoint.code" type="text" @input="editingCheckpoint.code = editingCheckpoint.code.toUpperCase()" style="width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; text-transform: uppercase;" />
         </div>
         <div>
           <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px; color: var(--ink);">Name</label>
@@ -562,7 +572,7 @@
       <div style="display: flex; flex-direction: column; gap: 12px;">
         <div>
           <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px; color: var(--ink);">Code</label>
-          <input v-model="newCheckpointTemplate.code" type="text" placeholder="TMPL-ARR" style="width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px;" />
+          <input v-model="newCheckpointTemplate.code" type="text" placeholder="TMPL-ARR" @input="newCheckpointTemplate.code = newCheckpointTemplate.code.toUpperCase()" style="width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; text-transform: uppercase;" />
         </div>
         <div>
           <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px; color: var(--ink);">Name</label>
@@ -679,7 +689,7 @@
       <div style="display: flex; flex-direction: column; gap: 12px;">
         <div>
           <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px; color: var(--ink);">Code</label>
-          <input v-model="editingCheckpointTemplate.code" type="text" style="width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px;" />
+          <input v-model="editingCheckpointTemplate.code" type="text" @input="editingCheckpointTemplate.code = editingCheckpointTemplate.code.toUpperCase()" style="width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; text-transform: uppercase;" />
         </div>
         <div>
           <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px; color: var(--ink);">Name</label>
@@ -810,7 +820,7 @@
       <div style="display: flex; flex-direction: column; gap: 12px;">
         <div>
           <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px; color: var(--ink);">Code</label>
-          <input v-model="newMovementTemplate.code" type="text" placeholder="MVMT-MD" style="width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px;" />
+          <input v-model="newMovementTemplate.code" type="text" placeholder="MVMT-MD" @input="newMovementTemplate.code = newMovementTemplate.code.toUpperCase()" style="width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; text-transform: uppercase;" />
         </div>
         <div>
           <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px; color: var(--ink);">Name</label>
@@ -966,7 +976,7 @@
       <div style="display: flex; flex-direction: column; gap: 12px;">
         <div>
           <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px; color: var(--ink);">Code</label>
-          <input v-model="editingMovementTemplate.code" type="text" style="width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px;" />
+          <input v-model="editingMovementTemplate.code" type="text" @input="editingMovementTemplate.code = editingMovementTemplate.code.toUpperCase()" style="width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; text-transform: uppercase;" />
         </div>
         <div>
           <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px; color: var(--ink);">Name</label>
@@ -1057,6 +1067,9 @@
               <template #icon><svg-icon name="plus" :size="14" /></template>
               Add Leg
             </Button>
+            <div v-if="!selectedCheckpointTemplateIdEdit || !newLegEdit.from_location || !newLegEdit.to_location" style="font-size: 11px; color: var(--ink3); margin-top: 6px; text-align: center;">
+              Enter From and To locations and pick a checkpoint template to add a leg.
+            </div>
           </div>
           
           <!-- Legs List -->
@@ -1473,6 +1486,12 @@ const newLegEdit = ref({
 
 // Selected movement template for detail view
 const selectedMovementTemplate = ref(null);
+
+// A save reloads the templates as new objects; follow the selected one so its legs aren't stale.
+watch(() => props.movementTemplates, (templates) => {
+  if (!selectedMovementTemplate.value) return;
+  selectedMovementTemplate.value = templates.find(t => t.id === selectedMovementTemplate.value.id) || null;
+});
 
 // Copy templates from another event
 const showCopyFromEvent = ref(false);

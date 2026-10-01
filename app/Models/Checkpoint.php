@@ -2,11 +2,14 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\UppercasesCode;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 
 class Checkpoint extends Model
 {
+    use UppercasesCode;
+
     protected $fillable = [
         'code',
         'name',

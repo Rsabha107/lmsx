@@ -14,8 +14,10 @@ use App\Services\JobGenerationService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 
 /**
@@ -120,6 +122,9 @@ class PlanManagementController extends Controller
                     $movement->unsetRelation('job');
                     return $movement;
                 });
+
+                // The stored column is never decremented on delete; count what's actually there.
+                $plan->movements_count = $plan->movements->count();
 
                 return $plan;
             });
@@ -348,17 +353,8 @@ class PlanManagementController extends Controller
         // Get active plan from session (shared with Jobs page)
         $activePlanId = $request->session()->get('active_plan_id');
 
-        // Next globally-unique movement code, so the UI can show the real
-        // M-number a movement will get instead of a template-relative index
-        // (matches JobGenerationService::generateMovementCode()'s logic —
-        // derived from the highest CODE in use including soft-deleted rows,
-        // since a "deleted" movement's code is still enforced by the DB's
-        // unique index).
-        $maxMovementNumber = Movement::withTrashed()
-            ->whereNotNull('code')
-            ->selectRaw("MAX(CAST(SUBSTRING(code, 2) AS UNSIGNED)) as max_number")
-            ->value('max_number');
-        $nextMovementNumber = ($maxMovementNumber ?? 0) + 1;
+        // Next movement code number, so the UI can preview the real code a movement will get.
+        $nextMovementNumber = Movement::nextCodeNumber();
 
         return Inertia::render('Plans', [
             'activeEvent' => $activeEvent,
@@ -872,17 +868,93 @@ class PlanManagementController extends Controller
     }
 
     /**
+     * Live counts shown in the delete-plan confirmation dialog.
+     */
+    public function deleteCheck(Plan $plan)
+    {
+        return response()->json([
+            'movements_count' => $plan->movements()->count(),
+            'jobs_count' => $plan->movements()->whereNotNull('job_id')->count(),
+        ]);
+    }
+
+    /**
      * Delete a plan and all its movements.
      */
-    public function destroy(Plan $plan)
+    public function destroy(Request $request, Plan $plan)
     {
+        if ($plan->movements()->exists()) {
+            $request->validate([
+                'confirm_name' => ['required', 'string', function ($attribute, $value, $fail) use ($plan) {
+                    if (trim($value) !== trim($plan->name)) {
+                        $fail('The plan name does not match.');
+                    }
+                }],
+            ]);
+        }
+
+        $jobsCount = $plan->movements()->whereNotNull('job_id')->count();
+        if ($jobsCount > 0) {
+            return back()->with('error', "Cannot delete plan. {$jobsCount} movement(s) have generated jobs. Delete those jobs first.");
+        }
+
         $planName = $plan->name;
-        $movementsCount = $plan->movements()->count();
-        
-        $plan->delete();
+
+        $movementsCount = $this->deletePlanWithMovements($plan);
 
         return redirect()->route('plans.index')
             ->with('success', "Plan '{$planName}' and {$movementsCount} movement(s) deleted successfully");
+    }
+
+    /**
+     * Delete several plans with their movements. Plans whose movements already
+     * have jobs are skipped, matching the single-plan rule.
+     */
+    public function destroyBulk(Request $request)
+    {
+        $validated = $request->validate([
+            'ids' => ['required', 'array', 'min:1'],
+            'ids.*' => ['integer', 'distinct'],
+            'confirm' => ['nullable', 'string'],
+        ]);
+
+        $activeEventId = $request->session()->get('active_event_id');
+
+        $plans = Plan::whereIn('id', $validated['ids'])
+            ->when($activeEventId, fn ($q) => $q->where('event_id', $activeEventId))
+            ->withCount([
+                'movements as live_movements_count',
+                'movements as jobs_count' => fn ($q) => $q->whereNotNull('job_id'),
+            ])
+            ->get();
+
+        [$blocked, $deletable] = $plans->partition(fn (Plan $plan) => $plan->jobs_count > 0);
+
+        if ($deletable->sum('live_movements_count') > 0 && trim((string) ($validated['confirm'] ?? '')) !== 'DELETE') {
+            throw ValidationException::withMessages(['confirm' => 'Type DELETE to confirm.']);
+        }
+
+        $movementsCount = DB::transaction(
+            fn () => $deletable->sum(fn (Plan $plan) => $this->deletePlanWithMovements($plan))
+        );
+
+        $message = "Deleted {$deletable->count()} plan(s) and {$movementsCount} movement(s).";
+        if ($blocked->isNotEmpty()) {
+            $message .= " {$blocked->count()} skipped (movements have generated jobs).";
+        }
+
+        return redirect()->route('plans.index')
+            ->with($deletable->isNotEmpty() ? 'success' : 'error', $message);
+    }
+
+    private function deletePlanWithMovements(Plan $plan): int
+    {
+        return DB::transaction(function () use ($plan) {
+            $count = $plan->movements()->delete();
+            $plan->delete();
+
+            return $count;
+        });
     }
 
     /**
@@ -1098,20 +1170,7 @@ class PlanManagementController extends Controller
      */
     protected function generateMovementCode(Plan $plan): string
     {
-        // Generate globally unique movement code. Derived from the highest
-        // CODE in use, not the highest row id — after deletions, id order
-        // and code order can diverge, so "latest by id + 1" can recompute a
-        // code an older, undeleted row already holds and collide on the
-        // unique constraint. Includes soft-deleted rows (withTrashed):
-        // Movement uses SoftDeletes, so a "deleted" movement's code is
-        // still physically in the table and still enforced by the DB's
-        // unique index, which doesn't know about deleted_at.
-        $maxNumber = Movement::withTrashed()
-            ->whereNotNull('code')
-            ->selectRaw("MAX(CAST(SUBSTRING(code, 2) AS UNSIGNED)) as max_number")
-            ->value('max_number');
-
-        return sprintf('M%d', ($maxNumber ?? 0) + 1);
+        return Movement::formatCode(Movement::nextCodeNumber());
     }
 
     /**
@@ -1302,11 +1361,13 @@ class PlanManagementController extends Controller
             }
         }
 
-        // STRICT: Check match movements
+        // STRICT: Check match movements. Different checkpoint sequences (e.g. hotel→stadium
+        // and stadium→hotel) for the same match are separate movements, not duplicates.
         if ($kind === 'match' && !empty($data['match_id'])) {
             $existing = Movement::where('team_id', $teamId)
                 ->where('match_id', $data['match_id'])
                 ->where('kind', 'match')
+                ->when(!empty($data['checkpoint_template_id']), fn ($q) => $q->where('checkpoint_template_id', $data['checkpoint_template_id']))
                 ->whereNull('deleted_at')
                 ->first();
 
@@ -1314,7 +1375,9 @@ class PlanManagementController extends Controller
                 return [
                     'exists' => true,
                     'strict' => true,
-                    'message' => "This team already has a match movement for this match.",
+                    'message' => !empty($data['checkpoint_template_id'])
+                        ? 'This team already has a match movement for this match with the same checkpoint sequence.'
+                        : 'This team already has a match movement for this match.',
                     'existing' => [
                         'id' => $existing->id,
                         'code' => $existing->code,
@@ -1370,6 +1433,7 @@ class PlanManagementController extends Controller
             'team_id' => 'required|exists:teams,id',
             'flight_id' => 'nullable|exists:team_flights,id',
             'match_id' => 'nullable|exists:matches,id',
+            'checkpoint_template_id' => 'nullable|integer',
             'from_location' => 'nullable|string',
             'to_location' => 'nullable|string',
             'window_start' => 'nullable|date',
@@ -1394,6 +1458,7 @@ class PlanManagementController extends Controller
             'checks.*.team_id' => 'required|integer|exists:teams,id',
             'checks.*.flight_id' => 'nullable|integer|exists:team_flights,id',
             'checks.*.match_id' => 'nullable|integer|exists:matches,id',
+            'checks.*.checkpoint_template_id' => 'nullable|integer',
             'checks.*.from_location' => 'nullable|string',
             'checks.*.to_location' => 'nullable|string',
             'checks.*.window_start' => 'nullable|date',

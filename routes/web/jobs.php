@@ -31,6 +31,10 @@ Route::middleware('auth')->group(function () {
     // Job Status Management
     Route::post('/jobs/{jobId}/status', [LmsController::class, 'updateJobStatus'])->name('job.updateStatus');
 
+    Route::delete('/jobs', [LmsController::class, 'destroyJobs'])
+        ->middleware('permission:plans.manage')
+        ->name('jobs.destroy');
+
     // Field-reported issues
     Route::post('/job-issues/{issue}/resolve', [LmsController::class, 'resolveJobIssue'])->name('job.issues.resolve');
     

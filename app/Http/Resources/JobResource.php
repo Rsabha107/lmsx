@@ -69,6 +69,14 @@ class JobResource extends JsonResource
             'driver' => $this->driver?->name,
             'driver_phone' => $this->driver?->phone,
             'supervisor' => $this->supervisor?->name,
+            // Extra trucks on the same job; detail only, so the list stays lean.
+            'extra_units' => $this->when($this->withCheckpoints && $movement, fn () => $movement->units()->with(['vehicle:id,code,plate_number', 'driver:id,name,phone'])->get()
+                ->map(fn ($u) => [
+                    'vehicle' => $u->vehicle?->code ?? $u->vehicle?->plate_number,
+                    'driver' => $u->driver?->name,
+                    'driver_phone' => $u->driver?->phone,
+                ])->values()->all()),
+            'extra_supervisors' => $this->when($this->withCheckpoints && $movement, fn () => $movement->extraSupervisors()->pluck('users.name')->values()->all()),
 
             'checkpoints_completed' => (int) $this->checkpoints_completed,
             'checkpoints_total' => (int) $this->checkpoints_total,

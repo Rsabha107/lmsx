@@ -132,6 +132,7 @@
 
     <!-- Toast Notifications -->
     <Toast />
+    <AccessRestrictedModal />
   </div>
 </template>
 
@@ -140,6 +141,7 @@ import { ref, reactive, computed, watch, onMounted, onUnmounted, h } from 'vue';
 import { Link, router, usePage } from '@inertiajs/vue3';
 import { icons } from '../Composables/useIcons.js';
 import Toast from './Toast.vue';
+import AccessRestrictedModal from './AccessRestrictedModal.vue';
 import ScLogo from './ScLogo.vue';
 
 const page = usePage();
@@ -299,6 +301,7 @@ const allNavItems = [
       { label: 'Venues',        route: 'venues',            icon: 'building', can: 'console.view' },
       { label: 'Airports',      route: 'airports',          icon: 'plane',    can: 'fleet.view' },
       { label: 'Fleet',         route: 'fleet',             icon: 'fleet',    can: 'fleet.view' },
+      { label: 'Resource Schedule', route: 'resource-schedule', icon: 'schedule', can: 'movements.view' },
       { label: 'Movement Tracking', route: 'kit-truck',     icon: 'fleet',    can: 'fleet.view' },
       { label: 'Contacts',      route: 'contacts',          icon: 'contacts', can: 'fleet.view' },
       { label: 'Base Camp Hotel', route: 'base-camp-hotels', icon: 'building', can: 'fleet.view' },

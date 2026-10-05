@@ -123,7 +123,7 @@ class ConflictDetectionService
                 return null;
             }
 
-            foreach ($others->where($key, $id) as $m) {
+            foreach ($others->filter(fn ($m) => in_array($id, $m->resourceIds($key), true)) as $m) {
                 $otherSpan = $this->wholeSpan($m, $spans);
                 if (!$otherSpan) {
                     continue;
@@ -248,6 +248,9 @@ class ConflictDetectionService
                 'vehicle:id,code,capacity,status,vehicle_type',
                 'driver:id,name,status',
                 'fieldSupervisor:id,name',
+                'units.vehicle:id,code,capacity,status,vehicle_type',
+                'units.driver:id,name,status',
+                'extraSupervisors:id,name',
                 'flight:id,team_id,direction,flight_number,scheduled_at,estimated_at,party_size_total',
                 'match:id,match_number,kick_off,venue_id',
                 'match.venue:id,name',
@@ -309,12 +312,12 @@ class ConflictDetectionService
         $out = [];
 
         $checks = [
-            ['vehicle_id', 'high', 'Vehicle Double-Booked', fn ($m) => $m->vehicle?->code ?? 'Vehicle #' . $m->vehicle_id, 'Reassign one movement to another vehicle.', fn ($m) => $this->wholeSpan($m, $spans)],
+            ['vehicle_id', 'high', 'Vehicle Double-Booked', fn ($m, $id) => $this->resourceName($m, 'vehicle_id', $id) ?? 'Vehicle #' . $id, 'Reassign one movement to another vehicle.', fn ($m) => $this->wholeSpan($m, $spans)],
             ['team_id', 'high', 'Team In Two Places', fn ($m) => $m->team?->code ?? 'Team #' . $m->team_id, 'The same delegation cannot travel twice at once — merge or re-time.', fn ($m) => $this->window($m)],
         ];
 
         foreach ($checks as [$key, $sev, $type, $nameFn, $hint, $interval]) {
-            foreach ($this->timedGroups($movements, $key, $interval) as $list) {
+            foreach ($this->timedGroups($movements, $key, $interval) as $id => $list) {
                 for ($i = 0; $i < count($list); $i++) {
                     for ($j = $i + 1; $j < count($list); $j++) {
                         [$a, [$aStart, $aEnd]] = $list[$i];
@@ -323,9 +326,9 @@ class ConflictDetectionService
                             break; // sorted - nothing further overlaps
                         }
                         $overlap = (int) $aEnd->min($bEnd)->diffInMinutes($bStart, true);
-                        $out[] = $this->make($type[0] . 'DB', $a->id . '-' . $b->id, $sev, $type,
+                        $out[] = $this->make($type[0] . 'DB', $this->pairKey($a, $b, $key, $id), $sev, $type,
                             sprintf('%s is booked on %s (%s–%s) and %s (%s–%s) — %d minutes overlap.',
-                                $nameFn($a), $this->label($a), $aStart->format('D H:i'), $aEnd->format('H:i'),
+                                $nameFn($a, $id), $this->label($a), $aStart->format('D H:i'), $aEnd->format('H:i'),
                                 $this->label($b), $bStart->format('D H:i'), $bEnd->format('H:i'), $overlap),
                             [$a, $b], $aStart, $hint);
                     }
@@ -341,7 +344,7 @@ class ConflictDetectionService
     {
         $out = [];
 
-        foreach ($this->timedGroups($movements, 'vehicle_id', fn ($m) => $this->wholeSpan($m, $spans)) as $list) {
+        foreach ($this->timedGroups($movements, 'vehicle_id', fn ($m) => $this->wholeSpan($m, $spans)) as $id => $list) {
             for ($i = 0; $i < count($list) - 1; $i++) {
                 [$a, [, $aEnd]] = $list[$i];
                 [$b, [$bStart]] = $list[$i + 1];
@@ -350,9 +353,9 @@ class ConflictDetectionService
                 }
                 $gap = (int) $aEnd->diffInMinutes($bStart, true);
                 if ($gap < self::TURNAROUND_MINUTES) {
-                    $out[] = $this->make('TRN', $a->id . '-' . $b->id, 'medium', 'Tight Turnaround',
+                    $out[] = $this->make('TRN', $this->pairKey($a, $b, 'vehicle_id', $id), 'medium', 'Tight Turnaround',
                         sprintf('%s has only %d minute%s between %s and %s — no margin for traffic or loading.',
-                            $a->vehicle?->code ?? 'Vehicle', $gap, $gap === 1 ? '' : 's', $this->label($a), $this->label($b)),
+                            $this->resourceName($a, 'vehicle_id', $id) ?? 'Vehicle', $gap, $gap === 1 ? '' : 's', $this->label($a), $this->label($b)),
                         [$a, $b], $aEnd,
                         sprintf('Allow at least %d minutes, or split across two resources.', self::TURNAROUND_MINUTES));
                 }
@@ -373,12 +376,12 @@ class ConflictDetectionService
         $out = [];
 
         $roles = [
-            'driver_id' => ['D', 'Driver', fn ($m) => $m->driver?->name ?? 'Driver #' . $m->driver_id],
-            'field_supervisor_id' => ['S', 'Supervisor', fn ($m) => $m->fieldSupervisor?->name ?? 'Supervisor #' . $m->field_supervisor_id],
+            'driver_id' => ['D', 'Driver', fn ($m, $id) => $this->resourceName($m, 'driver_id', $id) ?? 'Driver #' . $id],
+            'field_supervisor_id' => ['S', 'Supervisor', fn ($m, $id) => $this->resourceName($m, 'field_supervisor_id', $id) ?? 'Supervisor #' . $id],
         ];
 
         foreach ($roles as $key => [$prefix, $role, $nameFn]) {
-            foreach ($this->timedGroups($movements, $key, fn ($m) => $this->wholeSpan($m, $spans)) as $list) {
+            foreach ($this->timedGroups($movements, $key, fn ($m) => $this->wholeSpan($m, $spans)) as $id => $list) {
                 for ($i = 0; $i < count($list); $i++) {
                     for ($j = $i + 1; $j < count($list); $j++) {
                         [$a, [$aStart, $aEnd]] = $list[$i];
@@ -387,8 +390,8 @@ class ConflictDetectionService
                             break;
                         }
 
-                        $pairKey = $a->id . '-' . $b->id;
-                        $who = $nameFn($a);
+                        $pairKey = $this->pairKey($a, $b, $key, $id);
+                        $who = $nameFn($a, $id);
                         $activeA = $spans[$a->id]['active'] ?? [$this->window($a)];
                         $activeB = $spans[$b->id]['active'] ?? [$this->window($b)];
                         $overlap = $this->overlapMinutes($activeA, $activeB);
@@ -436,27 +439,32 @@ class ConflictDetectionService
         return $out;
     }
 
-    /** More passengers than the assigned vehicle can carry. */
+    /** More passengers than the assigned vehicles can carry together. */
     private function capacity(Collection $movements): array
     {
         $out = [];
 
         foreach ($movements as $m) {
             $pax = $m->passengers ?: $m->flight?->party_size_total;
-            $capacity = $m->vehicle?->capacity;
+            $vehicles = collect([$m->vehicle])->merge($m->units->pluck('vehicle'))->filter()->unique('id');
+            // Unknown capacity on any vehicle means the total can't be judged.
+            $capacity = $vehicles->isNotEmpty() && $vehicles->every(fn ($v) => $v->capacity) ? (int) $vehicles->sum('capacity') : null;
 
             if ($pax && $capacity && $pax > $capacity) {
+                $names = $vehicles->count() > 1
+                    ? $vehicles->pluck('code')->filter()->implode(' + ')
+                    : ($m->vehicle?->code ?? 'the assigned vehicle');
                 $out[] = $this->make('CAP', $m->id, 'high', 'Capacity Exceeded',
                     sprintf('%s carries %d passengers but %s seats only %d — %d people have no seat.',
-                        $this->label($m), $pax, $m->vehicle->code ?? 'the assigned vehicle', $capacity, $pax - $capacity),
+                        $this->label($m), $pax, $names, $capacity, $pax - $capacity),
                     [$m], $m->window_start,
                     'Upgrade the vehicle or add a second one to the movement.');
             }
 
-            if ($m->vehicle && $m->vehicle->status === 'maintenance') {
-                $out[] = $this->make('VST', $m->id, 'medium', 'Vehicle Out Of Service',
+            foreach ($vehicles->where('status', 'maintenance') as $vehicle) {
+                $out[] = $this->make('VST', $m->id . ((int) $vehicle->id === (int) $m->vehicle_id ? '' : '-' . $vehicle->id), 'medium', 'Vehicle Out Of Service',
                     sprintf('%s is assigned to %s, which is currently flagged as in maintenance.',
-                        $m->vehicle->code ?? 'A vehicle', $this->label($m)),
+                        $vehicle->code ?? 'A vehicle', $this->label($m)),
                     [$m], $m->window_start,
                     'Swap in an available vehicle or clear the maintenance flag.');
             }
@@ -646,12 +654,16 @@ class ConflictDetectionService
     {
         $out = [];
 
-        $byDriver = $movements
-            ->filter(fn ($m) => $m->driver_id && $this->wholeSpan($m, $spans))
-            ->groupBy('driver_id');
+        $byDriver = [];
+        foreach ($movements->filter(fn ($m) => $this->wholeSpan($m, $spans)) as $m) {
+            foreach ($m->resourceIds('driver_id') as $driverId) {
+                $byDriver[$driverId][] = $m;
+            }
+        }
 
-        foreach ($byDriver as $driverMovements) {
-            $name = $driverMovements->first()->driver?->name ?? 'A driver';
+        foreach ($byDriver as $driverId => $driverMovements) {
+            $driverMovements = collect($driverMovements);
+            $name = $this->resourceName($driverMovements->first(), 'driver_id', $driverId) ?? 'A driver';
 
             // One duty day per date, waiting time included: first start to last finish.
             $days = $driverMovements
@@ -668,7 +680,7 @@ class ConflictDetectionService
                 $hours = $day['start']->diffInMinutes($day['end'], true) / 60;
 
                 if ($day['movements']->count() > 1 && $hours > self::DRIVER_SPAN_HOURS) {
-                    $out[] = $this->make('DTY', $day['movements']->first()->driver_id . '-' . $day['start']->toDateString(), 'medium', 'Driver Shift Too Long',
+                    $out[] = $this->make('DTY', $driverId . '-' . $day['start']->toDateString(), 'medium', 'Driver Shift Too Long',
                         sprintf('%s is on duty from %s to %s on %s — a %.1f hour span across %d movements.',
                             $name, $day['start']->format('H:i'), $day['end']->format('H:i'),
                             $day['start']->format('D j M'), $hours, $day['movements']->count()),
@@ -683,7 +695,7 @@ class ConflictDetectionService
 
                 $rest = $day['end']->diffInMinutes($next['start'], true) / 60;
                 if ($rest < self::DRIVER_REST_HOURS) {
-                    $out[] = $this->make('RST', $day['movements']->first()->driver_id . '-' . $next['start']->toDateString(), 'medium', 'Insufficient Rest',
+                    $out[] = $this->make('RST', $driverId . '-' . $next['start']->toDateString(), 'medium', 'Insufficient Rest',
                         sprintf('%s finishes at %s on %s and starts again at %s on %s — only %.1f hours of rest.',
                             $name, $day['end']->format('H:i'), $day['end']->format('D j M'),
                             $next['start']->format('H:i'), $next['start']->format('D j M'), $rest),
@@ -814,22 +826,58 @@ class ConflictDetectionService
     }
 
     /**
-     * Movements sharing a resource, each with its interval, sorted by start.
+     * Movements sharing a resource, each with its interval, sorted by start,
+     * keyed by the resource id. Extra units count for vehicles and drivers.
      *
      * @return array<int, array<int, array{0: Movement, 1: array{0: Carbon, 1: Carbon}}>>
      */
     private function timedGroups(Collection $movements, string $key, callable $interval): array
     {
-        return $movements
-            ->filter(fn ($m) => $m->$key && $interval($m))
-            ->groupBy($key)
-            ->map(fn ($group) => $group
-                ->map(fn ($m) => [$m, $interval($m)])
-                ->sortBy(fn ($pair) => $pair[1][0]->timestamp)
-                ->values()
-                ->all())
-            ->values()
-            ->all();
+        $groups = [];
+        foreach ($movements as $m) {
+            $span = $interval($m);
+            if (!$span) {
+                continue;
+            }
+            foreach ($m->resourceIds($key) as $id) {
+                $groups[$id][] = [$m, $span];
+            }
+        }
+
+        foreach ($groups as &$list) {
+            usort($list, fn ($a, $b) => $a[1][0]->timestamp <=> $b[1][0]->timestamp);
+        }
+        unset($list);
+
+        return $groups;
+    }
+
+    /** Display name of a vehicle, driver or supervisor on the movement, whether lead or extra. */
+    private function resourceName(Movement $m, string $key, int $id): ?string
+    {
+        if ($key === 'field_supervisor_id') {
+            return ((int) $m->field_supervisor_id === $id ? $m->fieldSupervisor : $m->extraSupervisors->firstWhere('id', $id))?->name;
+        }
+
+        $relation = ['vehicle_id' => 'vehicle', 'driver_id' => 'driver'][$key] ?? null;
+        if (!$relation) {
+            return null;
+        }
+
+        $model = (int) $m->$key === $id ? $m->$relation : $m->units->firstWhere($key, $id)?->$relation;
+
+        return $relation === 'vehicle' ? $model?->code : $model?->name;
+    }
+
+    /**
+     * Conflict key for a shared resource. Lead-crew clashes keep the original
+     * "a-b" form so earlier acceptances still match; extra-unit clashes add the id.
+     */
+    private function pairKey(Movement $a, Movement $b, string $key, int $id): string
+    {
+        $lead = (int) $a->$key === $id && (int) $b->$key === $id;
+
+        return $a->id . '-' . $b->id . ($lead ? '' : '-' . $id);
     }
 
     private function overlapMinutes(array $a, array $b): int

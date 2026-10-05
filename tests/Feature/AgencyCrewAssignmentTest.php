@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\Driver;
 use App\Models\Event;
+use App\Models\FleetProvider;
 use App\Models\User;
 use App\Models\Vehicle;
 use App\Services\NotificationFeedService;
@@ -141,6 +142,50 @@ class AgencyCrewAssignmentTest extends TestCase
         $this->agency($event)->post('/email/send')->assertForbidden();
 
         $this->assertSame('pending', $job->refresh()->status);
+    }
+
+    public function test_the_agency_manages_vehicles_and_drivers(): void
+    {
+        $event = $this->createEvent();
+
+        $this->agency($event)->post('/fleet/vehicles', ['code' => 'AG-01', 'vehicle_type' => 'Bus', 'status' => 'available'])->assertSessionHasNoErrors();
+        $vehicle = Vehicle::where('code', 'AG-01')->firstOrFail();
+        $this->agency($event)->put("/fleet/vehicles/{$vehicle->id}", ['code' => 'AG-02', 'vehicle_type' => 'Bus', 'status' => 'standby'])->assertSessionHasNoErrors();
+        $this->assertSame('AG-02', $vehicle->refresh()->code);
+        $this->agency($event)->delete("/fleet/vehicles/{$vehicle->id}")->assertRedirect();
+        $this->assertModelMissing($vehicle);
+
+        $this->agency($event)->post('/fleet/drivers', ['name' => 'New Driver', 'status' => 'available'])->assertSessionHasNoErrors();
+        $driver = Driver::where('name', 'New Driver')->firstOrFail();
+        $this->agency($event)->put("/fleet/drivers/{$driver->id}", ['name' => 'Renamed Driver', 'status' => 'off'])->assertSessionHasNoErrors();
+        $this->assertSame('Renamed Driver', $driver->refresh()->name);
+        $this->agency($event)->delete("/fleet/drivers/{$driver->id}")->assertRedirect();
+        $this->assertModelMissing($driver);
+
+        $this->agency($event)->post('/fleet/providers', ['code' => 'AGP', 'name' => 'Agency Provider', 'status' => 'active'])->assertSessionHasNoErrors();
+        $provider = FleetProvider::where('code', 'AGP')->firstOrFail();
+        $this->agency($event)->put("/fleet/providers/{$provider->id}", ['code' => 'AGP', 'name' => 'Renamed Provider', 'status' => 'standby'])->assertSessionHasNoErrors();
+        $this->assertSame('Renamed Provider', $provider->refresh()->name);
+        $this->agency($event)->delete("/fleet/providers/{$provider->id}")->assertRedirect();
+        $this->assertModelMissing($provider);
+    }
+
+    public function test_the_agency_cannot_manage_other_fleet_data(): void
+    {
+        $event = $this->createEvent();
+
+        $this->agency($event)->post('/contacts', ['name' => 'x'])->assertForbidden();
+        $this->agency($event)->post('/airports', ['name' => 'x'])->assertForbidden();
+    }
+
+    public function test_an_inertia_write_is_refused_with_a_flagged_json_403(): void
+    {
+        $this->agency($this->createEvent())
+            ->withHeaders(['X-Inertia' => 'true'])
+            ->post('/venues', ['name' => 'x'])
+            ->assertForbidden()
+            ->assertHeader('X-Access-Restricted', '1')
+            ->assertJsonStructure(['message']);
     }
 
     public function test_the_mobile_api_is_closed_to_the_agency(): void

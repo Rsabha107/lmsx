@@ -1157,7 +1157,8 @@ class JobGenerationService
 
         foreach ($vehicles as $vehicle) {
             // Check if vehicle has conflicting movements at the same time
-            $conflict = Movement::where('vehicle_id', $vehicle->id)
+            $conflict = Movement::where(fn ($q) => $q->where('vehicle_id', $vehicle->id)
+                    ->orWhereHas('units', fn ($u) => $u->where('vehicle_id', $vehicle->id)))
                 ->where(function ($query) use ($scheduledDeparture, $scheduledArrival) {
                     $query->whereBetween('window_start', [$scheduledDeparture, $scheduledArrival])
                         ->orWhereBetween('window_end', [$scheduledDeparture, $scheduledArrival])
@@ -1186,7 +1187,8 @@ class JobGenerationService
 
         foreach ($drivers as $driver) {
             // Check if driver has conflicting movements at the same time
-            $conflict = Movement::where('driver_id', $driver->id)
+            $conflict = Movement::where(fn ($q) => $q->where('driver_id', $driver->id)
+                    ->orWhereHas('units', fn ($u) => $u->where('driver_id', $driver->id)))
                 ->where(function ($query) use ($scheduledDeparture, $scheduledArrival) {
                     $query->whereBetween('window_start', [$scheduledDeparture, $scheduledArrival])
                         ->orWhereBetween('window_end', [$scheduledDeparture, $scheduledArrival])

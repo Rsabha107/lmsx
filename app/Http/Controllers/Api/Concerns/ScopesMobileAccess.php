@@ -69,7 +69,7 @@ trait ScopesMobileAccess
         if ($this->onlyOwnJobs($request)) {
             // Keep the table prefix the caller used, so joined queries stay unambiguous.
             $prefix = str_contains($column, '.') ? strstr($column, '.', true).'.' : '';
-            $query->where($prefix.'supervisor_id', $request->user()->id);
+            $this->whereSupervisedBy($query, $request->user()->id, $prefix);
         }
 
         $areas = $this->visibleFunctionalAreas($request);
@@ -94,9 +94,18 @@ trait ScopesMobileAccess
                 $job->whereIn('functional_area', $areas);
             }
             if ($ownOnly) {
-                $job->where('supervisor_id', $request->user()->id);
+                $this->whereSupervisedBy($job, $request->user()->id);
             }
         });
+    }
+
+    /** Lead supervisor, or one of the movement's extra supervisors. */
+    protected function whereSupervisedBy(Builder $query, int $userId, string $prefix = ''): Builder
+    {
+        return $query->where(fn ($q) => $q->where($prefix.'supervisor_id', $userId)
+            ->orWhereIn($prefix.'movement_id', fn ($sub) => $sub->select('movement_id')
+                ->from('movement_supervisors')
+                ->where('user_id', $userId)));
     }
 
     protected function authorizeJobAccess(Request $request, JobOperation $job): void
@@ -116,7 +125,7 @@ trait ScopesMobileAccess
         );
 
         abort_if(
-            $this->onlyOwnJobs($request) && (int) $job->supervisor_id !== (int) $user->id,
+            $this->onlyOwnJobs($request) && ! $job->isSupervisedBy((int) $user->id),
             403,
             'This job is assigned to another supervisor.'
         );

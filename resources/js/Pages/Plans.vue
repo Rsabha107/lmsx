@@ -1164,6 +1164,7 @@
                 padding: 12px 14px;
                 border-bottom: 1px solid var(--border);
                 display: flex;
+                flex-wrap: wrap;
                 align-items: center;
                 gap: 12px;
                 background: var(--surface);
@@ -1288,12 +1289,18 @@
                 <button type="button" aria-label="Clear conflict focus" @click="clearConflictFocus">✕</button>
               </span>
               <div
-                v-if="movementsTeamFilter || movementsDateFilter || movementsPhaseFilter || movementsJobFilter || movementsFocusIds"
+                v-if="movementsTeamFilter || movementsDateFilter || movementsPhaseFilter || movementsJobFilter || movementsFocusIds || movementColumnsActive"
                 style="font-size: 11px; color: var(--ink3)"
               >
                 Showing {{ filteredPlanMovements.length }} of
                 {{ selectedPlanMovements.length }} movements
               </div>
+              <a
+                v-if="movementColumnsActive"
+                style="font-size: 11px; cursor: pointer; color: var(--accent); text-decoration: underline;"
+                @click="movementColumns.clearAll()"
+                >Clear column sort &amp; filters</a
+              >
               <div
                 v-if="selectedMovementIds.size > 0"
                 style="display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--ink3);"
@@ -1367,10 +1374,13 @@
               Job generation requires all movements to be from the same plan. Filter movements from different plans or select a specific plan.
             </div>
 
+            <!-- Columns keep a minimum width; narrow screens scroll sideways instead of overlapping. -->
+            <div style="overflow-x: auto; display: flex; flex-direction: column; flex: 1; min-height: 0;">
+            <div style="min-width: 1180px; display: flex; flex-direction: column; flex: 1; min-height: 0;">
             <div
+              :style="{ gridTemplateColumns: movementGridColumns }"
               style="
                 display: grid;
-                grid-template-columns: 28px minmax(0, 5fr) minmax(0, 7fr) minmax(0, 6fr) minmax(0, 5.5fr) minmax(0, 14fr) minmax(0, 9fr) minmax(0, 7fr) minmax(0, 4fr) minmax(0, 4.5fr) minmax(0, 7fr) minmax(0, 7fr);
                 gap: 10px;
                 padding: 10px 14px;
                 border-bottom: 1px solid var(--border);
@@ -1394,20 +1404,34 @@
                   title="Select all"
                 />
               </div>
-              <div>ID</div>
-              <div>Date</div>
-              <div>Phase</div>
+              <div>
+                <ColumnFilter label="ID" column="id" :state="movementColumns" :rows="prefilteredPlanMovements" :count-by="planOf" count-unit="plan" />
+              </div>
+              <div>
+                <ColumnFilter label="Date" column="date" :state="movementColumns" :rows="prefilteredPlanMovements" :sort-labels="dateSortLabels" :count-by="planOf" count-unit="plan" />
+              </div>
+              <div>
+                <ColumnFilter label="Phase" column="phase" :state="movementColumns" :rows="prefilteredPlanMovements" :count-by="planOf" count-unit="plan" />
+              </div>
               <div style="display: flex; align-items: center; gap: 4px;">
-                Ref Time
+                <ColumnFilter label="Ref Time" column="ref" :state="movementColumns" :rows="prefilteredPlanMovements" :filterable="false" :sort-labels="dateSortLabels" style="width: auto" />
                 <InfoIcon :size="12" @click="showRefTimeInfoModal = true" />
               </div>
-              <div>Team & Route</div>
-              <div title="From the first checkpoint time to that time plus the movement's duration">Window</div>
-              <div>Vehicle</div>
-              <div>Pax</div>
+              <div>
+                <ColumnFilter label="Team & Route" column="team" :state="movementColumns" :rows="prefilteredPlanMovements" :count-by="planOf" count-unit="plan" />
+              </div>
+              <div title="From the first checkpoint time to that time plus the movement's duration">
+                <ColumnFilter label="Window" column="window" :state="movementColumns" :rows="prefilteredPlanMovements" :filterable="false" :sort-labels="dateSortLabels" />
+              </div>
+              <div>
+                <ColumnFilter label="Vehicle" column="vehicle" :state="movementColumns" :rows="prefilteredPlanMovements" :count-by="planOf" count-unit="plan" />
+              </div>
+              <div>
+                <ColumnFilter label="Pax" column="pax" :state="movementColumns" :rows="prefilteredPlanMovements" :filterable="false" :sort-labels="numberSortLabels" />
+              </div>
               <div>Checks</div>
               <div style="display: flex; align-items: center; gap: 4px; justify-content: center;">
-                Job
+                <ColumnFilter label="Job" column="job" :state="movementColumns" :rows="prefilteredPlanMovements" :count-by="planOf" count-unit="plan" style="width: auto" />
                 <InfoIcon :size="12" @click="showJobInfoModal = true" />
               </div>
               <div>Actions</div>
@@ -1420,8 +1444,7 @@
                 :key="mv.id"
                 :style="{
                   display: 'grid',
-                  gridTemplateColumns:
-                    '28px minmax(0, 5fr) minmax(0, 7fr) minmax(0, 6fr) minmax(0, 5.5fr) minmax(0, 14fr) minmax(0, 9fr) minmax(0, 7fr) minmax(0, 4fr) minmax(0, 4.5fr) minmax(0, 7fr) minmax(0, 7fr)',
+                  gridTemplateColumns: movementGridColumns,
                   gap: '10px',
                   padding: '12px 14px',
                   borderBottom:
@@ -1559,6 +1582,7 @@
                 </div>
                 <div style="font-size: 11px; color: var(--ink2)">
                   {{ mv.vehicle?.code || "-" }}
+                  <span v-if="mv.units?.length" class="unit-more" :title="unitsLabel(mv)">+{{ mv.units.length }}</span>
                 </div>
                 <div
                   style="
@@ -1624,6 +1648,8 @@
                   />
                 </div>
               </div>
+            </div>
+            </div>
             </div>
           </template>
         </div>
@@ -1839,6 +1865,10 @@
                       : selectedMovement.driver?.name || "—"
                   }}</span>
                 </div>
+                <div v-if="selectedMovement.units?.length" class="detail-row">
+                  <span class="detail-label">Extra vehicles</span>
+                  <span class="detail-value">{{ unitsLabel(selectedMovement) }}</span>
+                </div>
                 <div class="detail-row">
                   <span class="detail-label">Field Supervisor</span>
                   <span class="detail-value">{{
@@ -1846,6 +1876,10 @@
                       ? selectedMovement.field_supervisor || "—"
                       : selectedMovement.field_supervisor?.name || "—"
                   }}</span>
+                </div>
+                <div v-if="selectedMovement.extra_supervisors?.length" class="detail-row">
+                  <span class="detail-label">Extra supervisors</span>
+                  <span class="detail-value">{{ selectedMovement.extra_supervisors.map((s) => s.name).join(', ') }}</span>
                 </div>
                 <div
                   v-if="selectedMovement.job_id || selectedMovement.jobId"
@@ -2630,9 +2664,17 @@
                     <span class="detail-label">Driver</span>
                     <span :class="['detail-value', { 'dv-missing-text': !selectedMovement.driver_id }]">{{ selectedMovement.driver?.name || "Not assigned" }}</span>
                   </div>
+                  <div v-if="selectedMovement.units?.length" class="detail-row">
+                    <span class="detail-label">Extra vehicles</span>
+                    <span class="detail-value">{{ unitsLabel(selectedMovement) }}</span>
+                  </div>
                   <div class="detail-row">
                     <span class="detail-label">Field Supervisor</span>
                     <span :class="['detail-value', { 'dv-missing-text': !selectedMovement.field_supervisor_id }]">{{ selectedMovement.field_supervisor?.name || "Not assigned" }}</span>
+                  </div>
+                  <div v-if="selectedMovement.extra_supervisors?.length" class="detail-row">
+                    <span class="detail-label">Extra supervisors</span>
+                    <span class="detail-value">{{ selectedMovement.extra_supervisors.map((s) => s.name).join(', ') }}</span>
                   </div>
                   <div v-if="selectedMovement.job_id" class="detail-row">
                     <span class="detail-label">Job ID</span>
@@ -3495,6 +3537,10 @@
                         : selectedMovement.driver?.name || "—"
                     }}</span>
                   </div>
+                  <div v-if="selectedMovement.units?.length" class="detail-row">
+                    <span class="detail-label">Extra vehicles</span>
+                    <span class="detail-value">{{ unitsLabel(selectedMovement) }}</span>
+                  </div>
                   <div class="detail-row">
                     <span class="detail-label">Field Supervisor</span>
                     <span class="detail-value">{{
@@ -3502,6 +3548,10 @@
                         ? selectedMovement.field_supervisor || "—"
                         : selectedMovement.field_supervisor?.name || "—"
                     }}</span>
+                  </div>
+                  <div v-if="selectedMovement.extra_supervisors?.length" class="detail-row">
+                    <span class="detail-label">Extra supervisors</span>
+                    <span class="detail-value">{{ selectedMovement.extra_supervisors.map((s) => s.name).join(', ') }}</span>
                   </div>
                   <div
                     v-if="selectedMovement.job_id || selectedMovement.jobId"
@@ -7204,6 +7254,28 @@
                 </select>
               </div>
             </div>
+            <div v-for="(unit, i) in emUnits" :key="i" class="em-unit">
+              <div class="form-field">
+                <label>VEHICLE {{ i + 2 }}</label>
+                <select v-model="unit.vehicle_id">
+                  <option :value="null">Select vehicle...</option>
+                  <option v-for="vehicle in props.vehicles" :key="vehicle.id" :value="vehicle.id">
+                    {{ vehicle.code }} - {{ vehicle.vehicle_type }}{{ vehicle.capacity ? ` (${vehicle.capacity} pax)` : '' }}
+                  </option>
+                </select>
+              </div>
+              <div class="form-field">
+                <label>DRIVER {{ i + 2 }}</label>
+                <select v-model="unit.driver_id">
+                  <option :value="null">Select driver...</option>
+                  <option v-for="driver in props.drivers" :key="driver.id" :value="driver.id">{{ driver.name }}</option>
+                </select>
+              </div>
+              <button type="button" class="em-unit-remove" :aria-label="`Remove vehicle ${i + 2}`" title="Remove this vehicle" @click="emUnits.splice(i, 1)">✕</button>
+            </div>
+            <button type="button" class="em-unit-add" @click="emUnits.push({ vehicle_id: null, driver_id: null })">
+              + Add another vehicle &amp; driver
+            </button>
             <div class="form-field">
               <label>FIELD SUPERVISOR</label>
               <select v-model="emFieldSupervisorId">
@@ -7217,6 +7289,19 @@
                 </option>
               </select>
             </div>
+            <div v-for="(_, i) in emSupervisors" :key="`s${i}`" class="em-unit em-unit--single">
+              <div class="form-field">
+                <label>SUPERVISOR {{ i + 2 }}</label>
+                <select v-model="emSupervisors[i]">
+                  <option :value="null">Select supervisor...</option>
+                  <option v-for="supervisor in props.supervisors" :key="supervisor.id" :value="supervisor.id">{{ supervisor.name }}</option>
+                </select>
+              </div>
+              <button type="button" class="em-unit-remove" :aria-label="`Remove supervisor ${i + 2}`" title="Remove this supervisor" @click="emSupervisors.splice(i, 1)">✕</button>
+            </div>
+            <button type="button" class="em-unit-add" @click="emSupervisors.push(null)">
+              + Add another supervisor
+            </button>
             <div class="form-field">
               <label>MATCH (OPTIONAL)</label>
               <select v-model="emMatchId">
@@ -8173,6 +8258,8 @@ import InfoIcon from "../Components/InfoIcon.vue";
 import FlagIcon from "../Components/FlagIcon.vue";
 import ConfirmModal from "../Components/ConfirmModal.vue";
 import FormDateField from "../Components/FormDateField.vue";
+import ColumnFilter from "../Components/ColumnFilter.vue";
+import { useColumnFilters } from "../Composables/useColumnFilters";
 
 const { success: showSuccessToast, error: showErrorToast } = useToast();
 
@@ -8636,6 +8723,8 @@ const emWindowStart = ref("");
 const emWindowEnd = ref("");
 const emVehicleId = ref("");
 const emDriverId = ref("");
+const emUnits = ref([]);
+const emSupervisors = ref([]);
 const emFieldSupervisorId = ref("");
 const emPassengers = ref("");
 const emFlightNumber = ref("");
@@ -9122,6 +9211,7 @@ function viewConflict(c) {
   movementsDateFilter.value = null;
   movementsPhaseFilter.value = null;
   movementsJobFilter.value = null;
+  movementColumns.clearAll();
   movementsFocusIds.value = new Set(c.movement_ids || []);
   movementsFocusLabel.value = `${c.type} · ${(c.affects || []).join(", ")}`;
   activeTab.value = "movements";
@@ -9619,8 +9709,8 @@ const totalPassengers = computed(() => {
   return selectedPlanMovements.value.reduce((sum, mv) => sum + (mv.passengers || 0), 0);
 });
 
-// Filtered movements based on team and date filters
-const filteredPlanMovements = computed(() => {
+// Filtered movements based on team and date filters, before any header filter
+const prefilteredPlanMovements = computed(() => {
   let movements = selectedPlanMovements.value;
 
   if (movementsFocusIds.value) {
@@ -9669,6 +9759,46 @@ const filteredPlanMovements = computed(() => {
 
   return movements;
 });
+
+// Raw 'YYYY-MM-DD HH:MM' so sorting follows the wall-clock times the table shows.
+const wallClock = (value) => (value ? String(value).replace('T', ' ').slice(0, 16) : null);
+
+function movementRefTime(mv) {
+  if (isBusMovement(mv)) return null;
+  if ((mv.kind === 'arrival' || mv.kind === 'departure') && mv.flight?.scheduled_at) return wallClock(mv.flight.scheduled_at);
+  if (mv.match_id && mv.match?.kick_off) return wallClock(mv.match.kick_off);
+  return null;
+}
+
+const dateSortLabels = { asc: 'Earliest first', desc: 'Latest first' };
+const numberSortLabels = { asc: 'Smallest first', desc: 'Largest first' };
+const planOf = (mv) => mv.plan_id;
+
+// "COACH 05 / Ali, TRUCK 02 / Omar" for a movement's extra vehicle + driver pairs.
+function unitsLabel(mv) {
+  return (mv.units || [])
+    .map((u) => `${u.vehicle?.code || u.vehicle?.vehicle_type || 'No vehicle'} / ${u.driver?.name || 'No driver'}`)
+    .join(', ');
+}
+
+// Select, ID, Date, Phase, Ref Time, Team & Route, Window, Vehicle, Pax, Checks, Job, Actions.
+const movementGridColumns =
+  '28px minmax(120px, 5fr) minmax(90px, 7fr) minmax(90px, 6fr) minmax(70px, 5.5fr) minmax(190px, 14fr) minmax(110px, 9fr) minmax(80px, 7fr) minmax(44px, 4fr) minmax(50px, 4.5fr) minmax(120px, 7fr) minmax(76px, 7fr)';
+
+const movementColumns = useColumnFilters({
+  id: { value: (mv) => mv.code || '' },
+  date: { value: (mv) => (mv.window_start ? formatDate(mv.window_start) : ''), sort: (mv) => wallClock(mv.window_start) },
+  phase: { value: (mv) => phaseLabels[movementPhase(mv)] || movementPhase(mv) || '' },
+  ref: { sort: movementRefTime },
+  team: { value: (mv) => mv.team?.team_name || '' },
+  window: { sort: (mv) => (isBusMovement(mv) ? null : wallClock(mv.window_start)) },
+  vehicle: { value: (mv) => mv.vehicle?.code || '' },
+  pax: { sort: (mv) => Number(mv.flight?.party_size_total ?? mv.pax ?? mv.passengers) || null },
+  job: { value: (mv) => (mv.job_id ? 'Generated' : isBusMovement(mv) ? 'N/A (bus)' : 'Not generated') },
+});
+const movementColumnsActive = movementColumns.active;
+
+const filteredPlanMovements = computed(() => movementColumns.apply(prefilteredPlanMovements.value));
 
 // Bulk-selection over the currently filtered movements (By Plan view)
 const allMovementsSelected = computed(() => {
@@ -11501,6 +11631,8 @@ function editMovement(movement) {
   emVehicleId.value = movement.vehicle_id || "";
   emDriverId.value = movement.driver_id || "";
   emFieldSupervisorId.value = movement.field_supervisor_id || "";
+  emUnits.value = (movement.units || []).map((u) => ({ vehicle_id: u.vehicle_id ?? null, driver_id: u.driver_id ?? null }));
+  emSupervisors.value = (movement.extra_supervisors || []).map((s) => s.id);
 
   // Handle passengers (By Plan uses passengers, By Team uses pax)
   emPassengers.value = movement.passengers ?? movement.pax ?? "";
@@ -11539,6 +11671,8 @@ function submitEditMovement() {
       vehicle_id: emVehicleId.value || null,
       driver_id: emDriverId.value || null,
       field_supervisor_id: emFieldSupervisorId.value || null,
+      units: emUnits.value.filter((u) => u.vehicle_id || u.driver_id),
+      supervisors: [...new Set(emSupervisors.value.filter(Boolean))],
       notes: emNotes.value || null,
       match_id: emMatchId.value || null,
     },
@@ -12604,6 +12738,30 @@ function statusLabel(s) {
 
 .gen-modal .modal-footer {
   justify-content: space-between;
+}
+
+.em-unit {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  gap: 12px;
+  align-items: center;
+}
+.em-unit--single { grid-template-columns: 1fr auto; }
+.unit-more {
+  margin-left: 4px; padding: 0 5px; border-radius: 8px;
+  background: var(--accent-soft); color: var(--accent);
+  font-size: 10px; font-weight: 700; cursor: help;
+}
+.em-unit-remove {
+  width: 28px; height: 28px; margin-bottom: 16px; margin-top: 18px;
+  border: 1px solid var(--border); border-radius: 6px;
+  background: var(--surface); color: var(--ink3); cursor: pointer;
+}
+.em-unit-remove:hover { color: var(--danger, #b91c1c); border-color: var(--danger, #b91c1c); }
+.em-unit-add {
+  align-self: flex-start; margin: -6px 0 14px; padding: 0;
+  border: none; background: none; cursor: pointer;
+  color: var(--accent); font-size: 12px; font-weight: 600;
 }
 
 .form-field {

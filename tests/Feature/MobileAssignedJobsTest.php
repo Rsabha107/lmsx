@@ -62,6 +62,28 @@ class MobileAssignedJobsTest extends TestCase
         $this->getJson('/api/mobile/events')->assertOk()->assertJsonPath('data.0.jobs', 1);
     }
 
+    public function test_an_extra_supervisor_sees_and_opens_the_job_too(): void
+    {
+        $event = $this->createEvent();
+        $plan = $this->createPlan($event);
+        $team = $this->createTeam($event);
+        $lead = $this->fieldSupervisor($event);
+        $extra = $this->fieldSupervisor($event);
+
+        $movement = $this->createMovement($event, $plan, $team);
+        $shared = $this->createJob($event, $movement, $team, ['supervisor_id' => $lead->id]);
+        $movement->extraSupervisors()->attach($extra->id);
+        $this->createJob($event, $this->createMovement($event, $plan, $team), $team, ['supervisor_id' => $lead->id]);
+
+        Sanctum::actingAs($extra);
+
+        $ids = collect($this->getJson("/api/mobile/jobs?event_id={$event->id}")->assertOk()->json('data'))->pluck('id');
+        $this->assertEquals([$shared->id], $ids->all());
+        $this->getJson("/api/mobile/jobs/{$shared->id}?event_id={$event->id}")
+            ->assertOk()
+            ->assertJsonPath('data.extra_supervisors.0', $extra->name);
+    }
+
     public function test_the_unassigned_grant_restores_the_full_event_view(): void
     {
         $event = $this->createEvent();

@@ -30,6 +30,8 @@ class RolePermissionSeeder extends Seeder
         'events.manage',
         'fleet.view',
         'fleet.manage',
+        // Add, edit and delete vehicles, drivers and providers only (no other master data).
+        'fleet.manage-resources',
         'plans.view',
         'plans.manage',
         // Set a movement's vehicle, driver and supervisor, and nothing else on it.
@@ -80,7 +82,7 @@ class RolePermissionSeeder extends Seeder
             Role::findByName($scopedRole)->syncPermissions(self::SCOPED_PERMISSIONS);
         }
 
-        // The outside crew agency: sees everything, changes only crew. No
+        // The outside crew agency: sees everything, changes only crew, vehicles, drivers and providers. No
         // jobs.view, because the job policy treats it as a grant to act on jobs.
         // RestrictAgencyToCrewAssignment closes the write routes guarded only by a view permission.
         Role::findByName('agency')->syncPermissions([
@@ -91,6 +93,7 @@ class RolePermissionSeeder extends Seeder
             'plans.view',
             'console.view',
             'movements.assign-crew',
+            'fleet.manage-resources',
         ]);
     }
 }

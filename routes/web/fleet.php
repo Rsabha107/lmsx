@@ -31,9 +31,9 @@ Route::middleware('auth')->group(function () {
         Route::get('/airports', [AirportController::class, 'index'])->name('airports.index');
     });
 
-    // Everything that mutates fleet or the master data managed alongside it.
-    Route::middleware('permission:fleet.manage')->group(function () {
-        Route::prefix('fleet')->name('fleet.')->group(function () {
+    // The crew agency maintains its own vehicles, drivers and providers, but no other master data.
+    Route::middleware('permission:fleet.manage|fleet.manage-resources')
+        ->prefix('fleet')->name('fleet.')->group(function () {
             Route::post('/vehicles', [FleetController::class, 'storeVehicle'])->name('vehicles.store');
             Route::put('/vehicles/{vehicle}', [FleetController::class, 'updateVehicle'])->name('vehicles.update');
             Route::delete('/vehicles/{vehicle}', [FleetController::class, 'destroyVehicle'])->name('vehicles.destroy');
@@ -47,6 +47,8 @@ Route::middleware('auth')->group(function () {
             Route::delete('/providers/{provider}', [FleetController::class, 'destroyProvider'])->name('providers.destroy');
         });
 
+    // Everything else that mutates the master data managed alongside fleet.
+    Route::middleware('permission:fleet.manage')->group(function () {
         Route::prefix('matches')->name('matches.')->group(function () {
             Route::post('/', [MatchesController::class, 'store'])->name('store');
             Route::put('/{id}', [MatchesController::class, 'update'])->name('update');

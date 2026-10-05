@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -129,6 +130,25 @@ class JobOperation extends Model
     public function supervisor(): BelongsTo
     {
         return $this->belongsTo(User::class, 'supervisor_id');
+    }
+
+    /**
+     * Jobs the user supervises, as lead or as an extra supervisor on the movement.
+     * $prefix keeps joined queries unambiguous, e.g. 'jobs_operations.'.
+     */
+    public function scopeSupervisedBy(Builder $query, int $userId, string $prefix = ''): Builder
+    {
+        return $query->where(fn ($q) => $q->where($prefix.'supervisor_id', $userId)
+            ->orWhereIn($prefix.'movement_id', fn ($sub) => $sub->select('movement_id')
+                ->from('movement_supervisors')
+                ->where('user_id', $userId)));
+    }
+
+    public function isSupervisedBy(int $userId): bool
+    {
+        return (int) $this->supervisor_id === $userId
+            || ($this->movement_id && \Illuminate\Support\Facades\DB::table('movement_supervisors')
+                ->where('movement_id', $this->movement_id)->where('user_id', $userId)->exists());
     }
 
     /**

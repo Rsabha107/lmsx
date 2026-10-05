@@ -231,7 +231,7 @@ class JobOperationController extends Controller
     {
         $user = Auth::user();
 
-        $jobs = JobOperation::where('supervisor_id', $user->id)
+        $jobs = JobOperation::supervisedBy($user->id)
             ->whereIn('status', ['dispatched', 'in-progress'])
             ->with([
                 'movement.team',

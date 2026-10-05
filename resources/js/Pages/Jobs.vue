@@ -83,6 +83,10 @@
           <svg-icon name="x" :size="12" />
         </button>
       </div>
+
+      <button v-if="jobColumnsActive" type="button" class="quick-filter-btn" @click="jobColumns.clearAll()">
+        Clear column sort &amp; filters
+      </button>
     </div>
 
     <job-day-timeline
@@ -123,12 +127,24 @@
               @change="toggleSelectAll"
             />
           </div>
-          <div class="jl-col-job">JOB</div>
-          <div class="jl-col-stage">STAGE</div>
-          <div class="jl-col-route">TEAM · ROUTE</div>
-          <div class="jl-col-progress">PROGRESS</div>
-          <div class="jl-col-eta">ETA</div>
-          <div class="jl-col-alerts">ALERTS</div>
+          <div class="jl-col-job">
+            <ColumnFilter label="Job" column="job" :state="jobColumns" :rows="listedJobs" :sort-labels="dateSortLabels" count-unit="job" />
+          </div>
+          <div class="jl-col-stage">
+            <ColumnFilter label="Stage" column="stage" :state="jobColumns" :rows="listedJobs" count-unit="job" />
+          </div>
+          <div class="jl-col-route">
+            <ColumnFilter label="Team · Route" column="team" :state="jobColumns" :rows="listedJobs" count-unit="job" />
+          </div>
+          <div class="jl-col-progress">
+            <ColumnFilter label="Progress" column="progress" :state="jobColumns" :rows="listedJobs" :filterable="false" :sort-labels="numberSortLabels" />
+          </div>
+          <div class="jl-col-eta">
+            <ColumnFilter label="ETA" column="eta" :state="jobColumns" :rows="listedJobs" :filterable="false" :sort-labels="dateSortLabels" align="right" />
+          </div>
+          <div class="jl-col-alerts">
+            <ColumnFilter label="Alerts" column="alerts" :state="jobColumns" :rows="listedJobs" :filterable="false" :sort-labels="numberSortLabels" align="center" />
+          </div>
         </div>
         <div class="jobs-list-scroll">
           <!-- Empty State -->
@@ -143,6 +159,7 @@
             <p class="empty-state-message">
               {{ schedule.length === 0 ? 'There are no jobs scheduled yet.' : 'No jobs match the current filters.' }}
             </p>
+            <Button v-if="jobColumnsActive" variant="secondary" size="sm" @click="jobColumns.clearAll()">Clear column filters</Button>
           </div>
 
           <!-- Job Items -->
@@ -271,7 +288,7 @@
             <span v-if="selectedJob.kind" class="detail-kind-badge" :class="`detail-kind-badge--${selectedJob.kind}`">{{ selectedJob.kind }}</span>
             <span v-if="selectedJob.date" class="detail-date">{{ formatDateLong(selectedJob.date) }}</span>
             <div class="detail-subtitle" style="margin: 0;">
-              {{ formatJobFromLocation(selectedJob) }} → {{ formatJobToLocation(selectedJob) }} · {{ selectedJob.vehicle }} · {{ selectedJob.pax }} pax
+              {{ formatJobFromLocation(selectedJob) }} → {{ formatJobToLocation(selectedJob) }} · {{ selectedJob.vehicle }}<template v-if="selectedJob.units?.length"> +{{ selectedJob.units.length }}</template> · {{ selectedJob.pax }} pax
             </div>
           </div>
 
@@ -885,6 +902,8 @@ import FlagIcon from '../Components/FlagIcon.vue';
 import ConfirmModal from '../Components/ConfirmModal.vue';
 import JobStatsPanel from '../Components/JobStatsPanel.vue';
 import JobDayTimeline from '../Components/JobDayTimeline.vue';
+import ColumnFilter from '../Components/ColumnFilter.vue';
+import { useColumnFilters } from '../Composables/useColumnFilters';
 
 const page = usePage();
 const hasActiveEvent = computed(() => !!page.props.activeEventId);
@@ -1084,7 +1103,7 @@ const timeVarianceTone = computed(() => {
 
 const crewMembers = computed(() => {
   if (!selectedJob.value) return {};
-  return {
+  const crew = {
     Supervisor: {
       name: selectedJob.value.supervisor,
       phone: selectedJob.value.supervisor_phone,
@@ -1099,6 +1118,14 @@ const crewMembers = computed(() => {
       vehicle: true,
     },
   };
+  (selectedJob.value.extra_supervisors ?? []).forEach((s, i) => {
+    crew[`Supervisor ${i + 2}`] = { name: s.name };
+  });
+  (selectedJob.value.units ?? []).forEach((unit, i) => {
+    crew[`Driver ${i + 2}`] = { name: unit.driver || 'Unassigned', phone: unit.driver_phone };
+    crew[`Vehicle ${i + 2}`] = { name: unit.vehicle || 'Unassigned', detail: unit.vehicle_detail, vehicle: true };
+  });
+  return crew;
 });
 
 function getInitials(name) {
@@ -1349,7 +1376,25 @@ function formatJobToLocation(job) {
   return location;
 }
 
-const filtered = computed(() => {
+const timeOf = (j) => [j.pickup, j.dep].find((t) => t && t !== '--:--') || null;
+const startOf = (j) => (j.date ? `${j.date} ${timeOf(j) ?? '99:99'}` : null);
+const etaOf = (j) => (j.date && j.arr && j.arr !== '--:--' ? `${j.date} ${j.arr}` : null);
+
+const dateSortLabels = { asc: 'Earliest first', desc: 'Latest first' };
+const numberSortLabels = { asc: 'Smallest first', desc: 'Largest first' };
+
+const jobColumns = useColumnFilters({
+  job: { value: (j) => (j.date ? formatDate(j.date) : ''), sort: startOf },
+  stage: { value: (j) => statusLabel(j.status) },
+  team: { value: (j) => j.team || '' },
+  progress: { sort: (j) => jobProgress(j) },
+  eta: { sort: etaOf },
+  alerts: { sort: (j) => j.alerts || 0 },
+});
+const jobColumnsActive = jobColumns.active;
+
+// Jobs in view before any header filter; header filters list their values from here.
+const listedJobs = computed(() => {
   let jobs = scopedJobs.value;
 
   // The stats panel's day selection narrows the list as well, so chart and
@@ -1359,12 +1404,10 @@ const filtered = computed(() => {
   }
 
   // Sort by date and pickup time (asc, undated last)
-  const timeOf = (j) => [j.pickup, j.dep].find((t) => t && t !== '--:--') || '99:99';
-  const startOf = (j) => (j.date ? `${j.date} ${timeOf(j)}` : '\uffff');
-  jobs = [...jobs].sort((a, b) => startOf(a).localeCompare(startOf(b)));
-
-  return jobs;
+  return [...jobs].sort((a, b) => (startOf(a) ?? '\uffff').localeCompare(startOf(b) ?? '\uffff'));
 });
+
+const filtered = computed(() => jobColumns.apply(listedJobs.value));
 
 const statsDate = ref(null);
 

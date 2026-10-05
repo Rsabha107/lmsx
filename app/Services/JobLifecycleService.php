@@ -424,13 +424,17 @@ class JobLifecycleService
     /**
      * Set a movement's vehicle, driver and supervisor, mirroring them onto its
      * job if one exists. Unlike changeCrew, a null clears that role.
+     * $units, when given, replaces the extra vehicle + driver pairs; null leaves them alone.
+     * $extraSupervisorIds works the same way for the supervisors beyond the lead.
      *
+     * @param  array<int, array{vehicle_id?: ?int, driver_id?: ?int}>|null  $units
+     * @param  array<int, int>|null  $extraSupervisorIds
      * @return bool whether anything actually changed
      */
-    public function assignMovementCrew(Movement $movement, ?int $vehicleId, ?int $driverId, ?int $supervisorId): bool
+    public function assignMovementCrew(Movement $movement, ?int $vehicleId, ?int $driverId, ?int $supervisorId, ?array $units = null, ?array $extraSupervisorIds = null): bool
     {
-        return DB::transaction(function () use ($movement, $vehicleId, $driverId, $supervisorId) {
-            $movement->loadMissing(['vehicle', 'driver', 'fieldSupervisor', 'job']);
+        return DB::transaction(function () use ($movement, $vehicleId, $driverId, $supervisorId, $units, $extraSupervisorIds) {
+            $movement->loadMissing(['vehicle', 'driver', 'fieldSupervisor', 'job', 'units.vehicle', 'units.driver', 'extraSupervisors']);
 
             $vehicleName = fn (?Vehicle $v) => $v ? ($v->code ?? $v->plate_number ?? "#{$v->id}") : 'Unassigned';
             $changes = [];
@@ -449,6 +453,28 @@ class JobLifecycleService
                     .($supervisorId ? (User::find($supervisorId)?->name ?? "#{$supervisorId}") : 'Unassigned');
             }
 
+            $newUnits = $units === null ? null : $this->normaliseUnits($units);
+            $oldUnits = $movement->units->map(fn ($u) => ['vehicle_id' => $u->vehicle_id, 'driver_id' => $u->driver_id])->all();
+            $unitsChanged = $newUnits !== null && $newUnits !== $oldUnits;
+            if ($unitsChanged) {
+                $describe = fn (array $list) => $list === [] ? 'none' : implode(', ', array_map(
+                    fn ($u) => $vehicleName($u['vehicle_id'] ? Vehicle::find($u['vehicle_id']) : null)
+                        .' / '.($u['driver_id'] ? (Driver::find($u['driver_id'])?->name ?? "#{$u['driver_id']}") : 'Unassigned'),
+                    $list,
+                ));
+                $changes[] = 'Extra units '.$describe($oldUnits).' → '.$describe($newUnits);
+            }
+
+            // The lead can't also be listed as an extra.
+            $newSupervisors = $extraSupervisorIds === null ? null : collect($extraSupervisorIds)
+                ->map(fn ($id) => (int) $id)->filter()->reject(fn ($id) => $id === (int) $supervisorId)->unique()->sort()->values()->all();
+            $oldSupervisors = $movement->extraSupervisors->pluck('id')->map(fn ($id) => (int) $id)->sort()->values()->all();
+            $supervisorsChanged = $newSupervisors !== null && $newSupervisors !== $oldSupervisors;
+            if ($supervisorsChanged) {
+                $names = fn (array $ids) => $ids === [] ? 'none' : User::whereIn('id', $ids)->orderBy('name')->pluck('name')->implode(', ');
+                $changes[] = 'Extra supervisors '.$names($oldSupervisors).' → '.$names($newSupervisors);
+            }
+
             if ($changes === []) {
                 return false;
             }
@@ -458,6 +484,19 @@ class JobLifecycleService
                 'driver_id' => $driverId,
                 'field_supervisor_id' => $supervisorId,
             ]);
+
+            if ($unitsChanged) {
+                $movement->units()->delete();
+                foreach ($newUnits as $position => $unit) {
+                    $movement->units()->create($unit + ['position' => $position]);
+                }
+                $movement->unsetRelation('units');
+            }
+
+            if ($supervisorsChanged) {
+                $movement->extraSupervisors()->sync($newSupervisors);
+                $movement->unsetRelation('extraSupervisors');
+            }
 
             $movement->job?->update([
                 'vehicle_id' => $vehicleId,
@@ -475,6 +514,19 @@ class JobLifecycleService
 
             return true;
         });
+    }
+
+    /**
+     * Drop empty rows and keep only the two crew keys, so comparisons are like for like.
+     *
+     * @return array<int, array{vehicle_id: ?int, driver_id: ?int}>
+     */
+    private function normaliseUnits(array $units): array
+    {
+        return array_values(array_filter(array_map(fn ($u) => [
+            'vehicle_id' => isset($u['vehicle_id']) ? (int) $u['vehicle_id'] : null,
+            'driver_id' => isset($u['driver_id']) ? (int) $u['driver_id'] : null,
+        ], $units), fn ($u) => $u['vehicle_id'] || $u['driver_id']));
     }
 
     /**

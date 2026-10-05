@@ -10,6 +10,7 @@
 use App\Http\Controllers\ConflictController;
 use App\Http\Controllers\MovementCrewController;
 use App\Http\Controllers\PlanManagementController;
+use App\Http\Controllers\ResourceScheduleController;
 use Illuminate\Support\Facades\Route;
 
 Route::middleware(['auth'])->group(function () {
@@ -17,6 +18,11 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/crew-assignment', [MovementCrewController::class, 'index'])
         ->middleware('permission:movements.assign-crew')
         ->name('crew-assignment');
+
+    Route::middleware('permission:movements.view')->group(function () {
+        Route::get('/resource-schedule', [ResourceScheduleController::class, 'index'])->name('resource-schedule');
+        Route::get('/resource-schedule/export', [ResourceScheduleController::class, 'export'])->name('resource-schedule.export');
+    });
     
     /*
     |--------------------------------------------------------------------------

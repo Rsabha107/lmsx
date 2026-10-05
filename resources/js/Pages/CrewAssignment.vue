@@ -83,7 +83,8 @@
             </tr>
           </thead>
           <tbody>
-            <tr v-for="mv in filtered" :key="mv.id">
+            <template v-for="mv in filtered" :key="mv.id">
+            <tr class="crew-main-row">
               <td data-label="Movement">
                 <div class="mono">{{ mv.code }}</div>
                 <div class="sub">{{ mv.start ?? '--:--' }}–{{ mv.end ?? '--:--' }} · {{ mv.kind }}</div>
@@ -122,6 +123,45 @@
                 </button>
               </td>
             </tr>
+            <!-- Extra vehicles (each beside its own driver) and extra supervisors, one per row. -->
+            <tr v-for="i in extraRowIndexes(mv)" :key="`${mv.id}-x${i}`" class="crew-unit-row">
+              <td colspan="4" class="unit-label">{{ drafts[mv.id].units[i] ? `Vehicle ${i + 2}` : '' }}</td>
+              <td data-label="Extra vehicle">
+                <select v-if="drafts[mv.id].units[i]" v-model="drafts[mv.id].units[i].vehicle_id" :aria-label="`Extra vehicle ${i + 2} for ${mv.code}`">
+                  <option :value="null">Unassigned</option>
+                  <option v-for="v in vehicles" :key="v.id" :value="v.id">{{ vehicleLabel(v) }}</option>
+                </select>
+              </td>
+              <td data-label="Its driver">
+                <div v-if="drafts[mv.id].units[i]" class="unit-pair">
+                  <select v-model="drafts[mv.id].units[i].driver_id" :aria-label="`Driver of extra vehicle ${i + 2} for ${mv.code}`">
+                    <option :value="null">Unassigned</option>
+                    <option v-for="d in drivers" :key="d.id" :value="d.id">{{ d.name }}</option>
+                  </select>
+                  <button type="button" class="unit-remove" :aria-label="`Remove extra vehicle ${i + 2}`" title="Remove this vehicle" @click="removeUnit(mv, i)">✕</button>
+                </div>
+              </td>
+              <td data-label="Extra supervisor">
+                <div v-if="i < drafts[mv.id].supervisors.length" class="unit-pair">
+                  <select v-model="drafts[mv.id].supervisors[i]" :aria-label="`Extra supervisor ${i + 2} for ${mv.code}`">
+                    <option :value="null">Unassigned</option>
+                    <option v-for="s in supervisors" :key="s.id" :value="s.id">{{ s.name }}</option>
+                  </select>
+                  <button type="button" class="unit-remove" :aria-label="`Remove extra supervisor ${i + 2}`" title="Remove this supervisor" @click="removeSupervisor(mv, i)">✕</button>
+                </div>
+              </td>
+              <td></td>
+            </tr>
+            <tr class="crew-unit-row crew-unit-row--add">
+              <td colspan="4"></td>
+              <td colspan="2">
+                <button type="button" class="unit-add" @click="addUnit(mv)">+ Add vehicle</button>
+              </td>
+              <td colspan="2">
+                <button type="button" class="unit-add" @click="addSupervisor(mv)">+ Add supervisor</button>
+              </td>
+            </tr>
+            </template>
           </tbody>
         </table>
       </div>
@@ -156,6 +196,34 @@
           </select>
         </label>
         <p class="cap-hint">"busy" means already booked on an overlapping movement. You can still save; it will be flagged as a clash.</p>
+
+        <div class="cap-units">
+          <span class="cap-units-title">Extra vehicles</span>
+          <div v-for="(unit, i) in drafts[selected.id].units" :key="i" class="cap-unit">
+            <select v-model="unit.vehicle_id" :aria-label="`Extra vehicle ${i + 2}`">
+              <option :value="null">Vehicle…</option>
+              <option v-for="o in vehicles" :key="o.id" :value="o.id">{{ vehicleLabel(o) }}{{ busyNote('vehicle', o.id, selected) }}</option>
+            </select>
+            <select v-model="unit.driver_id" :aria-label="`Driver of extra vehicle ${i + 2}`">
+              <option :value="null">Driver…</option>
+              <option v-for="o in drivers" :key="o.id" :value="o.id">{{ o.name }}{{ busyNote('driver', o.id, selected) }}</option>
+            </select>
+            <button type="button" class="unit-remove" :aria-label="`Remove extra vehicle ${i + 2}`" @click="removeUnit(selected, i)">✕</button>
+          </div>
+          <button type="button" class="unit-add" @click="addUnit(selected)">+ Add vehicle</button>
+        </div>
+
+        <div class="cap-units">
+          <span class="cap-units-title">Extra supervisors</span>
+          <div v-for="(_, i) in drafts[selected.id].supervisors" :key="i" class="cap-unit cap-unit--single">
+            <select v-model="drafts[selected.id].supervisors[i]" :aria-label="`Extra supervisor ${i + 2}`">
+              <option :value="null">Supervisor…</option>
+              <option v-for="o in supervisors" :key="o.id" :value="o.id">{{ o.name }}{{ busyNote('supervisor', o.id, selected) }}</option>
+            </select>
+            <button type="button" class="unit-remove" :aria-label="`Remove extra supervisor ${i + 2}`" @click="removeSupervisor(selected, i)">✕</button>
+          </div>
+          <button type="button" class="unit-add" @click="addSupervisor(selected)">+ Add supervisor</button>
+        </div>
 
         <div class="cap-actions">
           <button type="button" class="cap-reset" :disabled="!isDirty(selected)" @click="drafts[selected.id] = crewOf(selected)">Reset</button>
@@ -205,8 +273,41 @@ watch(() => page.props.flash, (flash) => {
 const CREW_FIELDS = ['vehicle_id', 'driver_id', 'field_supervisor_id'];
 
 const drafts = ref({});
-const crewOf = (mv) => Object.fromEntries(CREW_FIELDS.map((f) => [f, mv[f] ?? null]));
-const sameCrew = (a, b) => CREW_FIELDS.every((f) => (a?.[f] ?? null) === (b?.[f] ?? null));
+const unitsOf = (list) => (list ?? []).map((u) => ({ vehicle_id: u.vehicle_id ?? null, driver_id: u.driver_id ?? null }));
+const crewOf = (mv) => ({
+  ...Object.fromEntries(CREW_FIELDS.map((f) => [f, mv[f] ?? null])),
+  units: unitsOf(mv.units),
+  supervisors: (mv.extra_supervisors ?? []).map((s) => s.id),
+});
+// Blank extra rows are dropped on save, so they don't count as a change.
+const filledUnits = (list) => unitsOf(list).filter((u) => u.vehicle_id || u.driver_id);
+const filledSupervisors = (list) => [...new Set((list ?? []).filter(Boolean))].sort((a, b) => a - b);
+// A draft holds supervisor ids; a movement row holds {id, name} objects.
+const supervisorIdsOf = (x) => x?.supervisors ?? (x?.extra_supervisors ?? []).map((s) => s.id);
+const sameCrew = (a, b) => CREW_FIELDS.every((f) => (a?.[f] ?? null) === (b?.[f] ?? null))
+  && JSON.stringify(filledUnits(a?.units)) === JSON.stringify(filledUnits(b?.units))
+  && JSON.stringify(filledSupervisors(supervisorIdsOf(a))) === JSON.stringify(filledSupervisors(supervisorIdsOf(b)));
+
+const extraRowIndexes = (mv) => Array.from(
+  { length: Math.max(drafts.value[mv.id].units.length, drafts.value[mv.id].supervisors.length) },
+  (_, i) => i,
+);
+
+function addSupervisor(mv) {
+  drafts.value[mv.id].supervisors.push(null);
+}
+
+function removeSupervisor(mv, index) {
+  drafts.value[mv.id].supervisors.splice(index, 1);
+}
+
+function addUnit(mv) {
+  drafts.value[mv.id].units.push({ vehicle_id: null, driver_id: null });
+}
+
+function removeUnit(mv, index) {
+  drafts.value[mv.id].units.splice(index, 1);
+}
 
 // Saving one row reloads the list; keep unsaved edits on the other rows.
 watch(() => props.movements, (list, oldList = []) => {
@@ -274,7 +375,11 @@ function busyNote(key, resourceId, mv) {
   const mine = spanOf(mv);
   if (!mine) return '';
   const other = props.movements.find((o) => {
-    if (o.id === mv.id || o[field] !== resourceId) return false;
+    if (o.id === mv.id) return false;
+    const extra = key === 'supervisor'
+      ? (o.extra_supervisors ?? []).map((s) => s.id)
+      : (o.units ?? []).map((u) => u[field]);
+    if (o[field] !== resourceId && !extra.includes(resourceId)) return false;
     const span = spanOf(o);
     return span && span[0] < mine[1] && mine[0] < span[1];
   });
@@ -287,7 +392,11 @@ const saving = ref(null);
 
 function save(mv) {
   saving.value = mv.id;
-  router.patch(`/movements/${mv.id}/crew`, drafts.value[mv.id], {
+  router.patch(`/movements/${mv.id}/crew`, {
+    ...drafts.value[mv.id],
+    units: filledUnits(drafts.value[mv.id].units),
+    supervisors: filledSupervisors(drafts.value[mv.id].supervisors),
+  }, {
     preserveScroll: true,
     preserveState: true,
     onError: (errors) => showErrorToast(Object.values(errors)[0] ?? 'Could not save the crew.'),
@@ -465,6 +574,32 @@ const selectedSpan = computed(() => {
   background: var(--surface); color: var(--ink); font-size: 12.5px; text-transform: none; letter-spacing: 0; font-weight: 400;
 }
 .cap-hint { margin: 0; font-size: 11px; color: var(--ink3); }
+.cap-units { display: flex; flex-direction: column; gap: 6px; padding-top: 6px; border-top: 1px solid var(--border); }
+.cap-units-title { font-size: 11px; font-weight: 600; color: var(--ink3); text-transform: uppercase; letter-spacing: 0.05em; }
+.cap-unit { display: grid; grid-template-columns: 1fr 1fr auto; gap: 6px; align-items: center; }
+.cap-unit--single { grid-template-columns: 1fr auto; }
+.unit-pair { display: flex; align-items: center; gap: 4px; }
+.crew-table .unit-pair select { flex: 1; }
+.cap-unit select {
+  min-width: 0; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px;
+  background: var(--surface); color: var(--ink); font-size: 12px;
+}
+/* A movement's lead row, its extra-vehicle rows and the add row read as one block. */
+.crew-table tr.crew-main-row td,
+.crew-table tr.crew-unit-row td { border-bottom: none; }
+.crew-table tr.crew-unit-row td { padding-top: 0; padding-bottom: 6px; }
+.crew-table tr.crew-unit-row--add td { padding-bottom: 10px; border-bottom: 1px solid var(--border); }
+.crew-table tr.crew-unit-row--add:last-child td { border-bottom: none; }
+.unit-label { text-align: right; font-size: 11px; font-weight: 600; color: var(--ink3); text-transform: uppercase; letter-spacing: 0.05em; }
+.unit-add {
+  padding: 0; border: none; background: none;
+  color: var(--accent); font-size: 12px; font-weight: 600; cursor: pointer; text-align: left;
+}
+.unit-remove {
+  flex-shrink: 0; width: 24px; height: 24px; border: 1px solid var(--border); border-radius: 6px;
+  background: var(--surface); color: var(--ink3); font-size: 11px; cursor: pointer;
+}
+.unit-remove:hover { color: var(--danger, #b91c1c); border-color: var(--danger, #b91c1c); }
 .cap-actions { display: flex; justify-content: flex-end; gap: 8px; }
 .cap-reset {
   padding: 6px 12px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface);
@@ -524,5 +659,11 @@ const selectedSpan = computed(() => {
   }
   .crew-table select { min-height: 40px; font-size: 15px; }
   .save-btn { width: 100%; min-height: 40px; }
+  /* Extra-vehicle and add rows continue the movement's card instead of starting new ones. */
+  .crew-table tr.crew-main-row { margin-bottom: 0; border-bottom: none; border-radius: 10px 10px 0 0; }
+  .crew-table tr.crew-unit-row { margin: 0; padding: 0; border-top: none; border-bottom: none; border-radius: 0; }
+  .crew-table tr.crew-unit-row--add { margin-bottom: 10px; padding-bottom: 8px; border-bottom: 1px solid var(--border); border-radius: 0 0 10px 10px; }
+  .crew-table tr.crew-unit-row td:empty { display: none; }
+  .unit-label { text-align: left; }
 }
 </style>

@@ -11,6 +11,7 @@ use App\Models\Event;
 use App\Models\Venue;
 use App\Services\ConflictDetectionService;
 use App\Services\JobGenerationService;
+use App\Services\JobLifecycleService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -103,6 +104,9 @@ class PlanManagementController extends Controller
                 'movements.vehicle',
                 'movements.driver',
                 'movements.fieldSupervisor',
+                'movements.units.vehicle:id,code,plate_number,vehicle_type,capacity',
+                'movements.units.driver:id,name',
+                'movements.extraSupervisors:id,name',
                 'movements.match.team1',
                 'movements.match.team2',
                 'movements.match.venue',
@@ -238,6 +242,9 @@ class PlanManagementController extends Controller
                     'vehicle',
                     'driver',
                     'fieldSupervisor',
+                    'units.vehicle:id,code,plate_number,vehicle_type,capacity',
+                    'units.driver:id,name',
+                    'extraSupervisors:id,name',
                     'match.team1',
                     'match.team2',
                     'match.venue',
@@ -309,6 +316,8 @@ class PlanManagementController extends Controller
                                 'driver_id' => $movement->driver_id,
                                 'field_supervisor' => $movement->fieldSupervisor?->name,
                                 'field_supervisor_id' => $movement->field_supervisor_id,
+                                'units' => $movement->units,
+                                'extra_supervisors' => $movement->extraSupervisors,
                                 'flight_number' => $movement->flight_number,
                                 'notes' => $movement->notes,
                                 'match_id' => $movement->match_id,
@@ -1223,7 +1232,7 @@ class PlanManagementController extends Controller
     /**
      * Update a movement's details (operational fields only).
      */
-    public function updateMovement(Request $request, Movement $movement)
+    public function updateMovement(Request $request, Movement $movement, JobLifecycleService $lifecycle)
     {
         // Only allow updating operational fields
         // Core fields (team, flight, kind, locations, passengers) are read-only if linked to a flight
@@ -1236,9 +1245,22 @@ class PlanManagementController extends Controller
             'field_supervisor_id' => 'nullable|exists:users,id',
             'match_id' => 'nullable|exists:matches,id',
             'notes' => 'nullable|string',
+            'units' => 'sometimes|array|max:10',
+            'units.*.vehicle_id' => 'nullable|integer|exists:vehicles,id',
+            'units.*.driver_id' => 'nullable|integer|exists:drivers,id',
+            'supervisors' => 'sometimes|array|max:10',
+            'supervisors.*' => 'integer|exists:users,id',
         ]);
 
+        $units = $validated['units'] ?? null;
+        $supervisors = $validated['supervisors'] ?? null;
+        unset($validated['units'], $validated['supervisors']);
         $movement->update($validated);
+
+        if ($units !== null || $supervisors !== null) {
+            $movement->refresh();
+            $lifecycle->assignMovementCrew($movement, $movement->vehicle_id, $movement->driver_id, $movement->field_supervisor_id, $units, $supervisors);
+        }
 
         return redirect()->back()->with('success', 'Movement updated successfully.');
     }

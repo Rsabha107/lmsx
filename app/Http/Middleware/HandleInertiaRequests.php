@@ -79,6 +79,7 @@ class HandleInertiaRequests extends Middleware
             'jobs.override',
             'plans.view',
             'plans.manage',
+            'movements.view',
             'movements.assign-crew',
             'fleet.view',
             'fleet.manage',

@@ -29,19 +29,28 @@ class DriverDayStatusService
         $start = $now->copy()->startOfDay();
         $end = $now->copy()->endOfDay();
 
-        $movements = Movement::with('job:id,movement_id,status')
-            ->whereIn('driver_id', $drivers->pluck('id'))
+        $driverIds = $drivers->pluck('id');
+        $movements = Movement::with(['job:id,movement_id,status', 'units:id,movement_id,driver_id'])
+            ->where(fn ($q) => $q->whereIn('driver_id', $driverIds)
+                ->orWhereHas('units', fn ($u) => $u->whereIn('driver_id', $driverIds)))
             ->where('status', '!=', 'cancelled')
             // Includes a run that started last night and ends this morning.
             ->where(fn ($q) => $q->whereBetween('window_start', [$start, $end])
                 ->orWhereBetween('window_end', [$start, $end]))
             ->orderBy('window_start')
             ->get(['id', 'code', 'driver_id', 'from_location', 'to_location', 'window_start', 'window_end', 'status'])
-            ->reject(fn (Movement $m) => $m->job?->status === 'cancelled')
-            ->groupBy('driver_id');
+            ->reject(fn (Movement $m) => $m->job?->status === 'cancelled');
+
+        // A driver on an extra unit is just as busy as the lead driver.
+        $byDriver = [];
+        foreach ($movements as $m) {
+            foreach ($m->resourceIds('driver_id') as $id) {
+                $byDriver[$id][] = $m;
+            }
+        }
 
         return $drivers
-            ->mapWithKeys(fn (Driver $d) => [$d->id => $this->resolve($d, $movements->get($d->id, collect())->values(), $now)])
+            ->mapWithKeys(fn (Driver $d) => [$d->id => $this->resolve($d, collect($byDriver[$d->id] ?? []), $now)])
             ->all();
     }
 

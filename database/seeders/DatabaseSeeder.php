@@ -41,6 +41,9 @@ class DatabaseSeeder extends Seeder
             // Events (teams require an event to belong to)
             EventSeeder::class,
 
+            // Needs events to exist for its event assignments
+            GwcLeadSupervisorSeeder::class,
+
             // Teams
             TeamSeeder::class,
             U17EventTeamsSeeder::class,

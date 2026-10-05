@@ -4,6 +4,8 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use App\Models\GameMatch;
@@ -161,6 +163,44 @@ class Movement extends Model
     public function job(): HasOne
     {
         return $this->hasOne(JobOperation::class);
+    }
+
+    /**
+     * Extra vehicle + driver pairs beyond the lead vehicle_id/driver_id.
+     */
+    public function units(): HasMany
+    {
+        return $this->hasMany(MovementUnit::class)->orderBy('position')->orderBy('id');
+    }
+
+    /**
+     * Supervisors beyond the lead field_supervisor_id; they can work the job too.
+     */
+    public function extraSupervisors(): BelongsToMany
+    {
+        return $this->belongsToMany(User::class, 'movement_supervisors')->withTimestamps()->orderBy('name');
+    }
+
+    /**
+     * Every vehicle, driver or supervisor on the movement, lead first, without duplicates.
+     *
+     * @param  'vehicle_id'|'driver_id'|'field_supervisor_id'|string  $key
+     * @return array<int, int>
+     */
+    public function resourceIds(string $key): array
+    {
+        $ids = [$this->$key];
+        if (in_array($key, ['vehicle_id', 'driver_id'], true)) {
+            foreach ($this->units as $unit) {
+                $ids[] = $unit->$key;
+            }
+        } elseif ($key === 'field_supervisor_id') {
+            foreach ($this->extraSupervisors as $user) {
+                $ids[] = $user->id;
+            }
+        }
+
+        return array_values(array_unique(array_filter(array_map('intval', $ids))));
     }
 
     /**

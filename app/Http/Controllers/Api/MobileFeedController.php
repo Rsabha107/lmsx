@@ -236,7 +236,7 @@ class MobileFeedController extends Controller
         $user = $request->user();
 
         $counts = JobOperation::query()
-            ->when($this->onlyOwnJobs($request), fn ($q) => $q->where('supervisor_id', $user->id))
+            ->when($this->onlyOwnJobs($request), fn ($q) => $q->supervisedBy($user->id))
             ->selectRaw('event_id, count(*) as total, count(distinct team_id) as teams')
             ->groupBy('event_id')
             ->get()

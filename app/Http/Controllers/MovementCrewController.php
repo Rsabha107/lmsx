@@ -41,7 +41,7 @@ class MovementCrewController extends Controller
                 ! $user->can('movements.view-all-functional-areas'),
                 fn ($q) => $q->whereIn('functional_area', $user->functionalAreaCodes()),
             );
-        $crew = ['vehicle:id,code,plate_number,vehicle_type', 'driver:id,name', 'fieldSupervisor:id,name'];
+        $crew = ['vehicle:id,code,plate_number,vehicle_type', 'driver:id,name', 'fieldSupervisor:id,name', 'units.vehicle:id,code,plate_number,vehicle_type', 'units.driver:id,name', 'extraSupervisors:id,name'];
 
         // Same spans and double-booking rules as Planning's Conflicts tab.
         $schedule = $eventId ? $conflicts->crewSchedule((int) $eventId) : [];
@@ -50,6 +50,13 @@ class MovementCrewController extends Controller
             $schedule[$m->id]['end'] ?? $m->window_end ?? $m->window_start?->copy()->addMinutes(30),
         ];
         $vehicleLabel = fn (Movement $m) => $m->vehicle ? ($m->vehicle->code ?? $m->vehicle->plate_number ?? $m->vehicle->vehicle_type) : null;
+        $unitsOf = fn (Movement $m) => $m->units->map(fn ($u) => [
+            'vehicle_id' => $u->vehicle_id,
+            'driver_id' => $u->driver_id,
+            'vehicle' => $u->vehicle ? ($u->vehicle->code ?? $u->vehicle->plate_number ?? $u->vehicle->vehicle_type) : null,
+            'driver' => $u->driver?->name,
+        ])->values()->all();
+        $extraSupervisorsOf = fn (Movement $m) => $m->extraSupervisors->map(fn ($u) => ['id' => $u->id, 'name' => $u->name])->values()->all();
 
         // The day's movements, plus last night's that are still running after midnight.
         $movements = $scoped()
@@ -58,7 +65,7 @@ class MovementCrewController extends Controller
             ->where('window_start', '<', $day->copy()->addDay())
             ->orderBy('window_start')
             ->get()
-            ->map(function (Movement $m) use ($day, $spanOf, $schedule, $vehicleLabel) {
+            ->map(function (Movement $m) use ($day, $spanOf, $schedule, $vehicleLabel, $unitsOf, $extraSupervisorsOf) {
                 [$start, $end] = $spanOf($m);
                 $carryOver = $m->window_start->lt($day);
                 if ($carryOver && ! $end?->gt($day)) {
@@ -84,6 +91,8 @@ class MovementCrewController extends Controller
                     'vehicle' => $vehicleLabel($m),
                     'driver' => $m->driver?->name,
                     'supervisor' => $m->fieldSupervisor?->name,
+                    'units' => $unitsOf($m),
+                    'extra_supervisors' => $extraSupervisorsOf($m),
                     'job_id' => $m->job?->job_id,
                     'job_status' => $m->job?->status,
                     'span_start' => $start?->format('Y-m-d H:i'),
@@ -114,7 +123,7 @@ class MovementCrewController extends Controller
             ->where('window_start', '>=', $weekStart)
             ->where('window_start', '<', $weekStart->copy()->addWeek())
             ->get()
-            ->map(function (Movement $m) use ($spanOf, $schedule, $vehicleLabel) {
+            ->map(function (Movement $m) use ($spanOf, $schedule, $vehicleLabel, $unitsOf, $extraSupervisorsOf) {
                 [$start, $end] = $spanOf($m);
 
                 return [
@@ -129,6 +138,8 @@ class MovementCrewController extends Controller
                     'vehicle' => $vehicleLabel($m),
                     'driver' => $m->driver?->name,
                     'supervisor' => $m->fieldSupervisor?->name,
+                    'units' => $unitsOf($m),
+                    'extra_supervisors' => $extraSupervisorsOf($m),
                     'clashes' => array_keys($schedule[$m->id]['clashes'] ?? []),
                 ];
             })
@@ -159,6 +170,17 @@ class MovementCrewController extends Controller
                     $fail('The selected supervisor cannot run jobs in the mobile app.');
                 }
             }],
+            // Optional so older clients that only send the lead crew leave the extras alone.
+            'units' => ['sometimes', 'array', 'max:10'],
+            'units.*.vehicle_id' => ['nullable', 'integer', 'exists:vehicles,id'],
+            'units.*.driver_id' => ['nullable', 'integer', 'exists:drivers,id'],
+            'supervisors' => ['sometimes', 'array', 'max:10'],
+            'supervisors.*' => ['integer', function (string $attribute, mixed $value, Closure $fail) use ($movement) {
+                $kept = $movement->extraSupervisors()->whereKey($value)->exists();
+                if (! $kept && ! $this->supervisors()->whereKey($value)->exists()) {
+                    $fail('A selected supervisor cannot run jobs in the mobile app.');
+                }
+            }],
         ]);
 
         $changed = $lifecycle->assignMovementCrew(
@@ -166,6 +188,8 @@ class MovementCrewController extends Controller
             $validated['vehicle_id'] ?? null,
             $validated['driver_id'] ?? null,
             $validated['field_supervisor_id'] ?? null,
+            array_key_exists('units', $validated) ? $validated['units'] : null,
+            array_key_exists('supervisors', $validated) ? $validated['supervisors'] : null,
         );
 
         // Saved regardless: a clash is a warning for the planner, not a block.

@@ -234,6 +234,9 @@ class LmsController extends Controller
             'movement.match.team1:id,code,team_name',
             'movement.match.team2:id,code,team_name',
             'movement.checkpointTemplate:id,name',
+            'movement.units.vehicle:id,code,plate_number,vehicle_type,capacity',
+            'movement.units.driver:id,name,phone',
+            'movement.extraSupervisors:id,name',
             'plan:id,code,name',
             'vehicle',
             'driver',
@@ -297,6 +300,15 @@ class LmsController extends Controller
                     'driver' => $job->driver?->name ?? 'Unassigned',
                     'driver_id' => $job->driver_id,
                     'driver_phone' => $job->driver?->phone ?? null,
+                    // Extra vehicle + driver pairs live on the movement and apply to its job.
+                    'units' => ($movement?->units ?? collect())->map(fn ($u) => [
+                        'vehicle' => $u->vehicle ? ($u->vehicle->code ?? $u->vehicle->plate_number ?? $u->vehicle->vehicle_type) : null,
+                        'vehicle_detail' => $u->vehicle ? collect([$u->vehicle->plate_number, $u->vehicle->vehicle_type, $u->vehicle->capacity ? $u->vehicle->capacity.' seats' : null])->filter()->unique()->implode(' · ') : null,
+                        'driver' => $u->driver?->name,
+                        'driver_phone' => $u->driver?->phone,
+                    ])->values()->all(),
+                    'extra_supervisors' => ($movement?->extraSupervisors ?? collect())
+                        ->map(fn ($u) => ['name' => $u->name])->values()->all(),
                     'updated_at' => $job->updated_at?->format('Y-m-d H:i') ?? null,
                     'flight' => \App\Support\FlightSummary::from($movement?->flight),
                     'accommodation' => $movement?->accommodation ? [

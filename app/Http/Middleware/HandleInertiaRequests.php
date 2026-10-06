@@ -95,6 +95,7 @@ class HandleInertiaRequests extends Middleware
         }
 
         $can['setups'] = (bool) $user?->hasRole('admin');
+        $can['mobileApp.download'] = (bool) $user?->hasAnyRole(['admin', 'agency', 'ground_control']);
 
         return $can;
     }

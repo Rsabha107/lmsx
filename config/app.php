@@ -15,6 +15,9 @@ return [
 
     'name' => env('APP_NAME', 'Laravel'),
 
+    // Android app build, relative to the private "local" disk (storage/app/private).
+    'mobile_apk' => env('MOBILE_APK_PATH', 'downloads/NAQLA LMS - V(1.0.0).apk'),
+
     /*
     |--------------------------------------------------------------------------
     | Application Environment

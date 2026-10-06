@@ -6,6 +6,7 @@
  */
 
 use App\Http\Controllers\LmsController;
+use App\Http\Controllers\MobileAppDownloadController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Validation\Rule;
@@ -15,6 +16,10 @@ Route::middleware('auth')->group(function () {
     // Root is the console dashboard, but mobile-only users are redirected to
     // their workflow rather than bounced with a 403.
     Route::get('/', [LmsController::class, 'dashboard'])->name('dashboard');
+
+    Route::get('/downloads/mobile-app', MobileAppDownloadController::class)
+        ->middleware('role:admin|agency|ground_control')
+        ->name('downloads.mobile-app');
 
     // Core Views
     Route::middleware('permission:console.view')->group(function () {

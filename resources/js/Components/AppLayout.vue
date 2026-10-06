@@ -291,6 +291,7 @@ const allNavItems = [
   { label: 'Notifications', route: 'notifications',     icon: 'bell',      can: 'console.view' },
   { label: 'Daily Email',   route: 'email',             icon: 'email',     can: 'console.view' },
   { label: 'Analytics',     route: 'analytics',         icon: 'chart',     can: 'analytics.view' },
+  { label: 'Mobile App',    route: 'downloads/mobile-app', icon: 'download', can: 'mobileApp.download', download: true },
   { 
     type: 'section', 
     label: 'Master', 
@@ -373,7 +374,8 @@ const SidebarLink = (props, { emit }) => {
     }
   }
 
-  return h(Link, {
+  // A file download must be a real request, not an Inertia visit.
+  return h(props.item.download ? 'a' : Link, {
     href,
     class: ['sidebar-link', isActive ? 'sidebar-link--active' : ''],
     title: sidebarMini.value ? props.item.label : undefined,

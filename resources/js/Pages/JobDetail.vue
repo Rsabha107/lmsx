@@ -12,23 +12,39 @@
           <div class="team-badge-lg">{{ job.code }}</div>
           <flag-icon :code="job.country_code" :fallback="job.flag" />
           <h1 style="font-size: 24px; font-weight: 700; color: var(--ink); letter-spacing: -0.4px; margin: 0;">{{ job.team }}</h1>
+          <span v-if="queueJob?.event_name" class="detail-event-badge" :title="queueJob.event_code || ''">{{ queueJob.event_name }}</span>
           <status-pill :tone="statusTone(job.status)" :dot="true" size="sm">
             {{ job.delay ? `+${job.delay}m delayed` : statusLabel(job.status) }}
           </status-pill>
         </div>
-        <div style="font-size: 13px; color: var(--ink3);">{{ job.from }} → {{ job.to }} · {{ job.vehicle }} · {{ job.pax }} passengers</div>
+        <div v-if="queueJob" class="detail-meta">
+          <span v-if="queueJob.kind" class="detail-kind-badge" :class="`detail-kind-badge--${queueJob.kind}`">{{ queueJob.kind }}</span>
+          <span v-if="queueJob.date" class="detail-date">{{ formatDateLong(queueJob.date) }}</span>
+          <span class="detail-subtitle">
+            {{ formatJobFromLocation(queueJob) }} → {{ formatJobToLocation(queueJob) }}<template v-if="queueJob.flight?.flight_number && !queueJob.flight.is_bus"> · ✈ {{ queueJob.flight.flight_number }}</template> · {{ queueJob.vehicle }}<template v-if="queueJob.units?.length"> +{{ queueJob.units.length }}</template> · {{ queueJob.pax }} pax
+          </span>
+        </div>
       </div>
       <div style="display: flex; gap: 8px;">
-        <Button variant="secondary" size="sm">Contact liaison</Button>
-        <Button variant="secondary" size="sm">
-          <template #icon><svg-icon name="bell" :size="14" /></template>
-          Notify team
-        </Button>
         <Button variant="secondary" size="sm" :processing="explaining" @click="explainDelay">
           <template #icon><svg-icon name="ai" :size="14" /></template>
           Explain delay
         </Button>
-        <Button variant="primary" size="sm" @click="openOverride">Override checkpoint</Button>
+        <Button v-if="canOverride" variant="primary" size="sm" @click="showOverride = true">Override</Button>
+        <template v-if="job.can_change_status">
+          <Button v-if="canRevertJob(job)" variant="secondary" size="sm" @click="promptRevert">Mark Scheduled</Button>
+          <Button v-else-if="canStartJob(job)" variant="primary" size="sm" @click="promptStart">Start Job</Button>
+          <Button v-if="canCancelJob(job)" variant="secondary" size="sm" style="color: var(--danger);" @click="promptCancel">Cancel Job</Button>
+          <Button v-if="canReinstateJob(job)" variant="primary" size="sm" @click="promptReinstate">Reinstate</Button>
+        </template>
+      </div>
+    </div>
+
+    <div v-if="job.issues?.length" class="issue-banner">
+      <svg-icon name="warn" :size="16" style="flex-shrink:0;" />
+      <div>
+        <strong>{{ job.issues.length }} open issue{{ job.issues.length === 1 ? '' : 's' }}:</strong>
+        <span v-for="(issue, i) in job.issues" :key="i">{{ i ? ' · ' : ' ' }}{{ issue.label }}<template v-if="issue.notes"> ({{ issue.notes }})</template></span>
       </div>
     </div>
 
@@ -40,7 +56,7 @@
             <div style="font-size: 11px; letter-spacing: 1px; text-transform: uppercase; color: var(--ink3); font-weight: 700;">{{ completedCount }} of {{ checkpoints.length }} complete</div>
             <div style="font-size: 14px; font-weight: 700; color: var(--ink); margin-top: 2px;">Checkpoint timeline</div>
           </div>
-          <Button variant="ghost" size="sm" @click="openOverride">Mark checkpoint</Button>
+          <Button v-if="canOverride" variant="ghost" size="sm" @click="showOverride = true">Mark checkpoint</Button>
         </div>
         <div style="padding: 16px 20px;">
           <div style="display: flex; flex-direction: column;">
@@ -55,12 +71,14 @@
                 <div v-else-if="cp.status === 'active'" style="width: 28px; height: 28px; border-radius: 999px; background: var(--surface); border: 2.5px solid var(--accent); display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
                   <div style="width: 8px; height: 8px; border-radius: 999px; background: var(--accent);"></div>
                 </div>
+                <!-- Skipped: amber ring with arrow -->
+                <div v-else-if="cp.status === 'skipped'" style="width: 28px; height: 28px; border-radius: 999px; background: #fffbeb; border: 2px solid #f59e0b; color: #b45309; display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 13px; font-weight: 700;">⤼</div>
                 <!-- Pending: grey ring -->
                 <div v-else style="width: 28px; height: 28px; border-radius: 999px; background: transparent; border: 2px solid var(--border); flex-shrink: 0;"></div>
                 <!-- Connector line -->
                 <div v-if="i < checkpoints.length - 1" :style="{
                   width: '2px', flex: 1, minHeight: '16px',
-                  background: cp.status === 'done' ? 'var(--ok)' : 'var(--border)',
+                  background: ['done', 'skipped'].includes(cp.status) ? 'var(--ok)' : 'var(--border)',
                 }" />
               </div>
 
@@ -110,13 +128,25 @@
                   </span>
                 </div>
                 <div v-if="cp.status === 'active'" style="font-size: 12px; color: var(--accent); margin-top: 2px;">Awaiting supervisor confirmation</div>
+                <div v-else-if="cp.status === 'done' && (cp.by || cp.was_overridden)" style="font-size: 12px; color: var(--ink3); margin-top: 2px;">
+                  {{ cp.was_overridden ? 'Overridden' : 'Completed' }}<template v-if="cp.by"> by {{ cp.by }}</template>
+                </div>
+                <div v-else-if="cp.status === 'skipped'" style="font-size: 12px; color: #b45309; margin-top: 2px;">
+                  Skipped<template v-if="cp.skipped_by"> by {{ cp.skipped_by }}</template><template v-if="cp.skip_reason"> · {{ cp.skip_reason }}</template>
+                </div>
               </div>
 
               <!-- Time display -->
               <div style="padding: 4px 0; text-align: right; font-family: var(--mono); font-size: 12.5px; white-space: nowrap; flex-shrink: 0; line-height: 20px;">
                 <template v-if="cp.status === 'done' && cp.actual">
                   <span style="text-decoration: line-through; color: var(--ink4); margin-right: 5px;">{{ cp.time }}</span>
-                  <span style="color: #f59e0b; font-weight: 600;">{{ cp.actual }}</span>
+                  <span :style="{ color: cp.delay > 0 ? '#f59e0b' : 'var(--ok)', fontWeight: 600 }">{{ cp.actual }}</span>
+                  <div v-if="cp.delay" :style="{ fontSize: '11px', color: cp.delay > 0 ? '#f59e0b' : 'var(--ok)' }">
+                    {{ cp.delay > 0 ? `+${cp.delay}m late` : `${-cp.delay}m early` }}
+                  </div>
+                </template>
+                <template v-else-if="cp.status === 'skipped'">
+                  <span style="text-decoration: line-through; color: var(--ink4);">{{ cp.time }}</span>
                 </template>
                 <template v-else>
                   <span style="color: var(--ink3);">{{ cp.time }}</span>
@@ -129,6 +159,45 @@
 
       <!-- Right column -->
       <div style="display: flex; flex-direction: column; gap: 14px;">
+        <!-- Job -->
+        <div v-if="jobInfo" class="section-card">
+          <div class="section-header">
+            <div>
+              <div style="font-size: 11px; letter-spacing: 1px; text-transform: uppercase; color: var(--ink3); font-weight: 700;">{{ job.id }}</div>
+              <div style="font-size: 14px; font-weight: 700; color: var(--ink); margin-top: 2px;">Job</div>
+            </div>
+          </div>
+          <dl class="info-list">
+            <dt>Movement</dt>
+            <dd class="info-mono">{{ jobInfo.movement_code || '—' }}</dd>
+            <dt>Plan</dt>
+            <dd>
+              {{ jobInfo.plan_name || '—' }}
+              <span v-if="jobInfo.plan_code" class="info-mono info-muted"> · {{ jobInfo.plan_code }}</span>
+            </dd>
+            <dt>Sequence</dt>
+            <dd>{{ jobInfo.sequence || '—' }}</dd>
+            <dt>Generated</dt>
+            <dd>{{ formatStamp(jobInfo.generated_at) }}</dd>
+            <template v-if="jobInfo.dispatched_at">
+              <dt>Dispatched</dt>
+              <dd>{{ formatStamp(jobInfo.dispatched_at) }}</dd>
+            </template>
+            <template v-if="jobInfo.started_at">
+              <dt>Started</dt>
+              <dd>{{ formatStamp(jobInfo.started_at) }}</dd>
+            </template>
+            <template v-if="jobInfo.completed_at">
+              <dt>Completed</dt>
+              <dd>{{ formatStamp(jobInfo.completed_at) }}</dd>
+            </template>
+            <template v-if="jobInfo.notes">
+              <dt>Notes</dt>
+              <dd class="info-notes">{{ jobInfo.notes }}</dd>
+            </template>
+          </dl>
+        </div>
+
         <!-- Planned vs Actual -->
         <div class="section-card">
           <div class="section-header">
@@ -142,22 +211,20 @@
               <div style="padding: 12px; background: var(--panel); border: 1px solid var(--border); border-radius: 8px;">
                 <div style="font-size: 11px; color: var(--ink3); margin-bottom: 4px;">Departure</div>
                 <div style="font-size: 18px; font-weight: 700; color: var(--ink); font-family: var(--mono); letter-spacing: -0.4px;">{{ job.dep }}</div>
-                <div style="font-size: 11px; color: var(--ok); margin-top: 4px; font-weight: 600;">On time</div>
+                <div :style="{ fontSize: '11px', marginTop: '4px', fontWeight: 600, color: timingTone(job.dep_actual, job.dep_delay) }">{{ timingText(job.dep_actual, job.dep_delay, 'Not started') }}</div>
               </div>
               <div style="padding: 12px; background: var(--panel); border: 1px solid var(--border); border-radius: 8px;">
                 <div style="font-size: 11px; color: var(--ink3); margin-bottom: 4px;">Arrival</div>
                 <div style="font-size: 18px; font-weight: 700; color: var(--ink); font-family: var(--mono); letter-spacing: -0.4px;">{{ job.arr }}</div>
-                <div style="font-size: 11px; color: var(--accent); margin-top: 4px; font-weight: 600;">ETA {{ job.arr }}</div>
+                <div :style="{ fontSize: '11px', marginTop: '4px', fontWeight: 600, color: timingTone(job.arr_actual, job.arr_delay) }">{{ timingText(job.arr_actual, job.arr_delay, 'Planned') }}</div>
               </div>
               <div style="padding: 12px; background: var(--panel); border: 1px solid var(--border); border-radius: 8px;">
                 <div style="font-size: 11px; color: var(--ink3); margin-bottom: 4px;">Passengers</div>
                 <div style="font-size: 18px; font-weight: 700; color: var(--ink); font-family: var(--mono); letter-spacing: -0.4px;">{{ job.pax }}</div>
-                <div style="font-size: 11px; color: var(--ok); margin-top: 4px; font-weight: 600;">All boarded</div>
               </div>
               <div style="padding: 12px; background: var(--panel); border: 1px solid var(--border); border-radius: 8px;">
                 <div style="font-size: 11px; color: var(--ink3); margin-bottom: 4px;">Vehicle</div>
                 <div style="font-size: 18px; font-weight: 700; color: var(--ink); letter-spacing: -0.4px;">{{ job.vehicle }}</div>
-                <div style="font-size: 11px; color: var(--ink3); margin-top: 4px; font-weight: 600;">Assigned</div>
               </div>
             </div>
           </div>
@@ -175,39 +242,19 @@
             <div v-if="crewMembers.length === 0" style="text-align: center; padding: 20px; color: var(--ink3); font-size: 13px;">
               No crew assigned
             </div>
-            <div v-for="crew in crewMembers" :key="crew.name" style="display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--border);">
+            <div v-for="crew in crewMembers" :key="`${crew.role}-${crew.name}`" style="display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--border);">
               <div style="width: 32px; height: 32px; border-radius: 999px; background: var(--accent-soft); color: var(--accent-fg); display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 12px; flex-shrink: 0;">
                 {{ crew.initials }}
               </div>
               <div style="flex: 1;">
                 <div style="font-size: 13px; font-weight: 600; color: var(--ink);">{{ crew.name }}</div>
                 <div style="font-size: 11px; color: var(--ink3);">{{ crew.role }}</div>
+                <div v-if="crew.detail" style="font-size: 11px; color: var(--ink3);">{{ crew.detail }}</div>
               </div>
-              <status-pill :tone="crew.onShift ? 'ok' : 'neutral'" :dot="true" size="sm">
-                {{ crew.onShift ? 'On shift' : 'Off' }}
-              </status-pill>
+              <a v-if="crew.phone" :href="`tel:${crew.phone}`" class="crew-call" :title="`Call ${crew.name}`">
+                <svg-icon name="phone" :size="13" /> {{ crew.phone }}
+              </a>
             </div>
-          </div>
-        </div>
-
-        <!-- Quick Actions -->
-        <div class="section-card">
-          <div class="section-header">
-            <div style="font-size: 14px; font-weight: 700; color: var(--ink);">Quick Actions</div>
-          </div>
-          <div style="padding: 16px 20px; display: flex; flex-direction: column; gap: 6px;">
-            <button class="action-btn">
-              <svg-icon name="phone" :size="16" /> Contact driver
-            </button>
-            <button class="action-btn">
-              <svg-icon name="bell" :size="16" /> Notify team liaison
-            </button>
-            <button class="action-btn action-btn--warn">
-              <svg-icon name="warn" :size="16" /> Flag delay
-            </button>
-            <button class="action-btn">
-              <svg-icon name="refresh" :size="16" /> Reassign vehicle
-            </button>
           </div>
         </div>
       </div>
@@ -243,110 +290,38 @@
       </transition>
     </teleport>
 
-    <!-- Override Modal -->
-    <teleport to="body">
-      <transition name="fade-modal">
-        <div v-if="showOverride" v-dialog="() => (showOverride = false)" class="modal-backdrop" @click.self="showOverride = false">
-          <div class="modal">
-            <div class="modal-header">
-              <div>
-                <div class="modal-eyebrow">PRIVILEGED ACTION · {{ job.id }}</div>
-                <div class="modal-title">Override checkpoint</div>
-              </div>
-              <button class="modal-close-btn" @click="showOverride = false">
-                <svg-icon name="x" :size="16" />
-              </button>
-            </div>
+    <JobOverrideModal
+      v-if="canOverride"
+      :show="showOverride"
+      :job="queueJob"
+      :drivers="drivers"
+      :supervisors="supervisors"
+      :vehicles="vehicles"
+      @close="showOverride = false"
+      @saved="onChanged"
+    />
 
-            <div class="modal-warning">
-              <svg-icon name="warn" :size="16" style="flex-shrink:0;" />
-              <span>Field supervisors normally log checkpoints from the mobile app. Overrides bypass that — they're logged to the audit trail with your name, role, and reason.</span>
-            </div>
+    <ConfirmModal
+      :show="pendingStatus !== null"
+      :title="pendingStatus?.title || ''"
+      :message="pendingStatus?.message || ''"
+      :confirm-label="pendingStatus?.confirmLabel || 'Confirm'"
+      :tone="pendingStatus?.tone || 'primary'"
+      :note="pendingStatus?.note"
+      :processing="statusChanging"
+      @close="pendingStatus = null"
+      @confirm="confirmStatus"
+    />
 
-            <div class="modal-body">
-              <!-- Checkpoint -->
-              <div class="form-field">
-                <label class="form-label-caps">CHECKPOINT</label>
-                <select v-model="overrideCheckpoint" class="form-select">
-                  <option value="" disabled>Choose a checkpoint...</option>
-                  <option v-for="cp in checkpoints" :key="cp.id" :value="cp.id">
-                    {{ cp.label }}{{ cp.status === 'active' ? ` — active (scheduled ${cp.time})` : ` (scheduled ${cp.time})` }}
-                  </option>
-                </select>
-              </div>
-
-              <!-- New State -->
-              <div class="form-field">
-                <label class="form-label-caps">NEW STATE</label>
-                <div class="state-cards">
-                  <button class="state-card" :class="{ 'state-card--done': overrideState === 'done' }" @click="overrideState = 'done'">
-                    <div class="state-icon state-icon--done"><svg-icon name="check" :size="13" /></div>
-                    <div class="state-card-name">Done</div>
-                    <div class="state-card-desc">Confirm completion manually</div>
-                  </button>
-                  <button class="state-card" :class="{ 'state-card--missed': overrideState === 'missed' }" @click="overrideState = 'missed'">
-                    <div class="state-icon state-icon--missed"><svg-icon name="x" :size="13" /></div>
-                    <div class="state-card-name">Missed</div>
-                    <div class="state-card-desc">Mark as failed or not reached</div>
-                  </button>
-                  <button class="state-card" :class="{ 'state-card--skipped': overrideState === 'skipped' }" @click="overrideState = 'skipped'">
-                    <div class="state-icon state-icon--skipped"><svg-icon name="refresh" :size="13" /></div>
-                    <div class="state-card-name">Skipped</div>
-                    <div class="state-card-desc">No longer applies to this job</div>
-                  </button>
-                </div>
-              </div>
-
-              <!-- Actual Time + Variance -->
-              <div class="time-variance-row">
-                <div class="form-field" style="flex:1;">
-                  <label class="form-label-caps">ACTUAL TIME</label>
-                  <input v-model="overrideTime" type="time" class="form-input" />
-                  <div class="form-hint">When it actually happened</div>
-                </div>
-                <div class="form-field" style="flex:1;">
-                  <label class="form-label-caps">VARIANCE VS. PLANNED{{ selectedCheckpoint ? ` (${selectedCheckpoint.time})` : '' }}</label>
-                  <div class="variance-box">{{ varianceText }}</div>
-                </div>
-              </div>
-
-              <!-- Reason -->
-              <div class="form-field">
-                <label class="form-label-caps">REASON (REQUIRED)</label>
-                <select v-model="overrideReason" class="form-select">
-                  <option value="" disabled>Select a reason...</option>
-                  <option value="no_signal">No signal</option>
-                  <option value="device_issue">Device issue</option>
-                  <option value="manual_entry">Manual entry required</option>
-                  <option value="late_report">Late report</option>
-                  <option value="other">Other</option>
-                </select>
-              </div>
-
-              <!-- Notes -->
-              <textarea v-model="overrideNote" rows="2" class="form-textarea" placeholder="Additional notes (optional)" />
-
-              <!-- Notify -->
-              <label class="notify-row">
-                <input type="checkbox" v-model="overrideNotify" class="notify-check" />
-                <div>
-                  <div class="notify-title">Notify liaison and supervisor</div>
-                  <div class="notify-desc">Push the override to field devices so everyone stays in sync</div>
-                </div>
-              </label>
-            </div>
-
-            <div class="modal-footer">
-              <div class="modal-signed">Signed as <strong>Logistics Manager</strong></div>
-              <div style="display:flex; gap:8px;">
-                <Button variant="secondary" size="sm" @click="showOverride = false">Cancel</Button>
-                <Button variant="primary" size="sm" @click="saveOverride" :disabled="!overrideCheckpoint || !overrideReason">Override &amp; log</Button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </transition>
-    </teleport>
+    <ConfirmModal
+      :show="showStatusError"
+      title="Cannot Change Job Status"
+      :message="statusErrorMessage"
+      confirm-label="Got it"
+      hide-cancel
+      @close="showStatusError = false"
+      @confirm="showStatusError = false"
+    />
 
     <!-- AI Explain Delay Modal -->
     <teleport to="body">
@@ -381,27 +356,69 @@
 <script setup>
 import { useStatusLabels } from '../Composables/useStatusLabels';
 import { ref, computed } from 'vue';
-import { Link as InertiaLink } from '@inertiajs/vue3';
+import { Link as InertiaLink, router } from '@inertiajs/vue3';
 import AppLayout from '../Components/AppLayout.vue';
 import StatusPill from '../Components/StatusPill.vue';
 import SvgIcon from '../Components/SvgIcon.vue';
 import Button from '../Components/Button.vue';
 import FlagIcon from '../Components/FlagIcon.vue';
 import MarkdownAnswer from '../Components/MarkdownAnswer.vue';
+import ConfirmModal from '../Components/ConfirmModal.vue';
+import JobOverrideModal from '../Components/JobOverrideModal.vue';
+import { useJobStatusActions, canStartJob, canRevertJob, canCancelJob, canReinstateJob } from '../Composables/useJobStatusActions';
+import { formatJobFromLocation, formatJobToLocation } from '../Composables/useJobLocations';
 
 const props = defineProps({
   job: { type: Object, default: () => ({}) },
   checkpoints: { type: Array, default: () => [] },
   crewMembers: { type: Array, default: () => [] },
+  queueJob: { type: Object, default: null },
+  drivers: { type: Array, default: () => [] },
+  supervisors: { type: Array, default: () => [] },
+  vehicles: { type: Array, default: () => [] },
 });
 
 const showOverride = ref(false);
-const overrideCheckpoint = ref('');
-const overrideState = ref('done');
-const overrideTime = ref('');
-const overrideReason = ref('');
-const overrideNote = ref('');
-const overrideNotify = ref(true);
+const canOverride = computed(() => props.job.can_override && props.job.status !== 'cancelled');
+
+function onChanged() {
+  showOverride.value = false;
+  router.reload();
+}
+
+const {
+  pending: pendingStatus,
+  changing: statusChanging,
+  showError: showStatusError,
+  errorMessage: statusErrorMessage,
+  promptStart,
+  promptRevert,
+  promptCancel,
+  promptReinstate,
+  confirm: confirmStatus,
+} = useJobStatusActions(() => props.job, onChanged);
+
+const formatDate = (key) => new Date(`${key}T00:00:00`).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
+
+const jobInfo = computed(() => props.queueJob?.job_info ?? null);
+
+// Parsed as text: Date() reads a bare 'YYYY-MM-DD' as UTC and can show the previous day.
+const formatDateLong = (key) => new Date(`${key}T00:00:00`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+
+// Server sends local "YYYY-MM-DD HH:MM"; built by hand so no timezone shift is applied.
+function formatStamp(value) {
+  const m = value?.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}:\d{2})/);
+  if (!m) return '—';
+  return `${formatDate(`${m[1]}-${m[2]}-${m[3]}`)} · ${m[4]}`;
+}
+
+function timingText(actual, delay, fallback) {
+  if (!actual) return fallback;
+  if (!delay) return `Actual ${actual} · on time`;
+  return `Actual ${actual} · ${delay > 0 ? `+${delay}m late` : `${-delay}m early`}`;
+}
+
+const timingTone = (actual, delay) => (!actual ? 'var(--ink3)' : delay > 0 ? '#f59e0b' : 'var(--ok)');
 
 // Photo/Signature viewer state
 const showPhotoViewer = ref(false);
@@ -436,27 +453,13 @@ function closeSignatureViewer() {
   currentEvidenceName.value = null;
 }
 
-const selectedCheckpoint = computed(() =>
-  props.checkpoints.find(cp => cp.id === overrideCheckpoint.value) ?? null
-);
-
-const varianceText = computed(() => {
-  if (!overrideTime.value || !selectedCheckpoint.value?.time) return '—';
-  const [ah, am] = overrideTime.value.split(':').map(Number);
-  const [ph, pm] = selectedCheckpoint.value.time.split(':').map(Number);
-  const diff = (ah * 60 + am) - (ph * 60 + pm);
-  if (diff === 0) return 'On time';
-  const abs = Math.abs(diff);
-  return diff < 0 ? `${abs} min early` : `${abs} min late`;
-});
-
 const completedCount = computed(() => 
   props.checkpoints.filter(cp => cp.status === 'done').length
 );
 
 // This page shows the job's stored status, so it needs every stored value's tone.
 const statusMap = {
-  'pending': { tone: 'primary' },
+  'pending': { tone: 'info' },
   'dispatched': { tone: 'primary' },
   'in-progress': { tone: 'live', label: 'In Progress' },
   'completed': { tone: 'ok' },
@@ -509,28 +512,6 @@ async function explainDelay() {
     explaining.value = false;
   }
 }
-
-function openOverride() {
-  overrideCheckpoint.value = '';
-  overrideState.value = 'done';
-  overrideTime.value = '';
-  overrideReason.value = '';
-  overrideNote.value = '';
-  overrideNotify.value = true;
-  showOverride.value = true;
-}
-
-function saveOverride() {
-  console.log('Saving override:', {
-    checkpoint: overrideCheckpoint.value,
-    state: overrideState.value,
-    time: overrideTime.value,
-    reason: overrideReason.value,
-    note: overrideNote.value,
-    notify: overrideNotify.value,
-  });
-  showOverride.value = false;
-}
 </script>
 
 <style scoped>
@@ -552,9 +533,22 @@ function saveOverride() {
   color: var(--ink);
 }
 
+.issue-banner {
+  display: flex; align-items: flex-start; gap: 8px; margin-bottom: 16px; padding: 10px 14px;
+  border-radius: 8px; background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; font-size: 13px;
+}
+
+.crew-call {
+  display: inline-flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 600;
+  color: var(--accent); text-decoration: none; white-space: nowrap;
+}
+.crew-call:hover { text-decoration: underline; }
+
 .team-badge-lg {
-  width: 42px;
+  min-width: 42px;
   height: 42px;
+  padding: 0 8px;
+  white-space: nowrap;
   border-radius: 8px;
   background: var(--accent-soft);
   color: var(--accent-fg);
@@ -572,6 +566,34 @@ function saveOverride() {
   border-radius: 10px;
   overflow: hidden;
 }
+
+.info-list {
+  display: grid; grid-template-columns: max-content 1fr; gap: 6px 14px;
+  margin: 0; padding: 16px 20px; font-size: 12.5px;
+}
+.info-list dt { color: var(--ink3); font-weight: 500; }
+.info-list dd { margin: 0; color: var(--ink); min-width: 0; overflow-wrap: anywhere; }
+.info-mono { font-family: var(--mono, ui-monospace, monospace); font-size: 11.5px; }
+.info-muted { color: var(--ink3); }
+.info-notes { white-space: pre-wrap; }
+
+.detail-meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.detail-event-badge {
+  font-size: 10px; font-weight: 700; color: var(--accent); background: var(--accent-soft, var(--accent-ring));
+  padding: 2px 8px; border-radius: 4px; text-transform: uppercase; letter-spacing: 0.5px;
+}
+.detail-kind-badge {
+  font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 4px;
+  text-transform: capitalize; letter-spacing: 0.3px; flex-shrink: 0;
+}
+.detail-kind-badge--arrival { background: var(--ok-soft); color: var(--ok); }
+.detail-kind-badge--departure { background: var(--danger-soft); color: var(--danger); }
+.detail-kind-badge--transfer { background: var(--accent-soft); color: var(--accent-fg); }
+.detail-kind-badge--match { background: #fef3c7; color: #92400e; border: 1px solid #fbbf24; }
+.detail-kind-badge--training { background: #ede9fe; color: #6d28d9; }
+.detail-kind-badge--daily_ops { background: var(--panel); color: var(--ink3); }
+.detail-date { font-size: 11px; color: var(--ink3); font-weight: 600; white-space: nowrap; }
+.detail-subtitle { font-size: 13px; color: var(--ink3); }
 
 .section-header {
   display: flex;
@@ -783,7 +805,7 @@ function saveOverride() {
 /* State cards */
 .state-cards {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(2, 1fr);
   gap: 8px;
 }
 

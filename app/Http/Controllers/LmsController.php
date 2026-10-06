@@ -224,33 +224,56 @@ class LmsController extends Controller
         $settings = app(\App\Services\SettingsService::class);
 
         // Build job query - scoped to the active event, if one is selected
-        $jobsQuery = JobOperation::with([
-            'event',
-            'movement.team',
-            'movement.flight.originAirport',
-            'movement.flight.destinationAirport',
-            'movement.accommodation',
-            'movement.match.venue',
-            'movement.match.team1:id,code,team_name',
-            'movement.match.team2:id,code,team_name',
-            'movement.checkpointTemplate:id,name',
-            'movement.units.vehicle:id,code,plate_number,vehicle_type,capacity',
-            'movement.units.driver:id,name,phone',
-            'movement.extraSupervisors:id,name',
-            'plan:id,code,name',
-            'vehicle',
-            'driver',
-            'supervisor',
-            'checkpoints.completedBy',
-            'checkpoints.skippedBy',
-            'checkpoints.checkpoint',
-            'issues.reporter',
-        ])
+        $jobsQuery = JobOperation::with(self::JOB_ROW_RELATIONS)
             ->when($activeEventId, fn ($q) => $q->where('event_id', $activeEventId));
 
         $jobs = $jobsQuery->orderBy('created_at', 'desc')
             ->get()
-            ->map(function ($job) use ($settings) {
+            ->map(fn ($job) => $this->jobRow($job, $settings));
+
+        return Inertia::render('Jobs', [
+            'schedule' => $jobs,
+            ...$this->crewPools(),
+        ]);
+    }
+
+    /** What a Jobs Queue row reads; loaded up front so a full queue isn't N+1. */
+    private const JOB_ROW_RELATIONS = [
+        'event',
+        'movement.team',
+        'movement.flight.originAirport',
+        'movement.flight.destinationAirport',
+        'movement.accommodation',
+        'movement.match.venue',
+        'movement.match.team1:id,code,team_name',
+        'movement.match.team2:id,code,team_name',
+        'movement.checkpointTemplate:id,name',
+        'movement.units.vehicle:id,code,plate_number,vehicle_type,capacity',
+        'movement.units.driver:id,name,phone',
+        'movement.extraSupervisors:id,name',
+        'plan:id,code,name',
+        'vehicle',
+        'driver',
+        'supervisor',
+        'checkpoints.completedBy',
+        'checkpoints.skippedBy',
+        'checkpoints.checkpoint',
+        'issues.reporter',
+    ];
+
+    /** Same pools the Planning movement editor offers, for crew changes in the override modal. */
+    private function crewPools(): array
+    {
+        return [
+            'drivers' => Driver::select('id', 'name')->orderBy('name')->get(),
+            'supervisors' => User::select('id', 'name')->orderBy('name')->get(),
+            'vehicles' => Vehicle::select('id', 'code', 'plate_number', 'vehicle_type', 'capacity')->orderBy('code')->get(),
+        ];
+    }
+
+    /** One job as the Jobs Queue (and its override modal) reads it. */
+    private function jobRow(JobOperation $job, \App\Services\SettingsService $settings): array
+    {
                 $movement = $job->movement;
                 $team = $movement?->team;
                 // Checkpoints of a flight job are re-timed from these when the flight moves.
@@ -289,6 +312,7 @@ class LmsController extends Controller
                         $job->vehicle->capacity ? $job->vehicle->capacity.' seats' : null,
                     ])->filter()->unique()->implode(' · ') : null,
                     'status' => $job->status,
+                    'reinstate_to' => $job->reinstateStatus(),
                     'delay' => $movement?->delay_minutes,
                     'jobId' => $job->job_id,
                     'source' => $movement?->source ?? 'manual',
@@ -407,15 +431,6 @@ class LmsController extends Controller
                         ];
                     })->toArray(),
                 ];
-            });
-
-        return Inertia::render('Jobs', [
-            'schedule' => $jobs,
-            // Same pools the Planning movement editor offers, for crew changes in the override modal.
-            'drivers' => Driver::select('id', 'name')->orderBy('name')->get(),
-            'supervisors' => User::select('id', 'name')->orderBy('name')->get(),
-            'vehicles' => Vehicle::select('id', 'code', 'plate_number', 'vehicle_type', 'capacity')->orderBy('code')->get(),
-        ]);
     }
 
     /**
@@ -664,81 +679,83 @@ class LmsController extends Controller
         ]);
     }
 
-    public function jobDetail(string $id): Response|RedirectResponse
+    public function jobDetail(Request $request, string $id): Response|RedirectResponse
     {
         $jobOperation = JobOperation::with([
-            'event',
             'movement.team',
             'movement.flight',
-            'movement',
+            'movement.units.vehicle:id,code,plate_number,vehicle_type,capacity',
+            'movement.units.driver:id,name,phone',
+            'movement.extraSupervisors:id,name',
             'vehicle',
             'driver',
             'supervisor',
             'checkpoints.completedBy',
-            'checkpoints.skippedBy'
-        ])->find($id);
+            'checkpoints.skippedBy',
+            'issues' => fn ($q) => $q->whereNull('resolved_at'),
+        ])->where('job_id', $id)->orWhere('id', $id)->first();
 
-        // If job not found, redirect to jobs page
         if (!$jobOperation) {
             return redirect()->route('jobs')->with('error', 'Job not found');
         }
 
-        $movement = $jobOperation->movement;
-        $team = $movement->team ?? null;
+        $this->authorize('view', $jobOperation);
 
-        // Transform job data for frontend
+        $movement = $jobOperation->movement;
+        $team = $movement?->team;
+        $checkpoints = $jobOperation->checkpoints->sortBy('order')->values();
+        $first = $checkpoints->first();
+        $last = $checkpoints->last();
+        $vehicleName = fn ($v) => $v ? ($v->code ?? $v->plate_number ?? $v->vehicle_type) : null;
+
         $job = [
-            'id' => $jobOperation->id,
-            'code' => $team ? $team->code : 'N/A',
-            'team' => $team ? $team->team_name : 'Unknown Team',
+            'id' => $jobOperation->job_id ?? 'J-'.$jobOperation->id,
+            'db_id' => $jobOperation->id,
+            'code' => $team?->code ?? 'N/A',
+            'team' => $team?->team_name ?? 'Unknown Team',
             'country_code' => $team?->country_id,
             'flag' => $team?->flag,
+            'kind' => $movement?->kind,
             'status' => $jobOperation->status,
-            'delay' => null, // Calculate delay if needed
-            'from' => $movement->origin ?? 'Unknown',
-            'to' => $movement->destination ?? 'Unknown',
-            'vehicle' => $jobOperation->vehicle ? $jobOperation->vehicle->code : 'N/A',
-            'pax' => $movement->passenger_count ?? 0,
-            'dep' => $movement->window_start ? \Carbon\Carbon::parse($movement->window_start)->format('H:i') : 'N/A',
-            'arr' => $movement->flight?->scheduled_at?->format('H:i') ?? ($movement->window_start ? \Carbon\Carbon::parse($movement->window_start)->format('H:i') : 'N/A'),
+            'reinstate_to' => $jobOperation->reinstateStatus(),
+            'delay' => $movement?->delay_minutes ?: null,
+            'from' => $movement?->from_location ?? 'Unknown',
+            'to' => $movement?->to_location ?? 'Unknown',
+            'vehicle' => $vehicleName($jobOperation->vehicle) ?? 'Unassigned',
+            'pax' => $movement?->passengers ?? $movement?->flight?->party_size_total ?? $team?->party_size_total ?? 0,
+            'date' => ($first?->scheduled_at ?? $movement?->window_start)?->format('Y-m-d'),
+            // Planned = first/last checkpoint schedule; actual = when they were completed.
+            'dep' => ($first?->scheduled_at ?? $movement?->window_start)?->format('H:i') ?? '--:--',
+            'dep_actual' => $first?->completed_at?->format('H:i'),
+            'dep_delay' => $first?->delay_minutes,
+            'arr' => ($last?->scheduled_at ?? $movement?->window_end)?->format('H:i') ?? '--:--',
+            'arr_actual' => $jobOperation->status === 'completed' ? $last?->completed_at?->format('H:i') : null,
+            'arr_delay' => $jobOperation->status === 'completed' ? $last?->delay_minutes : null,
+            'flight' => $movement?->flight?->flight_number,
+            'issues' => $jobOperation->issues->map(fn ($i) => ['label' => $i->label(), 'severity' => $i->severity, 'notes' => $i->notes])->values(),
+            'can_override' => $request->user()->can('override', $jobOperation),
+            'can_change_status' => $request->user()->can('update', $jobOperation),
         ];
 
-        // Transform checkpoints for frontend
-        $checkpoints = $jobOperation->checkpoints->map(function ($cp, $index) use ($jobOperation, $movement) {
-            // Determine status. A skipped checkpoint is settled, not outstanding,
-            // so it counts towards the position of the next active one.
-            $settledCount = $jobOperation->checkpoints->whereIn('state', ['done', 'skipped'])->count();
-            $status = 'pending';
-            if ($cp->state === 'done') {
-                $status = 'done';
-            } elseif ($cp->state === 'skipped') {
-                $status = 'skipped';
-            } elseif ($index === $settledCount) {
-                // Next unsettled checkpoint is active
-                $status = 'active';
-            }
-
-            // Calculate estimated time based on checkpoint position
-            $totalCheckpoints = $jobOperation->checkpoints->count();
-            $scheduledTime = '--:--';
-
-            if ($movement->window_start && $movement->window_end && $totalCheckpoints > 0) {
-                $departure = \Carbon\Carbon::parse($movement->window_start);
-                $arrival = \Carbon\Carbon::parse($movement->window_end);
-                $totalMinutes = $departure->diffInMinutes($arrival);
-
-                // Distribute checkpoints evenly across the journey
-                $minutesPerCheckpoint = $totalMinutes / ($totalCheckpoints + 1);
-                $estimatedTime = $departure->copy()->addMinutes($minutesPerCheckpoint * ($index + 1));
-                $scheduledTime = $estimatedTime->format('H:i');
-            }
+        $settledCount = $checkpoints->whereIn('state', ['done', 'skipped'])->count();
+        $checkpointRows = $checkpoints->map(function ($cp, $index) use ($settledCount) {
+            // A skipped checkpoint is settled, so it counts towards the position of the next active one.
+            $status = match (true) {
+                $cp->state === 'done' => 'done',
+                $cp->state === 'skipped' => 'skipped',
+                $index === $settledCount => 'active',
+                default => 'pending',
+            };
 
             return [
                 'id' => $cp->id,
                 'label' => $cp->name,
                 'status' => $status,
-                'time' => $scheduledTime,
-                'actual' => $cp->completed_at ? \Carbon\Carbon::parse($cp->completed_at)->format('H:i') : null,
+                'time' => $cp->scheduled_at?->format('H:i') ?? '--:--',
+                'actual' => $cp->completed_at?->format('H:i'),
+                'delay' => $cp->delay_minutes,
+                'by' => $cp->completedBy?->name,
+                'was_overridden' => (bool) $cp->was_overridden,
                 'skip_reason' => $cp->skip_reason,
                 'skipped_at' => $cp->skipped_at?->format('H:i'),
                 'skipped_by' => $cp->skippedBy?->name,
@@ -751,32 +768,42 @@ class LmsController extends Controller
             ];
         });
 
-        // Build crew members array
-        $crewMembers = [];
+        $person = fn ($name, $role, $phone = null, $detail = null) => [
+            'name' => $name,
+            'role' => $role,
+            'phone' => $phone,
+            'detail' => $detail,
+            'initials' => $this->getInitials($name),
+        ];
+        $vehicleDetail = fn ($v) => $v ? (collect([$v->plate_number, $v->vehicle_type, $v->capacity ? $v->capacity.' seats' : null])
+            ->filter()->unique()->implode(' · ') ?: null) : null;
 
-        if ($jobOperation->supervisor) {
-            $crewMembers[] = [
-                'name' => $jobOperation->supervisor->name,
-                'role' => 'Supervisor',
-                'initials' => $this->getInitials($jobOperation->supervisor->name),
-                'onShift' => true, // Could be determined from actual shift data
-            ];
-        }
+        $crewMembers = collect()
+            ->when($jobOperation->supervisor, fn ($c) => $c->push($person($jobOperation->supervisor->name, 'Lead supervisor')))
+            ->merge(($movement?->extraSupervisors ?? collect())->map(fn ($u) => $person($u->name, 'Supervisor')))
+            ->when($jobOperation->driver, fn ($c) => $c->push($person(
+                $jobOperation->driver->name,
+                'Driver'.($vehicleName($jobOperation->vehicle) ? ' · '.$vehicleName($jobOperation->vehicle) : ''),
+                $jobOperation->driver->phone,
+                $vehicleDetail($jobOperation->vehicle),
+            )))
+            ->merge(($movement?->units ?? collect())->filter(fn ($u) => $u->driver)->map(fn ($u) => $person(
+                $u->driver->name,
+                'Driver'.($vehicleName($u->vehicle) ? ' · '.$vehicleName($u->vehicle) : ''),
+                $u->driver->phone,
+                $vehicleDetail($u->vehicle),
+            )))
+            ->values();
 
-        if ($jobOperation->driver) {
-            $vehicleCode = $jobOperation->vehicle ? $jobOperation->vehicle->code : '';
-            $crewMembers[] = [
-                'name' => $jobOperation->driver->name,
-                'role' => 'Driver' . ($vehicleCode ? " · {$vehicleCode}" : ''),
-                'initials' => $this->getInitials($jobOperation->driver->name),
-                'onShift' => true, // Could be determined from actual shift data
-            ];
-        }
+        $jobOperation->load(self::JOB_ROW_RELATIONS);
 
         return Inertia::render('JobDetail', [
             'job' => $job,
-            'checkpoints' => $checkpoints,
+            'checkpoints' => $checkpointRows,
             'crewMembers' => $crewMembers,
+            // The Jobs Queue row, for the shared override modal.
+            'queueJob' => $this->jobRow($jobOperation, app(\App\Services\SettingsService::class)),
+            ...($job['can_override'] ? $this->crewPools() : []),
         ]);
     }
 
@@ -1285,6 +1312,24 @@ class LmsController extends Controller
             'message' => "Job status updated to {$to}",
             'status' => $to,
         ]);
+    }
+
+    public function reinstateJob(Request $request, string $jobId): JsonResponse
+    {
+        $job = JobOperation::where('job_id', $jobId)->first()
+            ?? (str_starts_with($jobId, 'J-') ? JobOperation::find(substr($jobId, 2)) : null)
+            ?? JobOperation::find($jobId)
+            ?? abort(404, 'Job not found');
+
+        $this->authorize('update', $job);
+
+        try {
+            $job = app(JobLifecycleService::class)->reinstate($job, $request->user());
+        } catch (\RuntimeException $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 422);
+        }
+
+        return response()->json(['success' => true, 'message' => 'Job reinstated', 'status' => $job->status]);
     }
 
     /**

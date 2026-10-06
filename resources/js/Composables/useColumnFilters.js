@@ -8,13 +8,14 @@ function compare(a, b) {
 }
 
 /**
- * Excel-style header autofilters: one sort column plus a value whitelist per column.
+ * Excel-style header autofilters: multi-level sort plus a value whitelist per column.
+ * Sorts compound in the order applied: the first sorted column wins, later ones break ties.
  *
  * columns: { key: { value?: row => string (what the filter lists), sort?: row => string|number|null } }
  * Blank sort values always go last, whichever way the column is sorted.
  */
 export function useColumnFilters(columns) {
-  const sort = ref(null); // { key, dir: 'asc' | 'desc' }
+  const sort = ref([]); // [{ key, dir: 'asc' | 'desc' }], highest priority first
   const filters = reactive({}); // key -> Set of allowed values
 
   const valueOf = (key, row) => columns[key].value?.(row) ?? '';
@@ -31,20 +32,32 @@ export function useColumnFilters(columns) {
 
   function apply(rows) {
     const out = filterRows(rows);
-    if (!sort.value) return out;
+    if (!sort.value.length) return out;
 
-    const { key, dir } = sort.value;
-    const sign = dir === 'desc' ? -1 : 1;
     return [...out].sort((a, b) => {
-      const x = sortOf(key, a);
-      const y = sortOf(key, b);
-      if (isBlank(x) || isBlank(y)) return isBlank(x) === isBlank(y) ? 0 : isBlank(x) ? 1 : -1;
-      return sign * compare(x, y);
+      for (const { key, dir } of sort.value) {
+        const x = sortOf(key, a);
+        const y = sortOf(key, b);
+        const diff = isBlank(x) || isBlank(y)
+          ? (isBlank(x) === isBlank(y) ? 0 : isBlank(x) ? 1 : -1)
+          : (dir === 'desc' ? -1 : 1) * compare(x, y);
+        if (diff) return diff;
+      }
+      return 0;
     });
   }
 
   function setSort(key, dir) {
-    sort.value = dir ? { key, dir } : null;
+    const rest = sort.value.filter((s) => s.key !== key);
+    const at = sort.value.findIndex((s) => s.key === key);
+    if (!dir) sort.value = rest;
+    else if (at === -1) sort.value = [...rest, { key, dir }];
+    else sort.value = sort.value.map((s) => (s.key === key ? { key, dir } : s));
+  }
+
+  function sortOfColumn(key) {
+    const at = sort.value.findIndex((s) => s.key === key);
+    return at === -1 ? null : { dir: sort.value[at].dir, rank: at + 1 };
   }
 
   function setFilter(key, allowed) {
@@ -53,11 +66,11 @@ export function useColumnFilters(columns) {
   }
 
   function clearAll() {
-    sort.value = null;
+    sort.value = [];
     for (const key of Object.keys(filters)) delete filters[key];
   }
 
-  const active = computed(() => !!sort.value || Object.keys(filters).length > 0);
+  const active = computed(() => sort.value.length > 0 || Object.keys(filters).length > 0);
 
   // Like Excel, a column lists the values left by the *other* columns' filters.
   // countBy counts distinct keys per value (e.g. plans per date); without it, rows are counted.
@@ -76,5 +89,5 @@ export function useColumnFilters(columns) {
       .map(([value, info]) => ({ value, count: info.keys.size }));
   }
 
-  return { sort, filters, apply, options, setSort, setFilter, clearAll, active };
+  return { sort, filters, apply, options, setSort, sortOfColumn, setFilter, clearAll, active };
 }

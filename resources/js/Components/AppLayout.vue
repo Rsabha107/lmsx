@@ -284,6 +284,7 @@ const allNavItems = [
   { label: 'Schedule',      route: 'schedule',          icon: 'schedule',  can: 'console.view' },
   { label: 'Planning',      route: 'plans',             icon: 'plans',     can: 'plans.view' },
   { label: 'Jobs Queue',    route: 'jobs',              icon: 'jobs',      can: 'console.view' },
+  { label: 'Day Board',     route: 'day-board',         icon: 'clock',     can: 'jobs.view' },
   { label: 'Crew Assignment', route: 'crew-assignment', icon: 'team',      can: 'movements.assign-crew' },
   { label: 'Jobs (Mobile)', route: 'jobs/mobile',       icon: 'phone',     can: 'jobs.view', flag: 'jobsMobileMenu' },
   { label: 'Matches',       route: 'matches',           icon: 'trophy',    can: 'fleet.view' },
@@ -337,6 +338,7 @@ const allMobileNavItems = [
   { label: 'Dashboard', route: 'dashboard',  icon: 'dashboard', can: 'console.view' },
   { label: 'Schedule',  route: 'schedule',   icon: 'schedule',  can: 'console.view' },
   { label: 'Jobs',      route: 'jobs/mobile', icon: 'jobs',     can: 'jobs.view', flag: 'jobsMobileMenu' },
+  { label: 'Day',       route: 'day-board',  icon: 'clock',     can: 'jobs.view' },
   { label: 'Tracker',  route: 'tracker',    icon: 'tracker',   can: 'console.view' },
 ];
 

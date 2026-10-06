@@ -41,7 +41,9 @@ class JobOperationPolicy
      */
     public function override(User $user, JobOperation $job): bool
     {
-        return $this->update($user, $job) && $user->can('jobs.override');
+        return $job->status !== 'cancelled'
+            && $this->update($user, $job)
+            && $user->can('jobs.override');
     }
 
     /** Deleting discards the job's field record, so it needs planning rights too. */

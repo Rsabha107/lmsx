@@ -4,7 +4,7 @@
 
 <script setup>
 defineProps({
-  tone: { type: String, default: 'neutral' }, // ok | warn | danger | primary | neutral | live
+  tone: { type: String, default: 'neutral' }, // ok | warn | danger | primary | info | neutral | live
 });
 </script>
 
@@ -18,6 +18,7 @@ defineProps({
 .pill--warn    { background: var(--warn-soft);     color: var(--warn); }
 .pill--danger  { background: var(--danger-soft);   color: var(--danger); }
 .pill--primary { background: var(--accent-soft);   color: var(--accent-fg); }
+.pill--info    { background: #EFF6FF;              color: #3B82F6; }
 .pill--live    { background: var(--live-soft);     color: var(--live); }
 .pill--neutral { background: var(--panel);         color: var(--ink3); border: 1px solid var(--border); }
 </style>

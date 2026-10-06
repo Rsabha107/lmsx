@@ -36,6 +36,7 @@ class ResourceScheduleController extends Controller
             'resource' => $resource ? ['id' => $id, 'label' => $this->label($type, $resource), 'detail' => $this->detail($type, $resource)] : null,
             'weekStart' => $weekStart->toDateString(),
             'items' => $resource ? $this->items($request, $conflicts, $type, $resource, $weekStart)->all() : [],
+            'bookedDates' => $resource ? $this->bookedDates($request, $type, $id) : [],
             'resources' => [
                 'vehicle' => Vehicle::orderBy('code')->get(['id', 'code', 'plate_number', 'vehicle_type', 'capacity'])
                     ->map(fn ($v) => ['id' => $v->id, 'label' => $this->label('vehicle', $v), 'detail' => $this->detail('vehicle', $v)]),
@@ -140,6 +141,38 @@ class ResourceScheduleController extends Controller
     }
 
     /**
+     * Movements in the active event where the resource is the lead, an extra unit or the supervisor.
+     */
+    private function movementsFor(Request $request, string $type, int $id)
+    {
+        $user = $request->user();
+        $column = ['vehicle' => 'vehicle_id', 'driver' => 'driver_id', 'supervisor' => 'field_supervisor_id'][$type];
+
+        return Movement::query()
+            ->where('event_id', $request->session()->get('active_event_id'))
+            ->where('status', '!=', 'cancelled')
+            ->when(! $user->can('movements.view-all-functional-areas'),
+                fn ($q) => $q->whereIn('functional_area', $user->functionalAreaCodes()))
+            ->where(fn ($q) => $q->where($column, $id)
+                ->when($type !== 'supervisor', fn ($q) => $q->orWhereHas('units', fn ($u) => $u->where($column, $id)))
+                ->when($type === 'supervisor', fn ($q) => $q->orWhereHas('extraSupervisors', fn ($u) => $u->whereKey($id))));
+    }
+
+    /** @return list<string> every Y-m-d the resource has a movement starting on */
+    private function bookedDates(Request $request, string $type, int $id): array
+    {
+        if (! $request->session()->get('active_event_id')) {
+            return [];
+        }
+
+        return $this->movementsFor($request, $type, $id)
+            ->whereNotNull('window_start')
+            ->pluck('window_start')
+            ->map(fn ($start) => $start->toDateString())
+            ->unique()->sort()->values()->all();
+    }
+
+    /**
      * Movements in the week where the resource is the lead, an extra unit or the supervisor.
      */
     private function items(Request $request, ConflictDetectionService $conflicts, string $type, $resource, Carbon $weekStart): Collection
@@ -149,19 +182,12 @@ class ResourceScheduleController extends Controller
             return collect();
         }
 
-        $user = $request->user();
         $id = $resource->id;
         $column = ['vehicle' => 'vehicle_id', 'driver' => 'driver_id', 'supervisor' => 'field_supervisor_id'][$type];
         $weekEnd = $weekStart->copy()->addWeek();
 
-        $movements = Movement::with(['team:id,code,team_name', 'job:id,movement_id,job_id,status', 'units:id,movement_id,vehicle_id,driver_id'])
-            ->where('event_id', $eventId)
-            ->where('status', '!=', 'cancelled')
-            ->when(! $user->can('movements.view-all-functional-areas'),
-                fn ($q) => $q->whereIn('functional_area', $user->functionalAreaCodes()))
-            ->where(fn ($q) => $q->where($column, $id)
-                ->when($type !== 'supervisor', fn ($q) => $q->orWhereHas('units', fn ($u) => $u->where($column, $id)))
-                ->when($type === 'supervisor', fn ($q) => $q->orWhereHas('extraSupervisors', fn ($u) => $u->whereKey($id))))
+        $movements = $this->movementsFor($request, $type, $id)
+            ->with(['team:id,code,team_name', 'job:id,movement_id,job_id,status', 'units:id,movement_id,vehicle_id,driver_id'])
             // A day earlier so last night's run that ends this morning still shows.
             ->where('window_start', '>=', $weekStart->copy()->subDay())
             ->where('window_start', '<', $weekEnd)

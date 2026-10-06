@@ -5,6 +5,7 @@
  * All routes related to job management, checkpoints, and mobile operations
  */
 
+use App\Http\Controllers\DayBoardController;
 use App\Http\Controllers\LmsController;
 use App\Services\SettingsService;
 use Illuminate\Support\Facades\Route;
@@ -28,8 +29,14 @@ Route::middleware('auth')->group(function () {
         Route::get('/jobs/mobile/{id}', [LmsController::class, 'jobMobileDetail'])->name('jobs.mobile.detail');
     });
 
+    // A supervisor's day: each job's current and previous checkpoint.
+    Route::get('/day-board', DayBoardController::class)
+        ->middleware('permission:jobs.view')
+        ->name('day-board');
+
     // Job Status Management
     Route::post('/jobs/{jobId}/status', [LmsController::class, 'updateJobStatus'])->name('job.updateStatus');
+    Route::post('/jobs/{jobId}/reinstate', [LmsController::class, 'reinstateJob'])->name('job.reinstate');
 
     Route::delete('/jobs', [LmsController::class, 'destroyJobs'])
         ->middleware('permission:plans.manage')

@@ -43,6 +43,7 @@ Logistics management for football events (FIFA U-17, GFF cups): teams, flights, 
 
 ## Key pages
 - Planning `Plans.vue` (very large), Jobs Queue `Jobs.vue`, Crew Assignment `CrewAssignment.vue` (table / day timeline / week matrix), Resource Schedule `ResourceSchedule.vue` (one resource's week as a Gantt; Excel via `/resource-schedule/export`, PDF via the browser print dialog).
+- Day Board `DayBoard.vue` (`/day-board`, `jobs.view`): a day's jobs by hour with current + previous checkpoint; attention flags computed client-side against the live clock. Supervisors without `jobs.view-unassigned` see only jobs they supervise.
 
 ## Style
 - Keep changes minimal; comments only for what the code can't show, one short line.

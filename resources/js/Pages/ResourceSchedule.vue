@@ -43,7 +43,35 @@
         </div>
         <div class="rs-week">
           <button type="button" class="rs-nav" aria-label="Previous week" @click="shiftWeek(-7)">‹</button>
-          <span class="rs-week-label">{{ weekLabel }} – {{ weekEndLabel }}</span>
+          <div ref="calRef" class="rs-cal-wrap">
+            <button type="button" class="rs-week-label rs-week-btn" :aria-expanded="calOpen" title="Pick a week" @click="toggleCal">
+              {{ weekLabel }} – {{ weekEndLabel }}
+            </button>
+            <div v-if="calOpen" class="rs-cal" role="dialog" aria-label="Pick a week">
+              <div class="rs-cal-head">
+                <button type="button" class="rs-cal-nav" aria-label="Previous month" @click="shiftMonth(-1)">‹</button>
+                <span class="rs-cal-title">{{ calTitle }}</span>
+                <button type="button" class="rs-cal-nav" aria-label="Next month" @click="shiftMonth(1)">›</button>
+              </div>
+              <div class="rs-cal-grid">
+                <span v-for="d in ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su']" :key="d" class="rs-cal-dow">{{ d }}</span>
+                <button
+                  v-for="cell in calCells"
+                  :key="cell.key"
+                  type="button"
+                  :class="['rs-cal-day', {
+                    'rs-cal-day--out': !cell.inMonth,
+                    'rs-cal-day--week': cell.inWeek,
+                    'rs-cal-day--today': cell.today,
+                    'rs-cal-day--booked': cell.booked,
+                  }]"
+                  :title="cell.booked ? 'Has movements' : undefined"
+                  @click="pickDate(cell.key)"
+                >{{ cell.day }}</button>
+              </div>
+              <div class="rs-cal-legend"><span class="rs-cal-dot" /> Has movements</div>
+            </div>
+          </div>
           <button type="button" class="rs-nav" aria-label="Next week" @click="shiftWeek(7)">›</button>
           <button type="button" class="rs-btn rs-btn--ghost" :disabled="isThisWeek" @click="goWeek(todayKey())">This week</button>
         </div>
@@ -142,6 +170,7 @@ const props = defineProps({
   resource: { type: Object, default: null },
   weekStart: { type: String, required: true },
   items: { type: Array, default: () => [] },
+  bookedDates: { type: Array, default: () => [] },
   resources: { type: Object, default: () => ({ vehicle: [], driver: [], supervisor: [] }) },
 });
 
@@ -193,6 +222,54 @@ const isThisWeek = computed(() => {
   const today = todayKey();
   return today >= props.weekStart && today <= addDays(props.weekStart, 6);
 });
+
+// Week picker: a month grid with the resource's booked days marked.
+const calOpen = ref(false);
+const calRef = ref(null);
+const calMonth = ref(props.weekStart.slice(0, 7)); // 'YYYY-MM'
+const booked = computed(() => new Set(props.bookedDates));
+
+function toggleCal() {
+  calOpen.value = !calOpen.value;
+  if (calOpen.value) calMonth.value = props.weekStart.slice(0, 7);
+}
+
+function shiftMonth(n) {
+  const [y, m] = calMonth.value.split('-').map(Number);
+  const d = new Date(y, m - 1 + n, 1);
+  calMonth.value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+
+function pickDate(key) {
+  calOpen.value = false;
+  goWeek(key);
+}
+
+const calTitle = computed(() => fmt(`${calMonth.value}-01`, { month: 'long', year: 'numeric' }));
+
+const calCells = computed(() => {
+  const first = `${calMonth.value}-01`;
+  const offset = (new Date(`${first}T00:00:00`).getDay() + 6) % 7; // Monday-first
+  const start = addDays(first, -offset);
+  const weekEnd = addDays(props.weekStart, 6);
+  return Array.from({ length: 42 }, (_, i) => {
+    const key = addDays(start, i);
+    return {
+      key,
+      day: Number(key.slice(8)),
+      inMonth: key.startsWith(calMonth.value),
+      inWeek: key >= props.weekStart && key <= weekEnd,
+      today: key === todayKey(),
+      booked: booked.value.has(key),
+    };
+  });
+});
+
+function onDocDown(e) {
+  if (calOpen.value && !calRef.value?.contains(e.target)) calOpen.value = false;
+}
+document.addEventListener('mousedown', onDocDown);
+onUnmounted(() => document.removeEventListener('mousedown', onDocDown));
 
 // Ticks once a minute so the now line and past shading stay current.
 const now = ref(new Date());
@@ -315,6 +392,36 @@ function printPdf() {
 .rs-week-label { font-size: 13px; font-weight: 600; color: var(--ink); min-width: 190px; text-align: center; }
 .rs-nav { width: 32px; height: 32px; border: 1px solid var(--border); border-radius: 7px; background: var(--surface); color: var(--ink2); font-size: 18px; cursor: pointer; }
 .rs-nav:hover { background: var(--panel); }
+
+.rs-cal-wrap { position: relative; }
+.rs-week-btn { border: 1px solid transparent; border-radius: 7px; background: none; padding: 6px 8px; cursor: pointer; font-family: inherit; }
+.rs-week-btn:hover, .rs-week-btn[aria-expanded="true"] { border-color: var(--border); background: var(--surface); }
+.rs-cal {
+  position: absolute; top: calc(100% + 6px); left: 50%; transform: translateX(-50%); z-index: 50;
+  width: 264px; padding: 10px; background: var(--surface); border: 1px solid var(--border);
+  border-radius: 10px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.14);
+}
+.rs-cal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.rs-cal-title { font-size: 13px; font-weight: 600; color: var(--ink); }
+.rs-cal-nav { width: 26px; height: 26px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--ink2); cursor: pointer; font-size: 15px; }
+.rs-cal-nav:hover { background: var(--panel); }
+.rs-cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
+.rs-cal-dow { font-size: 10px; font-weight: 600; color: var(--ink3); text-align: center; padding: 2px 0; }
+.rs-cal-day {
+  position: relative; height: 32px; border: 0; border-radius: 6px; background: none;
+  font-size: 12px; color: var(--ink); cursor: pointer;
+}
+.rs-cal-day:hover { background: var(--panel); }
+.rs-cal-day--out { color: var(--ink3); opacity: 0.55; }
+.rs-cal-day--week { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.rs-cal-day--today { font-weight: 700; box-shadow: inset 0 0 0 1px var(--accent); }
+.rs-cal-day--booked::after, .rs-cal-dot {
+  content: ''; width: 5px; height: 5px; border-radius: 50%; background: var(--accent);
+}
+.rs-cal-day--booked::after { position: absolute; left: 50%; bottom: 3px; transform: translateX(-50%); }
+.rs-cal-day--booked { font-weight: 600; }
+.rs-cal-legend { display: flex; align-items: center; gap: 6px; margin-top: 8px; font-size: 11px; color: var(--ink3); }
+.rs-cal-dot { display: inline-block; }
 
 .rs-empty { padding: 48px; text-align: center; color: var(--ink3); font-size: 13px; background: var(--surface); border: 1px dashed var(--border); border-radius: 10px; }
 

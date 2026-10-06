@@ -78,6 +78,10 @@ class JobLifecycleService
 
             $attrs = ['status' => $to];
 
+            if ($to === 'cancelled') {
+                $attrs['cancelled_from'] = $from;
+            }
+
             $timestampColumn = JobOperation::STATUS_TIMESTAMPS[$to] ?? null;
             if ($timestampColumn && ! $job->{$timestampColumn}) {
                 $attrs[$timestampColumn] = now();
@@ -103,6 +107,36 @@ class JobLifecycleService
                 },
                 target: $job->job_id.($job->team ? ' · '.$job->team->team_name : ''),
                 meta: "{$from} → {$to}",
+                subject: $job,
+                eventId: $job->event_id,
+            );
+
+            return $job;
+        });
+    }
+
+    /**
+     * Undo a cancellation: put the job back in the status it had when it was cancelled.
+     *
+     * @throws RuntimeException when the job is not cancelled
+     */
+    public function reinstate(JobOperation $job, ?User $actor = null): JobOperation
+    {
+        return DB::transaction(function () use ($job) {
+            $job->newQuery()->whereKey($job->getKey())->lockForUpdate()->firstOrFail();
+            $job->refresh();
+
+            $to = $job->reinstateStatus();
+            if ($to === null) {
+                throw new RuntimeException("Job {$job->job_id} is not cancelled.");
+            }
+
+            $job->update(['status' => $to, 'cancelled_from' => null]);
+
+            AuditLog::record(
+                action: 'Job reinstated',
+                target: $job->job_id.($job->team ? ' · '.$job->team->team_name : ''),
+                meta: "cancelled → {$to}",
                 subject: $job,
                 eventId: $job->event_id,
             );

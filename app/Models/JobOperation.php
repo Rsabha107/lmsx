@@ -63,6 +63,20 @@ class JobOperation extends Model
         return in_array($status, self::TRANSITIONS[$this->status] ?? [], true);
     }
 
+    /** Where a cancelled job goes back to; jobs cancelled before this was recorded fall back to their timestamps. */
+    public function reinstateStatus(): ?string
+    {
+        if ($this->status !== 'cancelled') {
+            return null;
+        }
+
+        return $this->cancelled_from ?? match (true) {
+            $this->started_at !== null => 'in-progress',
+            $this->dispatched_at !== null => 'dispatched',
+            default => 'pending',
+        };
+    }
+
     protected $fillable = [
         'job_id',
         'event_id',
@@ -74,6 +88,7 @@ class JobOperation extends Model
         'driver_id',
         'vehicle_id',
         'status',
+        'cancelled_from',
         'checkpoints_completed',
         'checkpoints_total',
         'progress_percentage',

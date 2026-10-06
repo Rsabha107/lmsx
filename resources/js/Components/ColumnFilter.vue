@@ -10,7 +10,7 @@
     >
       <span>{{ label }}</span>
       <span :class="['cf-icons', { 'cf-icons--idle': !isSorted && !isFiltered }]">
-        <span v-if="isSorted" class="cf-arrow">{{ state.sort.value.dir === 'asc' ? '▲' : '▼' }}</span>
+        <span v-if="isSorted" class="cf-arrow">{{ sortDir === 'asc' ? '▲' : '▼' }}<sup v-if="showRank" class="cf-rank">{{ sortState.rank }}</sup></span>
         <svg-icon v-if="filterable" name="filter" :size="10" :class="['cf-funnel', { 'cf-funnel--on': isFiltered }]" />
         <span v-else-if="!isSorted" class="cf-arrow">⇅</span>
       </span>
@@ -79,8 +79,11 @@ const trigger = ref(null);
 const pop = ref(null);
 const popStyle = ref({});
 
-const sortDir = computed(() => (props.state.sort.value?.key === props.column ? props.state.sort.value.dir : null));
+const sortState = computed(() => props.state.sortOfColumn(props.column));
+const sortDir = computed(() => sortState.value?.dir ?? null);
 const isSorted = computed(() => !!sortDir.value);
+// The rank only matters once more than one column is sorted.
+const showRank = computed(() => isSorted.value && props.state.sort.value.length > 1);
 const allowed = computed(() => props.state.filters[props.column] ?? null);
 const isFiltered = computed(() => !!allowed.value);
 
@@ -189,6 +192,7 @@ onUnmounted(() => listen(false));
 .cf-trigger:hover { background: var(--border); color: var(--ink); }
 .cf-trigger--active { color: var(--accent); }
 .cf-arrow { font-size: 8px; line-height: 1; }
+.cf-rank { font-size: 8px; margin-left: 1px; vertical-align: super; }
 .cf-icons { display: inline-flex; align-items: center; gap: 3px; flex-shrink: 0; }
 /* Zero width until in use, so the hint never steals room from the label in narrow columns. */
 .cf-icons--idle { width: 0; overflow: visible; opacity: 0.35; }

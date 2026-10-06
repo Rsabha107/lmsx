@@ -92,8 +92,11 @@
               <th style="width: 100px; text-align: center;">Actions</th>
             </tr>
           </thead>
-          <tbody>
-            <tr v-for="setting in globalOverrides" :key="setting.id">
+          <tbody v-for="group in globalGroups" :key="group.label">
+            <tr class="group-row">
+              <td colspan="6">{{ group.label }} <span class="group-count">{{ group.rows.length }}</span></td>
+            </tr>
+            <tr v-for="setting in group.rows" :key="setting.id">
               <td>
                 <Select
                   v-if="editingGlobalId === setting.id"
@@ -582,6 +585,23 @@ const movementTypeOptions = computed(() =>
   props.movementTypes.map(type => ({ label: formatMovementType(type), value: type }))
 );
 
+const typeOrder = (setting) => {
+  const i = props.movementTypes.indexOf(getMovementTypeFromKey(setting.key));
+  return i === -1 ? Infinity : i;
+};
+
+const globalGroups = computed(() => {
+  const byType = (a, b) => typeOrder(a) - typeOrder(b);
+  const defaults = props.globalOverrides.filter(s => !s.checkpoint_id).sort(byType);
+  const checkpoints = props.globalOverrides.filter(s => s.checkpoint_id)
+    .sort((a, b) => byType(a, b) || (a.checkpoint_name || '').localeCompare(b.checkpoint_name || ''));
+
+  return [
+    { label: 'Movement-type defaults', rows: defaults },
+    { label: 'Checkpoint offsets', rows: checkpoints },
+  ].filter(g => g.rows.length);
+});
+
 const derivedOldEventValue = computed(() => {
   if (!selectedEventId.value || !eventForm.value.movement_type) return null;
   const key = `movement_offset.${eventForm.value.movement_type}`;
@@ -962,6 +982,28 @@ function getCheckpointName(checkpointId) {
 
 .settings-table tbody tr:hover {
   background: #F9FAFB;
+}
+
+.settings-table .group-row td,
+.settings-table .group-row:hover {
+  background: #F3F4F6;
+}
+
+.settings-table .group-row td {
+  padding: 8px 16px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #374151;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-top: 1px solid #E5E7EB;
+  border-bottom: 1px solid #E5E7EB;
+}
+
+.group-count {
+  margin-left: 6px;
+  color: #9CA3AF;
+  font-weight: 500;
 }
 
 .movement-badge {

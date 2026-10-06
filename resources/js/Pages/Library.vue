@@ -293,7 +293,7 @@
               </div>
             </div>
             <div style="font-size: 12px; color: var(--ink2); text-align: center;">{{ template.total_legs || 0 }}</div>
-            <div style="font-size: 12px; color: var(--ink2);">{{ legsDuration(template) }} min</div>
+            <div style="font-size: 12px; color: var(--ink2);">{{ formatDuration(legsDuration(template)) }}</div>
             <div style="display: flex; gap: 4px;" @click.stop>
               <TableActions 
                 @edit="editMovementTemplate(template)" 
@@ -315,7 +315,7 @@
                 <div style="font-size: 16px; font-weight: 700; color: var(--ink); margin-bottom: 4px;">{{ selectedMovementTemplate.name }}</div>
                 <div style="font-size: 12px; color: var(--ink3);">
                   {{ selectedMovementTemplate.scenario_type.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase()) }}
-                  <span v-if="legsDuration(selectedMovementTemplate)"> · {{ legsDuration(selectedMovementTemplate) }} min</span>
+                  <span v-if="legsDuration(selectedMovementTemplate)"> · {{ formatDuration(legsDuration(selectedMovementTemplate)) }}</span>
                 </div>
               </div>
               <button @click="selectedMovementTemplate = null" style="padding: 4px; border: none; background: transparent; cursor: pointer; color: var(--ink3); display: flex; align-items: center; justify-content: center; border-radius: 4px;" onmouseover="this.style.background='var(--panel)'" onmouseout="this.style.background='transparent'">
@@ -336,7 +336,7 @@
               </div>
               <div style="padding: 10px; background: var(--panel); border-radius: 6px;">
                 <div style="font-size: 10px; font-weight: 700; color: var(--ink3); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;">Est. Duration</div>
-                <div style="font-size: 18px; font-weight: 700; color: var(--ink);">{{ legsDuration(selectedMovementTemplate) }} min</div>
+                <div style="font-size: 18px; font-weight: 700; color: var(--ink);">{{ formatDuration(legsDuration(selectedMovementTemplate)) }}</div>
               </div>
             </div>
           </div>
@@ -377,7 +377,7 @@
                     </div>
                     <div style="font-size: 11px; color: var(--ink3); display: flex; align-items: center; gap: 8px;">
                       <span style="text-transform: capitalize;">{{ leg.transport_type }}</span>
-                      <span v-if="leg.estimated_duration_minutes">• {{ leg.estimated_duration_minutes }} min</span>
+                      <span v-if="leg.estimated_duration_minutes">• {{ formatDuration(leg.estimated_duration_minutes) }}</span>
                     </div>
                   </div>
                 </div>
@@ -854,6 +854,7 @@
         <div>
           <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px; color: var(--ink);">Estimated Duration (minutes)</label>
           <input v-model.number="newMovementTemplate.estimated_duration_minutes" type="number" min="1" placeholder="180" style="width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px;" />
+          <div v-if="hoursPart(newMovementTemplate.estimated_duration_minutes)" style="font-size: 11px; color: var(--ink3); margin-top: 4px;">= {{ hoursPart(newMovementTemplate.estimated_duration_minutes) }}</div>
         </div>
         
         <!-- Leg Builder -->
@@ -936,7 +937,7 @@
                     <span style="font-family: var(--mono);">{{ getCheckpointTemplateCode(leg.checkpoint_template_id) }}</span>
                     <span>•</span>
                     <span>{{ leg.transport_type }}</span>
-                    <span v-if="leg.estimated_duration_minutes">• {{ leg.estimated_duration_minutes }} min</span>
+                    <span v-if="leg.estimated_duration_minutes">• {{ formatDuration(leg.estimated_duration_minutes) }}</span>
                   </div>
                 </div>
                 <button @click="removeLegFromTemplate(index)" style="padding: 4px 8px; border: 1px solid var(--border); border-radius: 4px; background: var(--surface); cursor: pointer; color: #DC2626; font-size: 12px; font-weight: 600;">
@@ -1010,6 +1011,7 @@
         <div>
           <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px; color: var(--ink);">Estimated Duration (minutes)</label>
           <input v-model.number="editingMovementTemplate.estimated_duration_minutes" type="number" min="1" style="width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px;" />
+          <div v-if="hoursPart(editingMovementTemplate.estimated_duration_minutes)" style="font-size: 11px; color: var(--ink3); margin-top: 4px;">= {{ hoursPart(editingMovementTemplate.estimated_duration_minutes) }}</div>
         </div>
         
         <!-- Leg Builder -->
@@ -1098,7 +1100,7 @@
                     <span>•</span>
                     <label style="display: inline-flex; align-items: center; gap: 4px;">
                       <input v-model.number="leg.estimated_duration_minutes" type="number" min="1" placeholder="30" :aria-label="`Estimated minutes for leg ${leg.order}`" style="width: 64px; padding: 2px 6px; border: 1px solid var(--border); border-radius: 4px; font-size: 11px;" />
-                      min
+                      min<template v-if="hoursPart(leg.estimated_duration_minutes)"> ({{ hoursPart(leg.estimated_duration_minutes) }})</template>
                     </label>
                   </div>
                 </div>
@@ -1804,6 +1806,20 @@ function getCheckpointTemplateName(templateId) {
 // A template's duration is its legs' durations added up.
 function legsDuration(template) {
   return (template?.legs || []).reduce((sum, leg) => sum + (Number(leg.estimated_duration_minutes) || 0), 0);
+}
+
+// "3h 45m" for durations over an hour, otherwise empty.
+function hoursPart(minutes) {
+  const m = Number(minutes) || 0;
+  if (m <= 60) return '';
+  const h = Math.floor(m / 60);
+  const r = m % 60;
+  return r ? `${h}h ${r}m` : `${h}h`;
+}
+
+function formatDuration(minutes) {
+  const hours = hoursPart(minutes);
+  return hours ? `${minutes} min (${hours})` : `${minutes} min`;
 }
 
 function getCheckpointTemplateCode(templateId) {

@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\User;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -35,6 +36,10 @@ class RoleController extends Controller
             'permissions.*' => 'integer|exists:permissions,id',
         ]);
 
+        if (in_array($role->name, User::PROTECTED_ROLES, true) && $data['name'] !== $role->name) {
+            return back()->withErrors(['name' => "The {$role->name} role is built in and cannot be renamed."]);
+        }
+
         $role->update(['name' => $data['name']]);
         $role->syncPermissions($data['permissions'] ?? []);
 
@@ -46,6 +51,9 @@ class RoleController extends Controller
     public function destroy(int $id): RedirectResponse
     {
         $role = Role::findOrFail($id);
+
+        abort_if(in_array($role->name, User::PROTECTED_ROLES, true), 403, "The {$role->name} role is built in and cannot be deleted.");
+
         $name = $role->name;
         $role->delete();
 

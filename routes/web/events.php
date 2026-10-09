@@ -19,6 +19,8 @@ Route::middleware('auth')->prefix('events')->name('events.')->group(function () 
         Route::post('/',                             [EventsController::class, 'store'])->name('store');
         Route::put('/{id}',                          [EventsController::class, 'update'])->name('update');
         Route::delete('/{id}',                       [EventsController::class, 'destroy'])->name('destroy');
+        Route::get('/{id}/deletion-plan',            [EventsController::class, 'deletionPlan'])->name('deletion-plan');
+        Route::post('/{id}/delete-step',             [EventsController::class, 'destroyStep'])->name('delete-step');
 
         // Teams (event-owned)
         Route::post('/{id}/teams',                   [EventTeamsController::class, 'store'])->name('teams.store');

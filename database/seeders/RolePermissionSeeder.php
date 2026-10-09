@@ -13,7 +13,7 @@ class RolePermissionSeeder extends Seeder
      * plus admin/oversight — not an aspirational role list with no basis in
      * this codebase's data model.
      */
-    private const ROLES = ['admin', 'ground_control', 'transport', 'team_services', 'venue_ops', 'agency'];
+    private const ROLES = ['admin', 'ground_control', 'transport', 'team_services', 'venue_ops', 'agency', 'SecurityRole'];
 
     private const PERMISSIONS = [
         'movements.view',
@@ -41,6 +41,8 @@ class RolePermissionSeeder extends Seeder
         // The desktop web console: dashboard, schedule, jobs queue, tracker, etc.
         'console.view',
         'ai.use',
+        // Open and change Roles & Permissions. Held only by SecurityRole, never by admin.
+        'access.manage',
     ];
 
     /** Read-only access every desk-based operational role needs. */
@@ -65,7 +67,8 @@ class RolePermissionSeeder extends Seeder
             Role::firstOrCreate(['name' => $role, 'guard_name' => 'web']);
         }
 
-        Role::findByName('admin')->syncPermissions(self::PERMISSIONS);
+        Role::findByName('admin')->syncPermissions(array_diff(self::PERMISSIONS, ['access.manage']));
+        Role::findByName('SecurityRole')->syncPermissions(['access.manage']);
 
         // Field supervisors: the mobile job workflow and nothing else. No
         // console.view, so every desk page is closed to them, and no

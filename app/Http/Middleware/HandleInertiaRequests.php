@@ -86,6 +86,7 @@ class HandleInertiaRequests extends Middleware
             'events.view',
             'analytics.view',
             'audit.view',
+            'access.manage',
             'ai.use',
         ];
 

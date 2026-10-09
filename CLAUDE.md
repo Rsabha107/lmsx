@@ -2,6 +2,8 @@
 
 Logistics management for football events (FIFA U-17, GFF cups): teams, flights, matches → **plans** → **movements** → **jobs** with **checkpoints**, worked by field supervisors in the mobile app.
 
+User-facing documentation lives in one file: `docs/NAQLA_LMS_GUIDE.md` (source for the user manual). Update it when behaviour changes.
+
 ## Stack
 - Laravel 13 (PHP 8.4), Inertia v3 + Vue 3 (`<script setup>`), Vite, MySQL.
 - Spatie laravel-permission (roles/permissions), Sanctum (mobile API at `/api/mobile`), Socialite Microsoft SSO, PhpSpreadsheet (xlsx import/export).
@@ -16,9 +18,21 @@ Logistics management for football events (FIFA U-17, GFF cups): teams, flights, 
 - Roles/permissions: `database/seeders/RolePermissionSeeder.php`. Add a migration whenever permissions change (see `2026_09_28_000002_add_agency_role.php`).
 - Abilities shared to the UI: `HandleInertiaRequests::abilities()`; sidebar items gate on them in `resources/js/Components/AppLayout.vue`.
 - `ground_control` = field supervisors (mobile only, no `console.view`).
+- `SecurityRole` holds `access.manage`, which gates Roles & Permissions (`/setups/access`, roles, permissions routes) and its sidebar item; admin does not have it. `User::PROTECTED_ROLES` (`admin`, `SecurityRole`) cannot be deleted or renamed (`RoleController`). Granting/removing SecurityRole or deleting a holder needs `access.manage` (`UserController::guardSecurityRole`). Migration `2026_10_09_000001_add_security_role` assigns it to r.sabha@sc.qa.
 - `agency` (outside crew agency, e.g. GWC lead supervisors): reads the console; writes only crew assignment and vehicles/drivers/providers (`movements.assign-crew`, `fleet.manage-resources`). Write allow-list: `app/Http/Middleware/RestrictAgencyToCrewAssignment.php`. Refused Inertia writes return JSON 403 with `X-Access-Restricted`, shown by `AccessRestrictedModal.vue`.
 - GWC agency users are seeded by `GwcLeadSupervisorSeeder` (SSO/forgot-password; random password).
 - Legacy `routes/EXAMPLE_ROUTES.php` jobs/* write routes have no authorization.
+
+## Providers and fleet
+- Provider scoping: `users.fleet_provider_id` (not `provider_id`, which is SSO), `movements.fleet_provider_id`, `events.fleet_provider_id` (default for new movements via the `Movement` creating hook). `ProviderScope` (global scope on Movement/JobOperation/Driver/Vehicle/FleetProvider) applies when `User::isProviderRestricted()` (agency or has a provider, and not admin). A restricted user with no provider sees nothing.
+- Crew rules: `app/Support/CrewEligibility.php`. Cross-event clashes: `ConflictDetectionService::foreignMovements`.
+- Event fleet pool: `event_vehicle` / `event_driver` (`Vehicle`/`Driver::inEventPool`), toggled on the Fleet page via `/fleet/pool`.
+- Vehicles require a provider (except for restricted users, who are pinned to theirs by `FleetController::pinProvider`).
+- Fleet bulk actions: `fleet.bulk-delete` (skips rows in use; provider deletes refused for restricted users) and `fleet.bulk-provider` (admin only, not on the agency allow-list).
+- Test fixtures: `createVehicle`, `createDriver`, `createProviderUser`, `fixtureProvider` in `CreatesOperationsFixtures`.
+
+## Mobile app download
+- `GET /downloads/mobile-app` (`MobileAppDownloadController`, ability `mobileApp.download`) streams the APK from the `local` disk at `config('app.mobile_apk')` (`MOBILE_APK_PATH`, default `downloads/NAQLA LMS - V(1.0.0).apk`). Linked from the sidebar and Settings.
 
 ## Crew model
 - Lead crew lives on `movements.vehicle_id / driver_id / field_supervisor_id`, mirrored onto `jobs_operations` (`supervisor_id`). Change crew through `JobLifecycleService::assignMovementCrew()` (audits + mirrors to the job).

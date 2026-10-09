@@ -40,6 +40,8 @@ class UserController extends Controller
             'fleet_provider_id' => 'nullable|integer|exists:fleet_providers,id',
         ]);
 
+        $this->guardSecurityRole($request, $data['roles'] ?? [], null);
+
         $user = User::create([
             'name'     => $data['name'],
             'email'    => $data['email'],
@@ -70,6 +72,8 @@ class UserController extends Controller
             'fleet_provider_id' => 'nullable|integer|exists:fleet_providers,id',
         ]);
 
+        $this->guardSecurityRole($request, $data['roles'] ?? [], $user);
+
         $user->name  = $data['name'];
         $user->email = $data['email'];
         $user->fleet_provider_id = $data['fleet_provider_id'] ?? null;
@@ -95,11 +99,32 @@ class UserController extends Controller
             return back()->withErrors(['delete' => 'You cannot delete your own account.']);
         }
 
+        abort_if(
+            $user->hasRole(User::SECURITY_ROLE) && ! $request->user()->can(User::ACCESS_PERMISSION),
+            403,
+            'Only the SecurityRole can delete a SecurityRole holder.'
+        );
+
         $email = $user->email;
         $user->delete();
 
         Log::info("User deleted: {$email}");
 
         return redirect()->route('setups.users.index')->with('success', 'User deleted.');
+    }
+
+    /** Granting, removing or deleting a SecurityRole holder needs access.manage, or any admin could hand it to themselves. */
+    private function guardSecurityRole(Request $request, array $roleIds, ?User $user): void
+    {
+        $securityId = Role::where('name', User::SECURITY_ROLE)->value('id');
+
+        if (! $securityId || $request->user()->can(User::ACCESS_PERMISSION)) {
+            return;
+        }
+
+        $wants = in_array($securityId, array_map('intval', $roleIds), true);
+        $has = $user?->hasRole(User::SECURITY_ROLE) ?? false;
+
+        abort_if($wants !== $has, 403, 'Only the SecurityRole can grant or remove the SecurityRole.');
     }
 }

@@ -83,7 +83,7 @@
               <h2 class="detail-title">{{ selected.name }}</h2>
               <p class="detail-meta">{{ selected.guard_name }} guard · created {{ formatDate(selected.created_at) }}</p>
             </div>
-            <Button v-if="category !== 'assignments'" variant="ghost" size="sm" @click="openDelete(selected)">
+            <Button v-if="category !== 'assignments' && !isProtectedRole" variant="ghost" size="sm" @click="openDelete(selected)">
               <template #icon><svg-icon name="trash" :size="14" /></template>
               Delete
             </Button>
@@ -115,8 +115,9 @@
           <template v-else-if="category === 'roles'">
             <div class="form-group">
               <label class="form-label">Role name</label>
-              <input v-model="form.name" type="text" class="form-input" :class="{ 'input-error': errors.name }" />
+              <input v-model="form.name" type="text" class="form-input" :class="{ 'input-error': errors.name }" :disabled="isProtectedRole" />
               <span v-if="errors.name" class="error-msg">{{ errors.name }}</span>
+              <span v-else-if="isProtectedRole" class="field-hint">Built-in role: it cannot be renamed or deleted.</span>
             </div>
 
             <div class="form-group">
@@ -282,6 +283,9 @@ const categories = computed(() => [
 ]);
 
 const activeCategory = computed(() => categories.value.find(c => c.key === category.value));
+
+// Same list as User::PROTECTED_ROLES; the server enforces it.
+const isProtectedRole = computed(() => category.value !== 'permissions' && ['admin', 'SecurityRole'].includes(selected.value?.name));
 
 const items = computed(() => (category.value === 'permissions' ? props.permissions : props.roles));
 

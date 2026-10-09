@@ -22,6 +22,14 @@ class User extends Authenticatable
     /** @use HasFactory<UserFactory> */
     use HasFactory, Notifiable, HasRoles, HasApiTokens;
 
+    /** Holds access.manage: the only role that can open or change Roles & Permissions. */
+    public const SECURITY_ROLE = 'SecurityRole';
+
+    public const ACCESS_PERMISSION = 'access.manage';
+
+    /** Code looks these up by name, so they can be neither deleted nor renamed. */
+    public const PROTECTED_ROLES = ['admin', self::SECURITY_ROLE];
+
     /**
      * Get the attributes that should be cast.
      *

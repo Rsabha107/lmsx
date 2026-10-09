@@ -636,11 +636,35 @@
       :show="showDeleteModal"
       tone="danger"
       title="Delete Event"
-      :message="eventToDelete ? `Are you sure you want to delete <strong>${eventToDelete.name}</strong>?<br><br>All team assignments will be removed.` : ''"
-      :processing="deleting"
+      :message="eventToDelete ? `Are you sure you want to delete <strong>${eventToDelete.name}</strong>?<br><br>Its teams, movements and jobs will be deleted too.` : ''"
+      :confirm-text="eventToDelete?.name"
       @close="showDeleteModal = false; eventToDelete = null;"
       @confirm="confirmDelete"
     />
+
+    <!-- Deletion progress -->
+    <Modal :show="showProgress" max-width="520px" @close="closeProgress">
+      <template #title>{{ deleteFinished ? 'Event deleted' : deleteError ? 'Deletion stopped' : 'Deleting event…' }}</template>
+
+      <p v-if="!deleteSteps.length && !deleteError" class="del-wait">Working out what will be removed…</p>
+      <ul v-else class="del-steps">
+        <li v-for="s in deleteSteps" :key="s.key" :class="['del-step', `del-step--${s.state}`]">
+          <span class="del-icon">
+            <span v-if="s.state === 'running'" class="del-spinner"></span>
+            <template v-else-if="s.state === 'done'">✓</template>
+            <template v-else-if="s.state === 'failed'">✕</template>
+            <template v-else>○</template>
+          </span>
+          <span class="del-label">{{ s.label }}</span>
+          <span v-if="s.key !== 'event'" class="del-count">{{ (s.state === 'done' ? s.deleted : s.count).toLocaleString() }}</span>
+        </li>
+      </ul>
+      <p v-if="deleteError" class="del-error">{{ deleteError }} Steps marked ✓ were already removed.</p>
+
+      <template #footer>
+        <Button variant="secondary" size="sm" :disabled="deleteRunning" @click="closeProgress">Close</Button>
+      </template>
+    </Modal>
 
     <!-- Delete Confirm Modal for Flights/Stays -->
     <ConfirmModal
@@ -658,6 +682,7 @@
 <script setup>
 import { ref, computed, watch } from 'vue';
 import { router } from '@inertiajs/vue3';
+import axios from 'axios';
 import AppLayout       from '../Components/AppLayout.vue';
 import MiniStat        from '../Components/MiniStat.vue';
 import SvgIcon         from '../Components/SvgIcon.vue';
@@ -687,9 +712,13 @@ const showEventModal   = ref(false);
 const showVenueModal   = ref(false);
 const showDeleteModal  = ref(false);
 const processing       = ref(false);
-const deleting         = ref(false);
 const editingEvent     = ref(null);
 const eventToDelete    = ref(null);
+const showProgress     = ref(false);
+const deleteSteps      = ref([]);
+const deleteRunning    = ref(false);
+const deleteFinished   = ref(false);
+const deleteError      = ref('');
 const assigningVenueEvent = ref(null);
 
 const form = ref(emptyForm());
@@ -856,11 +885,44 @@ function openDeleteModal(event) {
   showDeleteModal.value = true;
 }
 
-function confirmDelete() {
-  deleting.value = true;
-  router.delete(`/events/${eventToDelete.value.id}`, {
-    onFinish: () => { deleting.value = false; showDeleteModal.value = false; eventToDelete.value = null; },
-  });
+async function confirmDelete() {
+  const event = eventToDelete.value;
+  showDeleteModal.value = false;
+  eventToDelete.value = null;
+
+  deleteSteps.value = [];
+  deleteError.value = '';
+  deleteFinished.value = false;
+  deleteRunning.value = true;
+  showProgress.value = true;
+
+  try {
+    const { data } = await axios.get(`/events/${event.id}/deletion-plan`);
+    deleteSteps.value = data.steps
+      .filter(s => s.key === 'event' || s.count > 0)
+      .map(s => ({ ...s, state: 'pending', deleted: 0 }));
+
+    for (const step of deleteSteps.value) {
+      step.state = 'running';
+      const res = await axios.post(`/events/${event.id}/delete-step`, { step: step.key, confirm_name: event.name });
+      step.deleted = res.data.deleted;
+      step.state = 'done';
+    }
+
+    deleteFinished.value = true;
+    if (selectedEvent.value?.id === event.id) selectedEvent.value = null;
+  } catch (e) {
+    const running = deleteSteps.value.find(s => s.state === 'running');
+    if (running) running.state = 'failed';
+    deleteError.value = e.response?.data?.message ?? 'The deletion failed.';
+  } finally {
+    deleteRunning.value = false;
+    router.reload({ only: ['events'] });
+  }
+}
+
+function closeProgress() {
+  if (!deleteRunning.value) showProgress.value = false;
 }
 
 // ── Team removal ───────────────────────────────────────────────────────────
@@ -1169,6 +1231,19 @@ function fmtDT(dt) {
 .table-row { cursor:pointer; transition:background .12s; }
 .table-row:hover   { background:var(--panel); }
 .table-row--selected { background:var(--accent-soft) !important; }
+
+.del-wait { margin: 0; font-size: 13.5px; color: var(--ink3); }
+.del-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.del-step { display: flex; align-items: center; gap: 10px; padding: 9px 10px; border-radius: 8px; font-size: 13.5px; color: var(--ink3); }
+.del-step--running { background: var(--accent-soft); color: var(--ink); }
+.del-step--done { color: var(--ink2); }
+.del-step--failed { background: #FEF2F2; color: #B91C1C; }
+.del-icon { width: 18px; text-align: center; flex-shrink: 0; font-weight: 700; }
+.del-step--done .del-icon { color: #16A34A; }
+.del-label { flex: 1; }
+.del-count { font-family: var(--font-mono, monospace); font-size: 12.5px; font-weight: 600; }
+.del-spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid var(--accent); border-right-color: transparent; border-radius: 50%; animation: spin 0.7s linear infinite; }
+.del-error { margin: 12px 0 0; font-size: 13px; color: #B91C1C; }
 .event-name-primary { font-weight:600; color:var(--ink); }
 
 .event-logo {

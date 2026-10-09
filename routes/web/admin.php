@@ -25,24 +25,8 @@ Route::middleware(['auth', 'role:admin'])->prefix('setups')->name('setups.')->gr
     });
     
 // Roles and permissions share one screen; the CRUD endpoints below back it.
-    Route::get('/access', [AccessController::class, 'index'])->name('access.index');
+    // Gated by access.manage (SecurityRole), not by the admin role, so it sits in its own group below.
 
-    // Role Management
-    Route::prefix('roles')->name('roles.')->group(function () {
-        Route::get('/', fn () => redirect()->route('setups.access.index'))->name('index');
-        Route::post('/', [RoleController::class, 'store'])->name('store');
-        Route::put('/{id}', [RoleController::class, 'update'])->name('update');
-        Route::delete('/{id}', [RoleController::class, 'destroy'])->name('destroy');
-    });
-
-    // Permission Management
-    Route::prefix('permissions')->name('permissions.')->group(function () {
-        Route::get('/', fn () => redirect()->route('setups.access.index'))->name('index');
-        Route::post('/', [PermissionController::class, 'store'])->name('store');
-        Route::put('/{id}', [PermissionController::class, 'update'])->name('update');
-        Route::delete('/{id}', [PermissionController::class, 'destroy'])->name('destroy');
-    });
-    
     // System Settings - Movement Time Offsets
     Route::prefix('settings')->name('settings.')->group(function () {
         Route::get('/', [SettingsController::class, 'index'])->name('index');
@@ -52,5 +36,24 @@ Route::middleware(['auth', 'role:admin'])->prefix('setups')->name('setups.')->gr
         Route::delete('/{id}', [SettingsController::class, 'destroy'])->name('destroy');
         Route::post('/preview', [SettingsController::class, 'preview'])->name('preview');
         Route::post('/preview-impact', [SettingsController::class, 'previewImpact'])->name('preview-impact');
+    });
+});
+
+// Roles & Permissions: only holders of access.manage (the SecurityRole), not every admin.
+Route::middleware(['auth', 'permission:access.manage'])->prefix('setups')->name('setups.')->group(function () {
+    Route::get('/access', [AccessController::class, 'index'])->name('access.index');
+
+    Route::prefix('roles')->name('roles.')->group(function () {
+        Route::get('/', fn () => redirect()->route('setups.access.index'))->name('index');
+        Route::post('/', [RoleController::class, 'store'])->name('store');
+        Route::put('/{id}', [RoleController::class, 'update'])->name('update');
+        Route::delete('/{id}', [RoleController::class, 'destroy'])->name('destroy');
+    });
+
+    Route::prefix('permissions')->name('permissions.')->group(function () {
+        Route::get('/', fn () => redirect()->route('setups.access.index'))->name('index');
+        Route::post('/', [PermissionController::class, 'store'])->name('store');
+        Route::put('/{id}', [PermissionController::class, 'update'])->name('update');
+        Route::delete('/{id}', [PermissionController::class, 'destroy'])->name('destroy');
     });
 });

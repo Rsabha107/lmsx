@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Airport;
 use App\Models\Country;
 use App\Models\Event;
+use App\Models\MovementTemplate;
 use App\Models\Team;
 use App\Models\TeamClassification;
 use App\Models\TeamFlight;
@@ -15,7 +16,9 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -128,11 +131,69 @@ class EventsController extends Controller
         return redirect()->back()->with('success', 'Event updated successfully.');
     }
 
-    public function destroy(int $id): RedirectResponse
+    /** Child-first, so each step is FK-safe on its own; the final 'event' step cascades the rest. */
+    private const DELETE_STEPS = [
+        'job_checkpoints' => ['Job checkpoints', 'job_checkpoints'],
+        'jobs' => ['Jobs', 'jobs_operations'],
+        'movements' => ['Movements', 'movements'],
+        'plans' => ['Plans', 'plans'],
+        'movement_templates' => ['Movement templates and their legs', 'movement_templates'],
+    ];
+
+    /** What deleting the event will remove, in the order destroyStep() runs it. */
+    public function deletionPlan(int $id): JsonResponse
     {
         $event = Event::findOrFail($id);
+        $count = fn (string $table) => DB::table($table)->where('event_id', $id)->count();
+
+        $steps = [];
+        foreach (self::DELETE_STEPS as $key => [$label, $table]) {
+            $steps[] = ['key' => $key, 'label' => $label, 'count' => $count($table)];
+        }
+
+        $rest = ['teams' => 'teams', 'team_flights' => 'flights', 'team_stays' => 'stays', 'checkpoint_templates' => 'checkpoint templates'];
+        $detail = collect($rest)->map(fn ($label, $table) => $count($table).' '.$label)->implode(', ');
+
+        $steps[] = ['key' => 'event', 'label' => "The event itself, with its {$detail}", 'count' => 1];
+
+        return response()->json(['steps' => $steps]);
+    }
+
+    public function destroyStep(Request $request, int $id): JsonResponse
+    {
+        $event = Event::findOrFail($id);
+
+        $data = $request->validate([
+            'step' => ['required', Rule::in([...array_keys(self::DELETE_STEPS), 'event'])],
+            'confirm_name' => ['required', Rule::in([$event->name])],
+        ]);
+
+        if ($data['step'] === 'event') {
+            DB::transaction(fn () => $event->delete());
+            $this->deleteLogo($event->event_logo);
+
+            return response()->json(['deleted' => 1]);
+        }
+
+        [, $table] = self::DELETE_STEPS[$data['step']];
+
+        return response()->json(['deleted' => DB::table($table)->where('event_id', $id)->delete()]);
+    }
+
+    public function destroy(Request $request, int $id): RedirectResponse
+    {
+        $event = Event::findOrFail($id);
+
+        $request->validate(['confirm_name' => ['required', Rule::in([$event->name])]]);
+
+        // movement_template_legs restricts deleting a checkpoint template, so the event's movement
+        // templates (whose legs cascade) must go before the event cascades to its checkpoint templates.
+        DB::transaction(function () use ($event) {
+            MovementTemplate::where('event_id', $event->id)->delete();
+            $event->delete();
+        });
+
         $this->deleteLogo($event->event_logo);
-        $event->delete();
 
         return redirect()->back()->with('success', 'Event deleted successfully.');
     }

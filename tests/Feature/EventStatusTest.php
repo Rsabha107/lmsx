@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\Event;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Laravel\Sanctum\Sanctum;
 use Spatie\Permission\Models\Permission;
 use Tests\Concerns\CreatesOperationsFixtures;
@@ -99,6 +100,68 @@ class EventStatusTest extends TestCase
 
         $this->actingAs($admin)->put("/events/{$event->id}", $payload + ['active_flag' => '1'])->assertSessionHasNoErrors();
         $this->assertSame('current', $event->fresh()->status);
+    }
+
+    public function test_deleting_an_event_needs_its_name_typed_back(): void
+    {
+        $event = $this->event('2026-09-20', '2026-10-02');
+        $admin = $this->createUserWithRole('admin');
+
+        $this->actingAs($admin)->delete("/events/{$event->id}")->assertSessionHasErrors('confirm_name');
+        $this->actingAs($admin)->delete("/events/{$event->id}", ['confirm_name' => 'wrong'])->assertSessionHasErrors('confirm_name');
+        $this->assertModelExists($event);
+
+        $this->actingAs($admin)->delete("/events/{$event->id}", ['confirm_name' => $event->name])->assertSessionHasNoErrors();
+        $this->assertModelMissing($event);
+    }
+
+    public function test_deleting_an_event_removes_its_templates_even_when_legs_reference_them(): void
+    {
+        $event = $this->event('2026-09-20', '2026-10-02');
+        $now = now();
+
+        $checkpointTemplateId = DB::table('checkpoint_templates')->insertGetId([
+            'code' => 'CT-DEL', 'name' => 'Del', 'event_id' => $event->id, 'created_at' => $now, 'updated_at' => $now,
+        ]);
+        $movementTemplateId = DB::table('movement_templates')->insertGetId([
+            'code' => 'MT-DEL', 'name' => 'Del', 'event_id' => $event->id, 'created_at' => $now, 'updated_at' => $now,
+        ]);
+        DB::table('movement_template_legs')->insert([
+            'movement_template_id' => $movementTemplateId, 'checkpoint_template_id' => $checkpointTemplateId,
+            'created_at' => $now, 'updated_at' => $now,
+        ]);
+
+        $this->actingAs($this->createUserWithRole('admin'))
+            ->delete("/events/{$event->id}", ['confirm_name' => $event->name])
+            ->assertSessionHasNoErrors();
+
+        $this->assertModelMissing($event);
+        $this->assertDatabaseCount('movement_template_legs', 0);
+        $this->assertDatabaseMissing('checkpoint_templates', ['id' => $checkpointTemplateId]);
+    }
+
+    public function test_the_event_can_be_deleted_step_by_step_with_progress(): void
+    {
+        $event = $this->event('2026-09-20', '2026-10-02');
+        $admin = $this->createUserWithRole('admin');
+        $now = now();
+
+        DB::table('movement_templates')->insert(['code' => 'MT-STEP', 'name' => 'Step', 'event_id' => $event->id, 'created_at' => $now, 'updated_at' => $now]);
+
+        $plan = $this->actingAs($admin)->getJson("/events/{$event->id}/deletion-plan")->assertOk()->json('steps');
+        $this->assertSame('event', collect($plan)->last()['key']);
+        $this->assertSame(1, collect($plan)->firstWhere('key', 'movement_templates')['count']);
+
+        $payload = ['confirm_name' => $event->name];
+
+        $this->actingAs($admin)->postJson("/events/{$event->id}/delete-step", ['step' => 'event', 'confirm_name' => 'wrong'])->assertStatus(422);
+        $this->actingAs($admin)->postJson("/events/{$event->id}/delete-step", ['step' => 'movement_templates'] + $payload)
+            ->assertOk()->assertJsonPath('deleted', 1);
+        $this->assertDatabaseMissing('movement_templates', ['code' => 'MT-STEP']);
+        $this->assertModelExists($event);
+
+        $this->actingAs($admin)->postJson("/events/{$event->id}/delete-step", ['step' => 'event'] + $payload)->assertOk();
+        $this->assertModelMissing($event);
     }
 
     public function test_start_and_end_dates_are_required(): void

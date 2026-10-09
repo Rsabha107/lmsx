@@ -208,11 +208,11 @@ class PlanManagementController extends Controller
         }
 
         // Load vehicles and drivers for movement editing
-        $vehicles = \App\Models\Vehicle::select('id', 'code', 'vehicle_type', 'capacity')
+        $vehicles = \App\Models\Vehicle::inEventPool($activeEventId)->select('id', 'code', 'vehicle_type', 'capacity', 'provider_id')
             ->orderBy('code')
             ->get();
         
-        $drivers = \App\Models\Driver::select('id', 'name', 'phone')
+        $drivers = \App\Models\Driver::inEventPool($activeEventId)->select('id', 'name', 'phone', 'provider_id')
             ->orderBy('name')
             ->get();
 
@@ -1254,6 +1254,21 @@ class PlanManagementController extends Controller
 
         $units = $validated['units'] ?? null;
         $supervisors = $validated['supervisors'] ?? null;
+
+        $crewToCheck = [
+            ['vehicle', $validated['vehicle_id'] ?? null],
+            ['driver', $validated['driver_id'] ?? null],
+            ['supervisor', $validated['field_supervisor_id'] ?? null],
+            ...array_map(fn ($u) => ['vehicle', $u['vehicle_id'] ?? null], $units ?? []),
+            ...array_map(fn ($u) => ['driver', $u['driver_id'] ?? null], $units ?? []),
+            ...array_map(fn ($id) => ['supervisor', $id], $supervisors ?? []),
+        ];
+        foreach ($crewToCheck as [$role, $id]) {
+            if ($id && ($why = \App\Support\CrewEligibility::violation($movement, $role, (int) $id))) {
+                throw \Illuminate\Validation\ValidationException::withMessages(["{$role}_id" => $why]);
+            }
+        }
+
         unset($validated['units'], $validated['supervisors']);
         $movement->update($validated);
 

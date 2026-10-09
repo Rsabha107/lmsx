@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Scopes\ProviderScope;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -75,6 +76,11 @@ class JobOperation extends Model
             $this->dispatched_at !== null => 'dispatched',
             default => 'pending',
         };
+    }
+
+    protected static function booted(): void
+    {
+        static::addGlobalScope(new ProviderScope);
     }
 
     protected $fillable = [

@@ -53,6 +53,7 @@ class EventsController extends Controller
             'countries'       => Country::active()->orderBy('country_name')->get(),
             'airports'        => Airport::orderBy('name')->get(),
             'venues'          => Venue::with('country')->orderBy('name')->get(),
+            'fleetProviders'  => \App\Models\FleetProvider::orderBy('name')->get(['id', 'name']),
         ]);
     }
 
@@ -66,6 +67,7 @@ class EventsController extends Controller
             'end_date'     => 'required|date|after_or_equal:start_date',
             'active_flag'  => 'sometimes|boolean',
             'notes'        => 'nullable|string',
+            'fleet_provider_id' => 'nullable|integer|exists:fleet_providers,id',
             'event_logo'   => 'nullable|image|mimes:png,jpg,jpeg,webp,svg|max:2048',
             'venue_ids'    => 'nullable|array',
             'venue_ids.*'  => 'integer|exists:venues,id',
@@ -95,6 +97,7 @@ class EventsController extends Controller
             'end_date'     => 'required|date|after_or_equal:start_date',
             'active_flag'  => 'sometimes|boolean',
             'notes'        => 'nullable|string',
+            'fleet_provider_id' => 'nullable|integer|exists:fleet_providers,id',
             'event_logo'   => 'nullable|image|mimes:png,jpg,jpeg,webp,svg|max:2048',
             'remove_logo'  => 'sometimes|boolean',
             'venue_ids'    => 'nullable|array',

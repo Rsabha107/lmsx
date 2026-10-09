@@ -3,18 +3,29 @@
 namespace App\Http\Controllers;
 
 use App\Models\Driver;
+use App\Models\Event;
+use App\Models\FleetProvider;
+use App\Models\JobOperation;
 use App\Models\Movement;
 use App\Models\User;
 use App\Models\Vehicle;
 use App\Services\ConflictDetectionService;
 use App\Services\JobLifecycleService;
+use App\Support\CrewEligibility;
 use Carbon\Carbon;
 use Closure;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
+use PhpOffice\PhpSpreadsheet\Spreadsheet;
+use PhpOffice\PhpSpreadsheet\Style\Alignment;
+use PhpOffice\PhpSpreadsheet\Style\Fill;
+use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 /**
  * The crew agency's screen: pick the vehicle, driver and supervisor for each
@@ -42,6 +53,7 @@ class MovementCrewController extends Controller
                 fn ($q) => $q->whereIn('functional_area', $user->functionalAreaCodes()),
             );
         $crew = ['vehicle:id,code,plate_number,vehicle_type', 'driver:id,name', 'fieldSupervisor:id,name', 'units.vehicle:id,code,plate_number,vehicle_type', 'units.driver:id,name', 'extraSupervisors:id,name'];
+        $providerNames = FleetProvider::withoutGlobalScopes()->pluck('name', 'id');
 
         // Same spans and double-booking rules as Planning's Conflicts tab.
         $schedule = $eventId ? $conflicts->crewSchedule((int) $eventId) : [];
@@ -65,7 +77,7 @@ class MovementCrewController extends Controller
             ->where('window_start', '<', $day->copy()->addDay())
             ->orderBy('window_start')
             ->get()
-            ->map(function (Movement $m) use ($day, $spanOf, $schedule, $vehicleLabel, $unitsOf, $extraSupervisorsOf) {
+            ->map(function (Movement $m) use ($day, $spanOf, $schedule, $vehicleLabel, $unitsOf, $extraSupervisorsOf, $providerNames) {
                 [$start, $end] = $spanOf($m);
                 $carryOver = $m->window_start->lt($day);
                 if ($carryOver && ! $end?->gt($day)) {
@@ -85,6 +97,8 @@ class MovementCrewController extends Controller
                     'pax' => $m->passengers,
                     'flight_number' => $m->flight_number,
                     'functional_area' => $m->functional_area,
+                    'fleet_provider_id' => $m->fleet_provider_id,
+                    'provider' => $providerNames[$m->fleet_provider_id] ?? null,
                     'vehicle_id' => $m->vehicle_id,
                     'driver_id' => $m->driver_id,
                     'field_supervisor_id' => $m->field_supervisor_id,
@@ -150,9 +164,98 @@ class MovementCrewController extends Controller
             'date' => $date,
             'days' => $days,
             'week' => ['start' => $weekStart->toDateString(), 'slots' => $week],
-            'vehicles' => Vehicle::select('id', 'code', 'plate_number', 'vehicle_type', 'capacity')->orderBy('code')->get(),
-            'drivers' => Driver::select('id', 'name', 'phone')->orderBy('name')->get(),
-            'supervisors' => $this->supervisors()->select('id', 'name')->orderBy('name')->get(),
+            'vehicles' => Vehicle::inEventPool($eventId)->select('id', 'code', 'plate_number', 'vehicle_type', 'capacity', 'provider_id')->orderBy('code')->get(),
+            'drivers' => Driver::inEventPool($eventId)->select('id', 'name', 'phone', 'provider_id')->orderBy('name')->get(),
+            'supervisors' => $this->supervisors()->select('id', 'name', 'fleet_provider_id')->orderBy('name')->get(),
+            // Only people who can re-home a movement are offered the provider switch.
+            'providers' => $user->can('plans.manage') ? FleetProvider::orderBy('name')->get(['id', 'name']) : [],
+        ]);
+    }
+
+    /** One day's resource allocation sheet for the service provider. */
+    public function export(Request $request): StreamedResponse
+    {
+        $eventId = $request->session()->get('active_event_id');
+        $user = $request->user();
+
+        try {
+            $day = Carbon::parse($request->query('date', now()->toDateString()))->startOfDay();
+        } catch (\Exception) {
+            $day = now()->startOfDay();
+        }
+
+        $movements = Movement::where('event_id', $eventId)
+            ->when(
+                ! $user->can('movements.view-all-functional-areas'),
+                fn ($q) => $q->whereIn('functional_area', $user->functionalAreaCodes()),
+            )
+            ->with([
+                'team:id,code,team_name', 'job:id,movement_id,job_id,status', 'flight:id,scheduled_at', 'match:id,kick_off',
+                'vehicle:id,code,plate_number', 'driver:id,name', 'fieldSupervisor:id,name',
+                'units.vehicle:id,code,plate_number', 'units.driver:id,name', 'extraSupervisors:id,name',
+            ])
+            ->where('window_start', '>=', $day)
+            ->where('window_start', '<', $day->copy()->addDay())
+            ->orderBy('window_start')
+            ->orderBy('id')
+            ->get();
+
+        $names = fn (array $values) => implode(', ', array_values(array_unique(array_filter($values))));
+
+        $spreadsheet = new Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->setTitle('Allocation');
+        $sheet->setCellValue('A1', 'PMA RESOURCE ALLOCATION SCHEDULE ' . strtoupper($day->format('j F Y')));
+        $sheet->getStyle('A1')->getFont()->setBold(true)->setSize(14);
+
+        $headers = ['Job ID', 'Activity Type', 'PMA', 'Arrival Date', 'Arrival Time', 'Match KO time', 'Truck Report', 'FROM (VENUE)', 'TO (VENUE)', 'Driver', 'Supervisor', 'Crew', 'Truck Plate #', 'Status', 'Notes'];
+        $sheet->fromArray($headers, null, 'A3');
+        $head = $sheet->getStyle('A3:O3');
+        $head->getFont()->setBold(true)->getColor()->setRGB('FFFFFF');
+        $head->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('1F4E79');
+        $head->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER)->setVertical(Alignment::VERTICAL_CENTER)->setWrapText(true);
+
+        $row = 4;
+        foreach ($movements as $m) {
+            $onFlight = in_array($m->kind, ['arrival', 'departure'], true);
+            $plates = fn ($v) => $v ? ($v->plate_number ?? $v->code) : null;
+
+            $sheet->fromArray([
+                $m->job?->job_id ?? $m->code,
+                $m->kind === 'match' ? 'MATCH DAY' : strtoupper(str_replace('_', ' ', (string) $m->kind)),
+                $m->team?->team_name,
+                $m->window_start->format('l, F j, Y'),
+                $onFlight ? $m->flight?->scheduled_at?->format('H:i') : null,
+                $m->kind === 'match' ? $m->match?->kick_off?->format('H:i') : null,
+                null,
+                $m->from_location,
+                $m->to_location,
+                $names([$m->driver?->name, ...$m->units->map(fn ($u) => $u->driver?->name)->all()]),
+                $names([$m->fieldSupervisor?->name, ...$m->extraSupervisors->pluck('name')->all()]),
+                null,
+                $names([$plates($m->vehicle), ...$m->units->map(fn ($u) => $plates($u->vehicle))->all()]),
+                $m->job ? JobOperation::statusLabel($m->job->status) : 'Pending',
+                $m->notes,
+            ], null, 'A' . $row);
+            $row++;
+        }
+
+        foreach (range('A', 'O') as $col) {
+            $sheet->getColumnDimension($col)->setAutoSize(true);
+        }
+        $sheet->freezePane('A4');
+
+        $code = $eventId ? Event::find($eventId)?->short_name : null;
+        $filename = implode('_', array_filter([
+            'PMA',
+            $code ? preg_replace('/[^A-Za-z0-9]/', '', $code) : null,
+            $day->format('dmY'),
+            'RESOURCE_ALLOCATION',
+        ])) . '.xlsx';
+        $writer = new Xlsx($spreadsheet);
+
+        return response()->streamDownload(fn () => $writer->save('php://output'), $filename, [
+            'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         ]);
     }
 
@@ -161,10 +264,16 @@ class MovementCrewController extends Controller
         $this->authorize('view', $movement);
 
         // All three are required keys so a partial payload can't silently clear a role.
+        $crewRule = fn (string $role) => function (string $attribute, mixed $value, Closure $fail) use ($movement, $role) {
+            if ($value !== null && ($why = CrewEligibility::violation($movement, $role, (int) $value))) {
+                $fail($why);
+            }
+        };
+
         $validated = $request->validate([
-            'vehicle_id' => ['present', 'nullable', 'integer', 'exists:vehicles,id'],
-            'driver_id' => ['present', 'nullable', 'integer', 'exists:drivers,id'],
-            'field_supervisor_id' => ['present', 'nullable', 'integer', function (string $attribute, mixed $value, Closure $fail) use ($movement) {
+            'vehicle_id' => ['present', 'nullable', 'integer', 'exists:vehicles,id', $crewRule('vehicle')],
+            'driver_id' => ['present', 'nullable', 'integer', 'exists:drivers,id', $crewRule('driver')],
+            'field_supervisor_id' => ['present', 'nullable', 'integer', $crewRule('supervisor'), function (string $attribute, mixed $value, Closure $fail) use ($movement) {
                 // Keeping whoever planning already put there is always allowed.
                 if ($value !== null && (int) $value !== (int) $movement->field_supervisor_id && ! $this->supervisors()->whereKey($value)->exists()) {
                     $fail('The selected supervisor cannot run jobs in the mobile app.');
@@ -172,10 +281,10 @@ class MovementCrewController extends Controller
             }],
             // Optional so older clients that only send the lead crew leave the extras alone.
             'units' => ['sometimes', 'array', 'max:10'],
-            'units.*.vehicle_id' => ['nullable', 'integer', 'exists:vehicles,id'],
-            'units.*.driver_id' => ['nullable', 'integer', 'exists:drivers,id'],
+            'units.*.vehicle_id' => ['nullable', 'integer', 'exists:vehicles,id', $crewRule('vehicle')],
+            'units.*.driver_id' => ['nullable', 'integer', 'exists:drivers,id', $crewRule('driver')],
             'supervisors' => ['sometimes', 'array', 'max:10'],
-            'supervisors.*' => ['integer', function (string $attribute, mixed $value, Closure $fail) use ($movement) {
+            'supervisors.*' => ['integer', $crewRule('supervisor'), function (string $attribute, mixed $value, Closure $fail) use ($movement) {
                 $kept = $movement->extraSupervisors()->whereKey($value)->exists();
                 if (! $kept && ! $this->supervisors()->whereKey($value)->exists()) {
                     $fail('A selected supervisor cannot run jobs in the mobile app.');
@@ -203,9 +312,39 @@ class MovementCrewController extends Controller
         return back()->with('success', $changed ? "Crew updated for {$movement->code}." : 'No changes to save.');
     }
 
-    /** A supervisor has to be able to work the job in the mobile app. */
+    /** Hands a movement to another provider; its crew stays until that provider reassigns it. */
+    public function updateProvider(Request $request, Movement $movement): RedirectResponse
+    {
+        $this->authorize('view', $movement);
+
+        $validated = $request->validate([
+            'fleet_provider_id' => ['present', 'nullable', 'integer', Rule::exists('fleet_providers', 'id')],
+        ]);
+
+        $movement->update($validated);
+
+        $mismatched = $validated['fleet_provider_id'] && (
+            ($movement->vehicle && (int) $movement->vehicle->provider_id !== (int) $validated['fleet_provider_id'])
+            || ($movement->driver && (int) $movement->driver->provider_id !== (int) $validated['fleet_provider_id'])
+            || ($movement->fieldSupervisor && (int) $movement->fieldSupervisor->fleet_provider_id !== (int) $validated['fleet_provider_id'])
+        );
+
+        return back()->with(
+            $mismatched ? 'warning' : 'success',
+            $mismatched
+                ? "Provider changed for {$movement->code}, but its vehicle, driver or supervisor belongs to another provider - reassign them."
+                : "Provider updated for {$movement->code}.",
+        );
+    }
+
+    /** A supervisor has to be able to work the job in the mobile app, and belong to the movement's provider. */
     private function supervisors()
     {
-        return User::permission('jobs.view');
+        $query = User::permission('jobs.view');
+        $user = Auth::user();
+
+        return $user?->isProviderRestricted()
+            ? $query->where('users.fleet_provider_id', $user->fleet_provider_id ?? 0)
+            : $query;
     }
 }

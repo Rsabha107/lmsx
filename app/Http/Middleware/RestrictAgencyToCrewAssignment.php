@@ -25,6 +25,8 @@ class RestrictAgencyToCrewAssignment
         'fleet.providers.store',
         'fleet.providers.update',
         'fleet.providers.destroy',
+        'fleet.bulk-delete',
+        'fleet.pool',
         'logout',
         'session.active-event',
         'session.active-plan',

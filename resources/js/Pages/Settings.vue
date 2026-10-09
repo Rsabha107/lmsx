@@ -231,6 +231,27 @@
       </div>
     </div>
 
+    <!-- Mobile App Download -->
+    <div class="settings-card" style="margin-bottom: 24px;">
+      <div class="card-header">
+        <h2 class="card-title">
+          <svg-icon name="download" :size="18" style="color: #6B7280;" />
+          Mobile App
+        </h2>
+        <p class="card-subtitle">Android app for field supervisors</p>
+      </div>
+      <div class="flag-row">
+        <div class="flag-body">
+          <span class="flag-label">NAQLA LMS (Android APK)</span>
+          <span class="flag-desc">Download the latest installer and share it with supervisors.</span>
+        </div>
+        <a href="/downloads/mobile-app" class="apk-link">
+          <svg-icon name="download" :size="14" />
+          Download APK
+        </a>
+      </div>
+    </div>
+
     <!-- Confirm turning the mobile view off -->
     <Modal :show="showFlagConfirm" @close="cancelToggle" max-width="440px">
       <template #title>Turn off Jobs (Mobile)?</template>
@@ -926,6 +947,8 @@ function getCheckpointName(checkpointId) {
   gap: 24px; padding: 18px 24px; flex-wrap: wrap;
 }
 .flag-row + .flag-row { border-top: 1px solid #E5E7EB; }
+.apk-link { display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; border-radius: 6px; background: #1D4ED8; color: #fff; font-size: 13px; font-weight: 500; text-decoration: none; white-space: nowrap; }
+.apk-link:hover { background: #1E40AF; }
 .flag-body { flex: 1 1 320px; min-width: 0; }
 .flag-label { display: block; font-size: 14px; font-weight: 600; color: #111827; }
 .flag-desc { display: block; font-size: 12.5px; line-height: 1.55; color: #6B7280; margin-top: 4px; max-width: 620px; }

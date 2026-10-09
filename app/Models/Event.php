@@ -18,6 +18,7 @@ class Event extends Model
         'end_date',
         'active_flag',
         'notes',
+        'fleet_provider_id',
     ];
 
     public const STATUS_UPCOMING = 'upcoming';
@@ -83,6 +84,21 @@ class Event extends Model
         return $this->belongsToMany(Venue::class, 'event_venue')
                     ->withPivot('purpose', 'notes')
                     ->withTimestamps();
+    }
+
+    public function fleetProvider(): BelongsTo
+    {
+        return $this->belongsTo(FleetProvider::class, 'fleet_provider_id')->withoutGlobalScopes();
+    }
+
+    public function drivers(): BelongsToMany
+    {
+        return $this->belongsToMany(Driver::class, 'event_driver')->withTimestamps();
+    }
+
+    public function vehicles(): BelongsToMany
+    {
+        return $this->belongsToMany(Vehicle::class, 'event_vehicle')->withTimestamps();
     }
 
     public function users(): BelongsToMany

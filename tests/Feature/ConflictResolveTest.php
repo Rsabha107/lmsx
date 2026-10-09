@@ -51,9 +51,9 @@ class ConflictResolveTest extends TestCase
 
     public function test_crew_options_mark_who_is_busy_and_who_is_free(): void
     {
-        $busy = Driver::create(['name' => 'Busy Driver', 'status' => 'available']);
-        $free = Driver::create(['name' => 'Free Driver', 'status' => 'available']);
-        $off = Driver::create(['name' => 'Off Driver', 'status' => 'off']);
+        $busy = $this->createDriver($this->event, ['name' => 'Busy Driver']);
+        $free = $this->createDriver($this->event, ['name' => 'Free Driver']);
+        $off = $this->createDriver($this->event, ['name' => 'Off Driver', 'status' => 'off']);
 
         $this->movement('2026-11-27 12:00', '2026-11-27 14:00', ['driver_id' => $busy->id, 'code' => 'M-OTHER']);
         $target = $this->movement('2026-11-27 13:00', '2026-11-27 15:00');
@@ -68,7 +68,7 @@ class ConflictResolveTest extends TestCase
 
     public function test_a_planner_can_reassign_crew_from_the_resolve_panel(): void
     {
-        $driver = Driver::create(['name' => 'New Driver', 'status' => 'available']);
+        $driver = $this->createDriver($this->event, ['name' => 'New Driver']);
         $movement = $this->movement('2026-11-27 13:00', '2026-11-27 15:00');
 
         $this->planner()

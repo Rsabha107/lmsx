@@ -278,6 +278,15 @@
         </div>
 
         <div class="form-group">
+          <label class="form-label">Transport provider</label>
+          <select v-model="form.fleet_provider_id" class="form-select">
+            <option :value="null">None</option>
+            <option v-for="p in fleetProviders" :key="p.id" :value="p.id">{{ p.name }}</option>
+          </select>
+          <span class="logo-hint">New movements in this event start with this provider; you can change it per movement in Crew Assignment.</span>
+        </div>
+
+        <div class="form-group">
           <div class="picker-head">
             <label class="form-label">Venues</label>
             <div class="picker-actions">
@@ -666,6 +675,7 @@ const props = defineProps({
   countries:       { type: Array, required: true },
   airports:        { type: Array, default: () => [] },
   venues:          { type: Array, default: () => [] },
+  fleetProviders:  { type: Array, default: () => [] },
 });
 
 // ── State ──────────────────────────────────────────────────────────────────
@@ -692,7 +702,7 @@ const venueSearch = ref('');
 const eventVenueSearch = ref('');
 
 function emptyForm() {
-  return { name: '', short_name: '', host_country: '', start_date: '', end_date: '', active_flag: true, notes: '', venue_ids: [] };
+  return { name: '', short_name: '', host_country: '', start_date: '', end_date: '', active_flag: true, notes: '', fleet_provider_id: null, venue_ids: [] };
 }
 
 // Mirrors Event::getStatusAttribute() so the form previews the saved status.
@@ -781,6 +791,7 @@ function editEvent(event) {
     end_date:     event.end_date     ? String(event.end_date).substring(0, 10)   : '',
     active_flag:  event.active_flag !== false,
     notes:        event.notes        || '',
+    fleet_provider_id: event.fleet_provider_id ?? null,
     venue_ids:    (event.venues || []).map(v => v.id),
   };
   resetLogo(event.logo_url);

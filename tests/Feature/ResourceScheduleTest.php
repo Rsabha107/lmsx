@@ -23,17 +23,14 @@ class ResourceScheduleTest extends TestCase
 
     private function agency(int $eventId): static
     {
-        $user = User::factory()->create();
-        $user->assignRole('agency');
-
-        return $this->actingAs($user)->withSession(['active_event_id' => $eventId]);
+        return $this->actingAs($this->createProviderUser('agency'))->withSession(['active_event_id' => $eventId]);
     }
 
     public function test_a_vehicles_week_lists_lead_and_extra_bookings_planned_or_generated(): void
     {
         $event = $this->createEvent();
         $plan = $this->createPlan($event);
-        $truck = Vehicle::create(['code' => 'TRK-1']);
+        $truck = $this->createVehicle($event, ['code' => 'TRK-1']);
 
         $lead = $this->createMovement($event, $plan, $team = $this->createTeam($event), [
             'vehicle_id' => $truck->id, 'window_start' => '2026-11-24 09:00', 'window_end' => '2026-11-24 10:00',
@@ -68,7 +65,7 @@ class ResourceScheduleTest extends TestCase
     public function test_the_week_exports_to_excel(): void
     {
         $event = $this->createEvent();
-        $driver = Driver::create(['name' => 'Excel Driver', 'status' => 'available']);
+        $driver = $this->createDriver($event, ['name' => 'Excel Driver']);
         $this->createMovement($event, $this->createPlan($event), $this->createTeam($event), [
             'driver_id' => $driver->id, 'window_start' => '2026-11-24 09:00', 'window_end' => '2026-11-24 10:00',
         ]);

@@ -27,10 +27,7 @@ class MovementUnitsTest extends TestCase
 
     private function agency(): static
     {
-        $user = User::factory()->create();
-        $user->assignRole('agency');
-
-        return $this->actingAs($user)->withSession(['active_event_id' => $this->event->id]);
+        return $this->actingAs($this->createProviderUser('agency'))->withSession(['active_event_id' => $this->event->id]);
     }
 
     private function movement(array $attributes = [])
@@ -43,8 +40,8 @@ class MovementUnitsTest extends TestCase
     public function test_crew_assignment_saves_extra_vehicles_and_drivers(): void
     {
         $movement = $this->movement();
-        [$bus, $truck] = [Vehicle::create(['code' => 'BUS-1']), Vehicle::create(['code' => 'TRK-1'])];
-        [$lead, $second] = [Driver::create(['name' => 'Lead', 'status' => 'available']), Driver::create(['name' => 'Second', 'status' => 'available'])];
+        [$bus, $truck] = [$this->createVehicle($this->event, ['code' => 'BUS-1']), $this->createVehicle($this->event, ['code' => 'TRK-1'])];
+        [$lead, $second] = [$this->createDriver($this->event, ['name' => 'Lead']), $this->createDriver($this->event, ['name' => 'Second'])];
 
         $this->agency()->patch("/movements/{$movement->id}/crew", [
             'vehicle_id' => $bus->id, 'driver_id' => $lead->id, 'field_supervisor_id' => null,
@@ -97,7 +94,7 @@ class MovementUnitsTest extends TestCase
 
     private function supervisor(): User
     {
-        $user = User::factory()->create();
+        $user = User::factory()->create(['fleet_provider_id' => $this->fixtureProvider()->id]);
         $user->assignRole('ground_control');
 
         return $user;

@@ -10,6 +10,7 @@ use App\Services\ConflictDetectionService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Auth;
 use Inertia\Inertia;
 use Inertia\Response;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
@@ -232,6 +233,11 @@ class ResourceScheduleController extends Controller
 
     private function supervisors()
     {
-        return User::permission('jobs.view');
+        $query = User::permission('jobs.view');
+        $user = Auth::user();
+
+        return $user?->isProviderRestricted()
+            ? $query->where('users.fleet_provider_id', $user->fleet_provider_id ?? 0)
+            : $query;
     }
 }

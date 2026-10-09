@@ -2,12 +2,31 @@
 
 namespace App\Models;
 
+use App\Models\Scopes\ProviderScope;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Facades\DB;
 
 class Vehicle extends Model
 {
+    protected static function booted(): void
+    {
+        static::addGlobalScope(new ProviderScope);
+    }
+
+    /** Vehicles put forward for an event; only they are offered for its movements. */
+    public function scopeInEventPool($query, ?int $eventId)
+    {
+        return $query->whereIn('vehicles.id', DB::table('event_vehicle')->where('event_id', $eventId)->select('vehicle_id'));
+    }
+
+    public function events(): BelongsToMany
+    {
+        return $this->belongsToMany(Event::class, 'event_vehicle')->withTimestamps();
+    }
+
     protected $fillable = [
         'code',
         'provider_id',
@@ -29,7 +48,7 @@ class Vehicle extends Model
 
     public function provider(): BelongsTo
     {
-        return $this->belongsTo(FleetProvider::class, 'provider_id');
+        return $this->belongsTo(FleetProvider::class, 'provider_id')->withoutGlobalScopes();
     }
 
     public function movements(): HasMany

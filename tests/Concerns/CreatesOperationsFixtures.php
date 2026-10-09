@@ -3,22 +3,64 @@
 namespace Tests\Concerns;
 
 use App\Models\Country;
+use App\Models\Driver;
 use App\Models\Event;
+use App\Models\FleetProvider;
 use App\Models\JobCheckpoint;
 use App\Models\JobOperation;
 use App\Models\Movement;
 use App\Models\Plan;
 use App\Models\Team;
 use App\Models\User;
+use App\Models\Vehicle;
 use Illuminate\Support\Str;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 
 trait CreatesOperationsFixtures
 {
+    private ?FleetProvider $fixtureProvider = null;
+
+    /** The provider every fixture event, vehicle, driver and agency user belongs to unless told otherwise. */
+    protected function fixtureProvider(): FleetProvider
+    {
+        return $this->fixtureProvider ??= FleetProvider::withoutGlobalScopes()->create(['code' => 'GWC', 'name' => 'GWC']);
+    }
+
+    protected function createProvider(string $name): FleetProvider
+    {
+        return FleetProvider::withoutGlobalScopes()->create(['code' => strtoupper(Str::random(4)), 'name' => $name]);
+    }
+
+    /** @param array<string, mixed> $attributes */
+    protected function createVehicle(Event $event, array $attributes = []): Vehicle
+    {
+        $vehicle = Vehicle::create($attributes + ['code' => 'V-'.Str::random(5), 'provider_id' => $this->fixtureProvider()->id]);
+        $vehicle->events()->attach($event->id);
+
+        return $vehicle;
+    }
+
+    /** @param array<string, mixed> $attributes */
+    protected function createDriver(Event $event, array $attributes = []): Driver
+    {
+        $driver = Driver::create($attributes + ['name' => 'Driver '.Str::random(5), 'status' => 'available', 'provider_id' => $this->fixtureProvider()->id]);
+        $driver->events()->attach($event->id);
+
+        return $driver;
+    }
+
+    protected function createProviderUser(string $role, ?FleetProvider $provider = null): User
+    {
+        $user = User::factory()->create(['fleet_provider_id' => ($provider ?? $this->fixtureProvider())->id]);
+        $user->assignRole($role);
+
+        return $user;
+    }
+
     protected function createEvent(): Event
     {
-        return Event::create(['name' => 'Test Event '.Str::random(6)]);
+        return Event::create(['name' => 'Test Event '.Str::random(6), 'fleet_provider_id' => $this->fixtureProvider()->id]);
     }
 
     protected function createTeam(Event $event): Team

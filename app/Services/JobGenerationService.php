@@ -707,11 +707,11 @@ class JobGenerationService
                         
                         // Auto-assign vehicle and driver
                         $vehicleId = $passengerCount > 0 
-                            ? $this->findAvailableVehicle($passengerCount, $scheduledDeparture, $scheduledArrival)
+                            ? $this->findAvailableVehicle($passengerCount, $scheduledDeparture, $scheduledArrival, $plan->event_id)
                             : null;
                         
                         $driverId = $vehicleId 
-                            ? $this->findAvailableDriver($scheduledDeparture, $scheduledArrival)
+                            ? $this->findAvailableDriver($scheduledDeparture, $scheduledArrival, $plan->event_id)
                             : null;
                         
                         // Auto-fetch flight_id from event team flights based on movement kind.
@@ -880,12 +880,12 @@ class JobGenerationService
                         
                         // Auto-assign vehicle based on passenger count and availability
                         $vehicleId = $passengerCount > 0 
-                            ? $this->findAvailableVehicle($passengerCount, $scheduledDeparture, $scheduledArrival)
+                            ? $this->findAvailableVehicle($passengerCount, $scheduledDeparture, $scheduledArrival, $plan->event_id)
                             : null;
                         
                         // Auto-assign driver if vehicle was assigned
                         $driverId = $vehicleId 
-                            ? $this->findAvailableDriver($scheduledDeparture, $scheduledArrival)
+                            ? $this->findAvailableDriver($scheduledDeparture, $scheduledArrival, $plan->event_id)
                             : null;
                         
                         // Auto-fetch flight_id from event team flights based on movement kind
@@ -1025,11 +1025,11 @@ class JobGenerationService
                     
                     // Auto-assign vehicle and driver
                     $vehicleId = $passengerCount > 0 
-                        ? $this->findAvailableVehicle($passengerCount, $scheduledDeparture, $scheduledArrival)
+                        ? $this->findAvailableVehicle($passengerCount, $scheduledDeparture, $scheduledArrival, $plan->event_id)
                         : null;
                     
                     $driverId = $vehicleId 
-                        ? $this->findAvailableDriver($scheduledDeparture, $scheduledArrival)
+                        ? $this->findAvailableDriver($scheduledDeparture, $scheduledArrival, $plan->event_id)
                         : null;
                     
                     // Auto-fetch flight_id
@@ -1147,10 +1147,14 @@ class JobGenerationService
      * Find an available vehicle with sufficient capacity.
      * Checks for time conflicts with existing movements.
      */
-    protected function findAvailableVehicle(int $passengerCount, $scheduledDeparture, $scheduledArrival): ?int
+    protected function findAvailableVehicle(int $passengerCount, $scheduledDeparture, $scheduledArrival, ?int $eventId = null): ?int
     {
-        // Find vehicles with sufficient capacity
+        $providerId = $eventId ? \App\Models\Event::whereKey($eventId)->value('fleet_provider_id') : null;
+
+        // Find vehicles with sufficient capacity, from the event's fleet and provider
         $vehicles = Vehicle::where('is_active', 1)
+            ->when($eventId, fn ($q) => $q->inEventPool($eventId))
+            ->when($providerId, fn ($q) => $q->where('provider_id', $providerId))
             ->where('capacity', '>=', $passengerCount)
             ->orderBy('capacity', 'asc') // Prefer smallest suitable vehicle
             ->get();
@@ -1181,9 +1185,14 @@ class JobGenerationService
      * Find an available driver.
      * Checks for time conflicts with existing movements.
      */
-    protected function findAvailableDriver($scheduledDeparture, $scheduledArrival): ?int
+    protected function findAvailableDriver($scheduledDeparture, $scheduledArrival, ?int $eventId = null): ?int
     {
-        $drivers = Driver::whereIn('status', ['available', 'on_shift'])->get();
+        $providerId = $eventId ? \App\Models\Event::whereKey($eventId)->value('fleet_provider_id') : null;
+
+        $drivers = Driver::whereIn('status', ['available', 'on_shift'])
+            ->when($eventId, fn ($q) => $q->inEventPool($eventId))
+            ->when($providerId, fn ($q) => $q->where('provider_id', $providerId))
+            ->get();
 
         foreach ($drivers as $driver) {
             // Check if driver has conflicting movements at the same time

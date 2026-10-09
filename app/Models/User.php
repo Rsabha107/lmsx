@@ -7,6 +7,7 @@ use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
@@ -14,7 +15,7 @@ use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
 use Spatie\Permission\Traits\HasRoles;
 
-#[Fillable(['name', 'email', 'password', 'provider', 'provider_id'])]
+#[Fillable(['name', 'email', 'password', 'provider', 'provider_id', 'fleet_provider_id'])]
 #[Hidden(['password', 'remember_token'])]
 class User extends Authenticatable
 {
@@ -42,6 +43,21 @@ class User extends Authenticatable
     public function events(): BelongsToMany
     {
         return $this->belongsToMany(Event::class, 'user_events')->withTimestamps();
+    }
+
+    public function fleetProvider(): BelongsTo
+    {
+        return $this->belongsTo(FleetProvider::class, 'fleet_provider_id')->withoutGlobalScopes();
+    }
+
+    /** Agencies, and anyone tied to a provider, work only on that provider's movements and fleet. */
+    public function isProviderRestricted(): bool
+    {
+        if ($this->hasRole('admin')) {
+            return false;
+        }
+
+        return $this->fleet_provider_id !== null || $this->hasRole('agency');
     }
 
     /**

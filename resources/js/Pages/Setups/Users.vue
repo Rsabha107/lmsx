@@ -31,12 +31,13 @@
             <th>Email</th>
             <th>Roles</th>
             <th>Events</th>
+            <th>Provider</th>
             <th style="width:88px;text-align:center">Actions</th>
           </tr>
         </thead>
         <tbody>
           <tr v-if="filtered.length === 0">
-            <td colspan="5" class="empty-row">No users found.</td>
+            <td colspan="6" class="empty-row">No users found.</td>
           </tr>
           <tr v-for="user in filtered" :key="user.id">
             <td>
@@ -59,6 +60,7 @@
                 <span v-if="!user.events?.length" class="no-roles" title="Unrestricted — this user can reach every event">all events</span>
               </div>
             </td>
+            <td>{{ providerName(user.fleet_provider_id) }}</td>
             <td>
               <TableActions @edit="openEdit(user)" @delete="openDelete(user)" />
             </td>
@@ -120,6 +122,17 @@
           </button>
         </div>
         <span v-if="errors.password" id="user-password-error" class="error-msg">{{ errors.password }}</span>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="user-provider">
+          Transport provider
+          <span class="form-label-hint">— limits this user to that provider's movements and fleet</span>
+        </label>
+        <select id="user-provider" v-model="form.fleet_provider_id" class="form-input">
+          <option :value="null">None (not tied to a provider)</option>
+          <option v-for="p in fleetProviders" :key="p.id" :value="p.id">{{ p.name }}</option>
+        </select>
       </div>
 
       <div class="form-group">
@@ -236,6 +249,7 @@ const props = defineProps({
   users: { type: Array, default: () => [] },
   roles: { type: Array, default: () => [] },
   events: { type: Array, default: () => [] },
+  fleetProviders: { type: Array, default: () => [] },
 });
 
 const search       = ref('');
@@ -246,7 +260,7 @@ const showPw       = ref(false);
 const editingUser  = ref(null);
 const deletingUser = ref(null);
 const errors       = ref({});
-const form         = ref({ name: '', email: '', password: '', roles: [], events: [] });
+const form         = ref({ name: '', email: '', password: '', roles: [], events: [], fleet_provider_id: null });
 
 const filtered = computed(() => {
   const q = search.value.toLowerCase();
@@ -256,6 +270,10 @@ const filtered = computed(() => {
 });
 
 const eventSearch = ref('');
+
+function providerName(id) {
+  return props.fleetProviders.find(p => p.id === id)?.name ?? '—';
+}
 
 const filteredEvents = computed(() => {
   const q = eventSearch.value.trim().toLowerCase();
@@ -294,7 +312,7 @@ function initials(name) {
 
 function openCreate() {
   editingUser.value = null;
-  form.value = { name: '', email: '', password: '', roles: [], events: [] };
+  form.value = { name: '', email: '', password: '', roles: [], events: [], fleet_provider_id: null };
   errors.value = {};
   eventSearch.value = '';
   showPw.value = false;
@@ -309,6 +327,7 @@ function openEdit(user) {
     password: '',
     roles: user.roles.map(r => r.id),
     events: (user.events ?? []).map(e => e.id),
+    fleet_provider_id: user.fleet_provider_id ?? null,
   };
   errors.value = {};
   eventSearch.value = '';

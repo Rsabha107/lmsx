@@ -264,10 +264,12 @@ class LmsController extends Controller
     /** Same pools the Planning movement editor offers, for crew changes in the override modal. */
     private function crewPools(): array
     {
+        $eventId = session('active_event_id');
+
         return [
-            'drivers' => Driver::select('id', 'name')->orderBy('name')->get(),
+            'drivers' => Driver::inEventPool($eventId)->select('id', 'name')->orderBy('name')->get(),
             'supervisors' => User::select('id', 'name')->orderBy('name')->get(),
-            'vehicles' => Vehicle::select('id', 'code', 'plate_number', 'vehicle_type', 'capacity')->orderBy('code')->get(),
+            'vehicles' => Vehicle::inEventPool($eventId)->select('id', 'code', 'plate_number', 'vehicle_type', 'capacity')->orderBy('code')->get(),
         ];
     }
 
@@ -828,15 +830,21 @@ class LmsController extends Controller
         ]);
     }
 
-    public function fleet(DriverDayStatusService $driverStatus): Response
+    public function fleet(Request $request, DriverDayStatusService $driverStatus): Response
     {
         $drivers = Driver::with('provider:id,name')->get();
         $today = $driverStatus->forDrivers($drivers);
+        $eventId = $request->session()->get('active_event_id');
 
         return Inertia::render('Fleet', [
-            'vehicles' => Vehicle::all(),
+            'vehicles' => Vehicle::with('provider:id,name')->get(),
             'providers' => FleetProvider::withCount(['vehicles', 'drivers'])->get(),
             'drivers' => $drivers->map(fn (Driver $d) => $d->toArray() + ['today' => $today[$d->id]])->values(),
+            'eventPool' => [
+                'name' => $eventId ? Event::whereKey($eventId)->value('name') : null,
+                'vehicles' => $eventId ? Vehicle::inEventPool($eventId)->pluck('vehicles.id')->all() : [],
+                'drivers' => $eventId ? Driver::inEventPool($eventId)->pluck('drivers.id')->all() : [],
+            ],
         ]);
     }
 
@@ -995,6 +1003,14 @@ class LmsController extends Controller
             $driverId = isset($validated['driver_id']) ? (int) $validated['driver_id'] : null;
             $supervisorId = isset($validated['supervisor_id']) ? (int) $validated['supervisor_id'] : null;
             $vehicleId = isset($validated['vehicle_id']) ? (int) $validated['vehicle_id'] : null;
+
+            if ($movement = $checkpoint->job->movement) {
+                foreach (['vehicle' => $vehicleId, 'driver' => $driverId, 'supervisor' => $supervisorId] as $role => $id) {
+                    if ($id && ($why = \App\Support\CrewEligibility::violation($movement, $role, $id))) {
+                        throw \Illuminate\Validation\ValidationException::withMessages(["{$role}_id" => $why]);
+                    }
+                }
+            }
 
             // Only the flight fields the modal actually sent (i.e. edited) are changed.
             $flightChanges = [];

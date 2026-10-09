@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Event;
+use App\Models\FleetProvider;
 use App\Models\User;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -19,9 +20,10 @@ class UserController extends Controller
         return Inertia::render('Setups/Users', [
             'users' => User::with(['roles:id,name', 'events:id,name'])
                 ->orderBy('name')
-                ->get(['id', 'name', 'email', 'created_at']),
+                ->get(['id', 'name', 'email', 'fleet_provider_id', 'created_at']),
             'roles' => Role::orderBy('name')->get(['id', 'name']),
             'events' => Event::orderByDesc('active_flag')->orderByDesc('id')->get(['id', 'name', 'short_name']),
+            'fleetProviders' => FleetProvider::orderBy('name')->get(['id', 'name']),
         ]);
     }
 
@@ -35,12 +37,14 @@ class UserController extends Controller
             'roles.*'  => 'integer|exists:roles,id',
             'events'   => 'nullable|array',
             'events.*' => 'integer|exists:events,id',
+            'fleet_provider_id' => 'nullable|integer|exists:fleet_providers,id',
         ]);
 
         $user = User::create([
             'name'     => $data['name'],
             'email'    => $data['email'],
             'password' => Hash::make($data['password']),
+            'fleet_provider_id' => $data['fleet_provider_id'] ?? null,
         ]);
 
         $user->syncRoles($data['roles'] ?? []);
@@ -63,10 +67,12 @@ class UserController extends Controller
             'roles.*'  => 'integer|exists:roles,id',
             'events'   => 'nullable|array',
             'events.*' => 'integer|exists:events,id',
+            'fleet_provider_id' => 'nullable|integer|exists:fleet_providers,id',
         ]);
 
         $user->name  = $data['name'];
         $user->email = $data['email'];
+        $user->fleet_provider_id = $data['fleet_provider_id'] ?? null;
 
         if (!empty($data['password'])) {
             $user->password = Hash::make($data['password']);

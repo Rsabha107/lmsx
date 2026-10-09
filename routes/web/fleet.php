@@ -43,8 +43,12 @@ Route::middleware('auth')->group(function () {
             Route::delete('/drivers/{driver}', [FleetController::class, 'destroyDriver'])->name('drivers.destroy');
 
             Route::post('/providers', [FleetController::class, 'storeProvider'])->name('providers.store');
+            Route::post('/pool', [FleetController::class, 'setPool'])->name('pool');
             Route::put('/providers/{provider}', [FleetController::class, 'updateProvider'])->name('providers.update');
             Route::delete('/providers/{provider}', [FleetController::class, 'destroyProvider'])->name('providers.destroy');
+
+            Route::post('/bulk-delete', [FleetController::class, 'bulkDestroy'])->name('bulk-delete');
+            Route::post('/bulk-provider', [FleetController::class, 'bulkAssignProvider'])->name('bulk-provider');
         });
 
     // Everything else that mutates the master data managed alongside fleet.

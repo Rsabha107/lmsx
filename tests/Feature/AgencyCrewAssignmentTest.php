@@ -25,18 +25,12 @@ class AgencyCrewAssignmentTest extends TestCase
 
     private function agency(Event $event): static
     {
-        $user = User::factory()->create();
-        $user->assignRole('agency');
-
-        return $this->actingAs($user)->withSession(['active_event_id' => $event->id]);
+        return $this->actingAs($this->createProviderUser('agency'))->withSession(['active_event_id' => $event->id]);
     }
 
     private function supervisor(): User
     {
-        $user = User::factory()->create();
-        $user->assignRole('ground_control');
-
-        return $user;
+        return $this->createProviderUser('ground_control');
     }
 
     public function test_the_agency_sets_the_crew_on_the_movement_and_its_job(): void
@@ -46,8 +40,8 @@ class AgencyCrewAssignmentTest extends TestCase
         $movement = $this->createMovement($event, $this->createPlan($event), $team);
         $job = $this->createJob($event, $movement, $team);
 
-        $vehicle = Vehicle::create(['code' => 'BUS-01']);
-        $driver = Driver::create(['name' => 'Agency Driver', 'status' => 'available']);
+        $vehicle = $this->createVehicle($event, ['code' => 'BUS-01']);
+        $driver = $this->createDriver($event, ['name' => 'Agency Driver']);
         $supervisor = $this->supervisor();
 
         $this->agency($event)
@@ -74,7 +68,7 @@ class AgencyCrewAssignmentTest extends TestCase
     public function test_the_agency_can_clear_a_role(): void
     {
         $event = $this->createEvent();
-        $driver = Driver::create(['name' => 'Old Driver', 'status' => 'available']);
+        $driver = $this->createDriver($event, ['name' => 'Old Driver']);
         $movement = $this->createMovement($event, $this->createPlan($event), $this->createTeam($event), ['driver_id' => $driver->id]);
 
         $this->agency($event)
@@ -87,7 +81,7 @@ class AgencyCrewAssignmentTest extends TestCase
     public function test_all_three_fields_must_be_sent(): void
     {
         $event = $this->createEvent();
-        $driver = Driver::create(['name' => 'Kept Driver', 'status' => 'available']);
+        $driver = $this->createDriver($event, ['name' => 'Kept Driver']);
         $movement = $this->createMovement($event, $this->createPlan($event), $this->createTeam($event), ['driver_id' => $driver->id]);
 
         $this->agency($event)
@@ -117,6 +111,40 @@ class AgencyCrewAssignmentTest extends TestCase
             ->assertForbidden();
     }
 
+    public function test_the_day_allocation_sheet_lists_that_days_crew(): void
+    {
+        $event = $this->createEvent();
+        $team = $this->createTeam($event);
+        $vehicle = $this->createVehicle($event, ['code' => 'BUS-01', 'plate_number' => 'QA-1234']);
+        $driver = $this->createDriver($event, ['name' => 'Sheet Driver']);
+        $supervisor = $this->supervisor();
+        $movement = $this->createMovement($event, $this->createPlan($event), $team, [
+            'window_start' => '2026-10-14 10:00:00',
+            'vehicle_id' => $vehicle->id,
+            'driver_id' => $driver->id,
+            'field_supervisor_id' => $supervisor->id,
+        ]);
+        $this->createJob($event, $movement, $team, ['job_id' => 'JOB-SHEET-1']);
+        $this->createMovement($event, $this->createPlan($event), $team, ['code' => 'MV-OTHERDAY', 'window_start' => '2026-10-15 10:00:00']);
+
+        $response = $this->agency($event)->get('/crew-assignment/export?date=2026-10-14')->assertOk();
+
+        $sheet = \PhpOffice\PhpSpreadsheet\IOFactory::load($this->capture($response))->getActiveSheet();
+        $this->assertSame('JOB-SHEET-1', $sheet->getCell('A4')->getValue());
+        $this->assertSame('QA-1234', $sheet->getCell('M4')->getValue());
+        $this->assertSame('Sheet Driver', $sheet->getCell('J4')->getValue());
+        $this->assertNull($sheet->getCell('G4')->getValue());
+        $this->assertNull($sheet->getCell('A5')->getValue());
+    }
+
+    private function capture($response): string
+    {
+        $path = tempnam(sys_get_temp_dir(), 'xlsx');
+        file_put_contents($path, $response->streamedContent());
+
+        return $path;
+    }
+
     public function test_the_agency_can_read_the_console(): void
     {
         $event = $this->createEvent();
@@ -144,6 +172,49 @@ class AgencyCrewAssignmentTest extends TestCase
         $this->assertSame('pending', $job->refresh()->status);
     }
 
+    public function test_an_admin_must_pick_a_provider_for_a_vehicle(): void
+    {
+        $event = $this->createEvent();
+        $admin = $this->actingAs($this->createUserWithRole('admin'))->withSession(['active_event_id' => $event->id]);
+        $payload = ['code' => 'AD-01', 'vehicle_type' => 'Bus', 'status' => 'available'];
+
+        $admin->post('/fleet/vehicles', $payload)->assertSessionHasErrors('provider_id');
+        $this->assertDatabaseMissing('vehicles', ['code' => 'AD-01']);
+
+        $admin->post('/fleet/vehicles', $payload + ['provider_id' => $this->fixtureProvider()->id])->assertSessionHasNoErrors();
+        $this->assertDatabaseHas('vehicles', ['code' => 'AD-01']);
+    }
+
+    public function test_bulk_delete_skips_vehicles_still_on_a_movement(): void
+    {
+        $event = $this->createEvent();
+        $used = $this->createVehicle($event, ['code' => 'USED-1']);
+        $free = $this->createVehicle($event, ['code' => 'FREE-1']);
+        $this->createMovement($event, $this->createPlan($event), $this->createTeam($event), ['vehicle_id' => $used->id]);
+
+        $this->agency($event)
+            ->post('/fleet/bulk-delete', ['type' => 'vehicle', 'ids' => [$used->id, $free->id]])
+            ->assertSessionHas('error');
+
+        $this->assertModelExists($used);
+        $this->assertModelMissing($free);
+    }
+
+    public function test_only_an_admin_can_bulk_assign_a_provider(): void
+    {
+        $event = $this->createEvent();
+        $vehicle = $this->createVehicle($event, ['code' => 'MOVE-1']);
+        $other = FleetProvider::create(['code' => 'OTH', 'name' => 'Other Co', 'status' => 'active']);
+        $payload = ['type' => 'vehicle', 'ids' => [$vehicle->id], 'provider_id' => $other->id];
+
+        $this->agency($event)->post('/fleet/bulk-provider', $payload)->assertForbidden();
+        $this->assertNotSame($other->id, $vehicle->refresh()->provider_id);
+
+        $this->actingAs($this->createUserWithRole('admin'))->withSession(['active_event_id' => $event->id])
+            ->post('/fleet/bulk-provider', $payload)->assertSessionHas('success');
+        $this->assertSame($other->id, $vehicle->refresh()->provider_id);
+    }
+
     public function test_the_agency_manages_vehicles_and_drivers(): void
     {
         $event = $this->createEvent();
@@ -162,12 +233,12 @@ class AgencyCrewAssignmentTest extends TestCase
         $this->agency($event)->delete("/fleet/drivers/{$driver->id}")->assertRedirect();
         $this->assertModelMissing($driver);
 
-        $this->agency($event)->post('/fleet/providers', ['code' => 'AGP', 'name' => 'Agency Provider', 'status' => 'active'])->assertSessionHasNoErrors();
-        $provider = FleetProvider::where('code', 'AGP')->firstOrFail();
-        $this->agency($event)->put("/fleet/providers/{$provider->id}", ['code' => 'AGP', 'name' => 'Renamed Provider', 'status' => 'standby'])->assertSessionHasNoErrors();
-        $this->assertSame('Renamed Provider', $provider->refresh()->name);
-        $this->agency($event)->delete("/fleet/providers/{$provider->id}")->assertRedirect();
-        $this->assertModelMissing($provider);
+        $this->agency($event)->post('/fleet/providers', ['code' => 'AGP', 'name' => 'Agency Provider', 'status' => 'active'])->assertForbidden();
+
+        $own = $this->fixtureProvider();
+        $this->agency($event)->put("/fleet/providers/{$own->id}", ['code' => 'GWC', 'name' => 'Renamed Provider', 'status' => 'standby'])->assertSessionHasNoErrors();
+        $this->assertSame('Renamed Provider', $own->refresh()->name);
+        $this->agency($event)->delete("/fleet/providers/{$own->id}")->assertForbidden();
     }
 
     public function test_the_agency_cannot_manage_other_fleet_data(): void
@@ -194,8 +265,7 @@ class AgencyCrewAssignmentTest extends TestCase
         $team = $this->createTeam($event);
         $job = $this->createJob($event, $this->createMovement($event, $this->createPlan($event), $team), $team);
 
-        $user = User::factory()->create();
-        $user->assignRole('agency');
+        $user = $this->createProviderUser('agency');
         $user->events()->attach($event);
 
         $this->actingAs($user, 'sanctum')

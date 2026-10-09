@@ -32,9 +32,10 @@ class OverrideCrewChangeTest extends TestCase
         $plan = $this->createPlan($event);
         $admin = $this->createUserWithRole('admin');
 
-        $oldDriver = Driver::create(['name' => 'Old Driver', 'status' => 'available']);
-        $newDriver = Driver::create(['name' => 'New Driver', 'status' => 'available']);
+        $oldDriver = $this->createDriver($event, ['name' => 'Old Driver']);
+        $newDriver = $this->createDriver($event, ['name' => 'New Driver']);
         $newSupervisor = $this->createUserWithRole('admin');
+        $newSupervisor->update(['fleet_provider_id' => $this->fixtureProvider()->id]);
 
         $movement = $this->createMovement($event, $plan, $team, ['driver_id' => $oldDriver->id]);
         $job = $this->createJob($event, $movement, $team, ['driver_id' => $oldDriver->id]);
@@ -69,8 +70,8 @@ class OverrideCrewChangeTest extends TestCase
     {
         $event = $this->createEvent();
         $team = $this->createTeam($event);
-        $old = Vehicle::create(['code' => 'BUS-01', 'plate_number' => 'P-1', 'vehicle_type' => 'bus', 'capacity' => 50]);
-        $new = Vehicle::create(['code' => 'BUS-02', 'plate_number' => 'P-2', 'vehicle_type' => 'bus', 'capacity' => 50]);
+        $old = $this->createVehicle($event, ['code' => 'BUS-01', 'plate_number' => 'P-1', 'vehicle_type' => 'bus', 'capacity' => 50]);
+        $new = $this->createVehicle($event, ['code' => 'BUS-02', 'plate_number' => 'P-2', 'vehicle_type' => 'bus', 'capacity' => 50]);
 
         $movement = $this->createMovement($event, $this->createPlan($event), $team, ['vehicle_id' => $old->id]);
         $job = $this->createJob($event, $movement, $team, ['vehicle_id' => $old->id]);
@@ -90,7 +91,7 @@ class OverrideCrewChangeTest extends TestCase
         $event = $this->createEvent();
         $team = $this->createTeam($event);
         $plan = $this->createPlan($event);
-        $driver = Driver::create(['name' => 'Kept Driver', 'status' => 'available']);
+        $driver = $this->createDriver($event, ['name' => 'Kept Driver']);
 
         $movement = $this->createMovement($event, $plan, $team, ['driver_id' => $driver->id]);
         $job = $this->createJob($event, $movement, $team, ['driver_id' => $driver->id]);
@@ -112,8 +113,8 @@ class OverrideCrewChangeTest extends TestCase
         $event = $this->createEvent();
         $team = $this->createTeam($event);
         $plan = $this->createPlan($event);
-        $oldDriver = Driver::create(['name' => 'Old Driver', 'status' => 'available']);
-        $newDriver = Driver::create(['name' => 'New Driver', 'status' => 'available']);
+        $oldDriver = $this->createDriver($event, ['name' => 'Old Driver']);
+        $newDriver = $this->createDriver($event, ['name' => 'New Driver']);
 
         $movement = $this->createMovement($event, $plan, $team, ['driver_id' => $oldDriver->id]);
         $job = $this->createJob($event, $movement, $team, ['driver_id' => $oldDriver->id]);

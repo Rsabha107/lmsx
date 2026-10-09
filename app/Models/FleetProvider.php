@@ -2,11 +2,17 @@
 
 namespace App\Models;
 
+use App\Models\Scopes\ProviderScope;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class FleetProvider extends Model
 {
+    protected static function booted(): void
+    {
+        static::addGlobalScope(new ProviderScope);
+    }
+
     protected $fillable = [
         'code',
         'name',

@@ -36,28 +36,61 @@
       </button>
     </div>
 
+    <div v-if="bulkType && selectedIds.length" class="bulk-bar">
+      <div class="bulk-group">
+        <span class="bulk-count">{{ selectedLabel }} selected</span>
+        <button v-if="!allSelected" class="bulk-link" @click="toggleAll(true)">Select all {{ currentRows.length }}</button>
+        <button class="bulk-link" @click="clearSelection">Clear</button>
+      </div>
+
+      <div v-if="isAdmin && bulkType !== 'provider'" class="bulk-group bulk-group--assign">
+        <span class="bulk-group-label">Move to provider</span>
+        <select v-model="bulkProviderId" class="form-input bulk-select">
+          <option :value="null">Choose provider…</option>
+          <option v-for="p in props.providers" :key="p.id" :value="p.id">{{ p.name }}</option>
+        </select>
+        <Button variant="secondary" size="sm" :disabled="!bulkProviderId || isSubmitting" @click="bulkAssignProvider">Apply</Button>
+      </div>
+
+      <div class="bulk-spacer"></div>
+      <div class="bulk-group bulk-group--danger">
+        <Button variant="danger" size="sm" :disabled="isSubmitting" @click="showBulkDelete = true">
+          Delete {{ selectedLabel }}
+        </Button>
+      </div>
+    </div>
+
     <div class="content-grid" :class="{ 'with-panel': selected }">
       <!-- Vehicles -->
       <template v-if="activeTab === 'vehicles'">
         <div class="table-card">
           <div class="table-header">
+            <div @click.stop><input type="checkbox" :checked="allSelected" aria-label="Select all vehicles" @change="toggleAll($event.target.checked)" /></div>
             <div>ID</div>
             <div>Type</div>
             <div>Capacity</div>
             <div>Plate</div>
+            <div>Provider</div>
             <div>Category</div>
             <div>Fuel</div>
             <div>Status</div>
+            <div style="text-align: center;" :title="eventPool.name ? `Offered for ${eventPool.name}` : 'Pick an event first'">In event</div>
             <div style="text-align: center;">Actions</div>
           </div>
           <div v-for="v in vehicles" :key="v.code" class="table-row" :class="{ 'selected': selected?.code === v.code }" @click="selectVehicle(v)">
+            <div @click.stop><input type="checkbox" :checked="isChecked(v.id)" :aria-label="`Select ${v.code}`" @change="toggleRow(v.id)" /></div>
             <div class="cell-id">{{ v.code }}</div>
             <div class="cell-type">{{ v.vehicle_type }}</div>
             <div class="cell-capacity">{{ v.capacity }} seats</div>
             <div class="cell-plate">{{ v.plate_number || '—' }}</div>
+            <div class="cell-category">{{ v.provider?.name || '—' }}</div>
             <div class="cell-category">{{ v.category || '—' }}</div>
             <div class="fuel-cell" :class="{ 'low': parseInt(v.fuel_level) < 50, 'medium': parseInt(v.fuel_level) >= 50 && parseInt(v.fuel_level) < 70 }">{{ v.fuel_level }}</div>
             <div><status-pill :tone="v.status === 'available' ? 'ok' : v.status === 'on_job' ? 'live' : 'neutral'">{{ v.status }}</status-pill></div>
+            <div style="text-align: center;" @click.stop>
+              <input type="checkbox" :disabled="!eventPool.name" :checked="eventPool.vehicles.includes(v.id)"
+                :aria-label="`${v.code} in ${eventPool.name || 'event'}`" @change="setPool('vehicle', v.id, $event.target.checked)" />
+            </div>
             <div class="cell-actions" @click.stop>
               <TableActions @edit="openEditVehicle(v)" @delete="confirmDelete('vehicle', v)" />
             </div>
@@ -70,10 +103,12 @@
       <div class="table-card">
         <table class="data-table">
           <thead><tr>
-            <th>Name</th><th>Phone</th><th>License</th><th>Provider</th><th>Today</th><th style="text-align: center;">Actions</th>
+            <th class="cell-check"><input type="checkbox" :checked="allSelected" aria-label="Select all drivers" @change="toggleAll($event.target.checked)" /></th>
+            <th>Name</th><th>Phone</th><th>License</th><th>Provider</th><th>Today</th><th style="text-align: center;" :title="eventPool.name ? `Offered for ${eventPool.name}` : 'Pick an event first'">In event</th><th style="text-align: center;">Actions</th>
           </tr></thead>
           <tbody>
             <tr v-for="d in props.drivers" :key="d.id">
+              <td class="cell-check"><input type="checkbox" :checked="isChecked(d.id)" :aria-label="`Select ${d.name}`" @change="toggleRow(d.id)" /></td>
               <td>
                 <div class="driver-row">
                   <div class="avatar">{{ initials(d.name || 'N/A') }}</div>
@@ -89,6 +124,10 @@
                 <status-pill :tone="driverTone(d.today)">{{ d.today?.label ?? d.status }}</status-pill>
                 <div v-if="d.today?.detail" class="status-detail">{{ d.today.detail }}</div>
               </td>
+              <td style="text-align: center;">
+                <input type="checkbox" :disabled="!eventPool.name" :checked="eventPool.drivers.includes(d.id)"
+                  :aria-label="`${d.name} in ${eventPool.name || 'event'}`" @change="setPool('driver', d.id, $event.target.checked)" />
+              </td>
               <td class="cell-actions">
                 <TableActions @edit="openEditDriver(d)" @delete="confirmDelete('driver', d)" />
               </td>
@@ -103,10 +142,12 @@
       <div class="table-card">
         <table class="data-table">
           <thead><tr>
+            <th class="cell-check"><input type="checkbox" :checked="allSelected" aria-label="Select all providers" @change="toggleAll($event.target.checked)" /></th>
             <th>Code</th><th>Provider</th><th>Vehicles</th><th>Drivers</th><th>Contact</th><th>Phone</th><th>Rating</th><th>Status</th><th style="text-align: center;">Actions</th>
           </tr></thead>
           <tbody>
             <tr v-for="p in props.providers" :key="p.id">
+              <td class="cell-check"><input type="checkbox" :checked="isChecked(p.id)" :aria-label="`Select ${p.name}`" @change="toggleRow(p.id)" /></td>
               <td class="mono">{{ p.code }}</td>
               <td>
                 <div class="provider-name">{{ p.name }}</div>
@@ -244,11 +285,12 @@
               </select>
             </div>
             <div class="form-group">
-              <label class="form-label">Provider</label>
-              <select v-model="vehicleForm.provider_id" class="form-input">
+              <label class="form-label">Provider <span class="required">*</span></label>
+              <select v-model="vehicleForm.provider_id" class="form-input" :class="{ 'form-input--error': errors.provider_id }">
                 <option :value="null">Select provider</option>
                 <option v-for="p in props.providers" :key="p.id" :value="p.id">{{ p.name }}</option>
               </select>
+              <span v-if="errors.provider_id" class="form-error">{{ errors.provider_id }}</span>
             </div>
           </div>
           <div class="form-group">
@@ -378,6 +420,16 @@
     </div>
 
     <ConfirmModal
+      :show="showBulkDelete"
+      tone="danger"
+      :title="`Delete ${selectedLabel}`"
+      :message="`Permanently delete <strong>${selectedLabel}</strong>? Any still assigned to movements, jobs or crew will be skipped.`"
+      :processing="isSubmitting"
+      @close="showBulkDelete = false"
+      @confirm="performBulkDelete"
+    />
+
+    <ConfirmModal
       :show="deleteTarget !== null"
       tone="danger"
       :title="`Delete ${deleteTarget?.type ?? ''}`"
@@ -427,7 +479,7 @@
 
 <script setup>
 import { ref, computed, watch } from 'vue';
-import { router } from '@inertiajs/vue3';
+import { router, usePage } from '@inertiajs/vue3';
 import AppLayout from '../Components/AppLayout.vue';
 import StatusPill from '../Components/StatusPill.vue';
 import MiniStat from '../Components/MiniStat.vue';
@@ -448,8 +500,16 @@ const props = defineProps({
   drivers: {
     type: Array,
     required: true
+  },
+  eventPool: {
+    type: Object,
+    default: () => ({ name: null, vehicles: [], drivers: [] })
   }
 });
+
+function setPool(type, id, inPool) {
+  router.post('/fleet/pool', { type, id, in_pool: inPool }, { preserveScroll: true, preserveState: true, only: ['eventPool'] });
+}
 
 const validTabs = ['vehicles', 'drivers', 'providers', 'history'];
 
@@ -718,6 +778,69 @@ function performDelete() {
   });
 }
 
+/* ------------------------------ Bulk selection ----------------------------- */
+
+const page = usePage();
+const isAdmin = computed(() => page.props.auth?.can?.setups === true);
+const bulkTypes = { vehicles: 'vehicle', drivers: 'driver', providers: 'provider' };
+const bulkType = computed(() => bulkTypes[activeTab.value] ?? null);
+const selection = ref({ vehicle: [], driver: [], provider: [] });
+const showBulkDelete = ref(false);
+const bulkProviderId = ref(null);
+
+const selectedIds = computed(() => selection.value[bulkType.value] ?? []);
+const currentRows = computed(() => props[activeTab.value] ?? []);
+const allSelected = computed(() => currentRows.value.length > 0 && selectedIds.value.length === currentRows.value.length);
+
+const isChecked = (id) => selectedIds.value.includes(id);
+
+// e.g. "3 vehicles" - names the thing so a bulk action can't be misread as acting on another tab.
+const selectedLabel = computed(() => {
+  const n = selectedIds.value.length;
+  return `${n} ${bulkType.value}${n === 1 ? '' : 's'}`;
+});
+
+function toggleRow(id) {
+  const ids = selection.value[bulkType.value];
+  selection.value[bulkType.value] = ids.includes(id) ? ids.filter((i) => i !== id) : [...ids, id];
+}
+
+function toggleAll(checked) {
+  selection.value[bulkType.value] = checked ? currentRows.value.map((r) => r.id) : [];
+}
+
+function clearSelection() {
+  selection.value[bulkType.value] = [];
+  bulkProviderId.value = null;
+}
+
+function performBulkDelete() {
+  isSubmitting.value = true;
+
+  router.post('/fleet/bulk-delete', { type: bulkType.value, ids: selectedIds.value }, {
+    preserveScroll: true,
+    preserveState: true,
+    onSuccess: (page) => {
+      showBulkDelete.value = false;
+      blockedMessage.value = page.props?.flash?.error ?? '';
+      clearSelection();
+      reloadFleet();
+    },
+    onFinish: () => { isSubmitting.value = false; },
+  });
+}
+
+function bulkAssignProvider() {
+  isSubmitting.value = true;
+
+  router.post('/fleet/bulk-provider', { type: bulkType.value, ids: selectedIds.value, provider_id: bulkProviderId.value }, {
+    preserveScroll: true,
+    preserveState: true,
+    onSuccess: () => { clearSelection(); reloadFleet(); },
+    onFinish: () => { isSubmitting.value = false; },
+  });
+}
+
 /* --------------------------------- Shared ---------------------------------- */
 
 function submit(method, url, payload, onDone) {
@@ -794,7 +917,7 @@ function reloadFleet() {
 }
 
 .table-header {
-  display: grid; grid-template-columns: 80px 1fr 100px 1fr 1fr 80px 90px 110px;
+  display: grid; grid-template-columns: 28px 80px 1fr 100px 1fr 1fr 1fr 80px 90px 70px 110px;
   gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--border);
   font-size: 11px; font-weight: 700; color: var(--ink3);
   letter-spacing: 0.6px; text-transform: uppercase;
@@ -802,7 +925,7 @@ function reloadFleet() {
 }
 
 .table-row {
-  display: grid; grid-template-columns: 80px 1fr 100px 1fr 1fr 80px 90px 110px;
+  display: grid; grid-template-columns: 28px 80px 1fr 100px 1fr 1fr 1fr 80px 90px 70px 110px;
   gap: 10px; padding: 12px 14px; cursor: pointer;
   border-bottom: 1px solid var(--border); align-items: center;
   transition: background-color 0.13s;
@@ -826,6 +949,23 @@ function reloadFleet() {
 .fuel-cell.medium { color: #ca8a04; }
 
 .cell-actions { display: flex; align-items: center; justify-content: center; gap: 6px; cursor: default; }
+.data-table th.cell-check, .data-table td.cell-check { width: 36px; text-align: center; padding-right: 0; }
+
+.bulk-bar {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  margin-bottom: 12px; padding: 8px 14px;
+  background: var(--accent-soft); border: 1px solid var(--border); border-radius: 10px;
+}
+.bulk-count { font-size: 13px; font-weight: 600; color: var(--ink); }
+.bulk-group { display: flex; align-items: center; gap: 10px; }
+.bulk-group--assign { padding-left: 14px; border-left: 1px solid var(--border); }
+.bulk-group--danger { padding-left: 14px; border-left: 1px solid var(--border); }
+.bulk-group-label { font-size: 12px; font-weight: 600; color: var(--ink3); text-transform: uppercase; letter-spacing: 0.4px; }
+.bulk-link { background: none; border: none; color: var(--accent); font-size: 12.5px; cursor: pointer; padding: 0; }
+.bulk-spacer { flex: 1; }
+.bulk-select { width: 200px; }
+/* A flex <td> stops being a table cell and drops out of the column grid. */
+td.cell-actions { display: table-cell; text-align: center; }
 .required { color: #EF4444; margin-left: 2px; }
 .form-input--error { border-color: #EF4444 !important; background: #FEF2F2; }
 .form-error { display: block; color: #EF4444; font-size: 12px; margin-top: 4px; font-weight: 500; }

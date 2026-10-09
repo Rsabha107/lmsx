@@ -5,11 +5,13 @@ namespace App\Services;
 use App\Models\ConflictAcceptance;
 use App\Models\Driver;
 use App\Models\Movement;
+use App\Models\Scopes\ProviderScope;
 use App\Models\TeamStay;
 use App\Models\User;
 use App\Models\Vehicle;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Auth;
 
 /**
  * Scans an event's planned movements and reports scheduling problems
@@ -58,18 +60,20 @@ class ConflictDetectionService
             return [];
         }
 
-        $spans = $this->occupations($movements);
+        // Shared drivers, vehicles and supervisors are also checked against other events.
+        $shared = $movements->concat($this->foreignMovements($movements, $eventId));
+        $spans = $this->occupations($shared);
 
         $conflicts = array_merge(
             $this->scheduleIntegrity($movements),
-            $this->resourceClashes($movements, $spans),
-            $this->turnarounds($movements, $spans),
-            $this->crewClashes($movements, $spans),
+            $this->ownOnly($this->resourceClashes($shared, $spans), $movements),
+            $this->ownOnly($this->turnarounds($shared, $spans), $movements),
+            $this->ownOnly($this->crewClashes($shared, $spans), $movements),
             $this->capacity($movements),
             $this->windowPolicy($movements, $eventId),
             $this->matchTiming($movements),
             $this->stayWindows($movements, $eventId),
-            $this->driverDuty($movements, $spans),
+            $this->ownOnly($this->driverDuty($shared, $spans), $movements),
             $this->unassigned($movements),
         );
 
@@ -111,11 +115,13 @@ class ConflictDetectionService
             return ['movement' => null, 'drivers' => [], 'supervisors' => [], 'vehicles' => []];
         }
 
-        $spans = $this->occupations($movements);
+        $all = $movements->concat($this->foreignMovements($movements, $movement->event_id));
+        $spans = $this->occupations($all);
         $span = $this->wholeSpan($target, $spans);
         $active = $spans[$target->id]['active'] ?? [];
-        $others = $movements->where('id', '!=', $target->id);
+        $others = $all->where('id', '!=', $target->id);
         $pax = $target->passengers ?: $target->flight?->party_size_total;
+        $providerId = $target->fleet_provider_id;
 
         // First reason the resource can't take the target, or null when free.
         $clash = function (string $key, int $id, string $role) use ($others, $spans, $span, $active, $target): ?string {
@@ -182,16 +188,16 @@ class ConflictDetectionService
                 'span' => $span ? [$span[0]->format('Y-m-d H:i'), $span[1]->format('Y-m-d H:i')] : null,
                 'active' => array_map(fn ($s) => [$s[0]->format('Y-m-d H:i'), $s[1]->format('Y-m-d H:i')], $active),
             ],
-            'drivers' => $freeFirst(Driver::orderBy('name')->get(['id', 'name', 'status'])->map(fn (Driver $d) => $option(
+            'drivers' => $freeFirst(Driver::inEventPool($movement->event_id)->when($providerId, fn ($q) => $q->where('provider_id', $providerId))->orderBy('name')->get(['id', 'name', 'status'])->map(fn (Driver $d) => $option(
                 $d->id, $d->name,
                 in_array($d->status, ['off', 'rest'], true) ? 'Marked ' . ($d->status === 'off' ? 'off' : 'rest day') : $clash('driver_id', $d->id, 'driver'),
             ))),
-            'supervisors' => $freeFirst(User::permission('jobs.view')->orderBy('name')->get(['id', 'name'])
+            'supervisors' => $freeFirst(User::permission('jobs.view')->when($providerId, fn ($q) => $q->where('users.fleet_provider_id', $providerId))->orderBy('name')->get(['id', 'name'])
                 ->when($target->fieldSupervisor, fn ($list) => $list->push($target->fieldSupervisor)->unique('id'))
                 ->map(fn (User $u) => $option(
                     $u->id, $u->name, $clash('field_supervisor_id', $u->id, 'supervisor'),
                 ))),
-            'vehicles' => $freeFirst(Vehicle::orderBy('code')->get(['id', 'code', 'plate_number', 'vehicle_type', 'capacity', 'status'])->map(fn (Vehicle $v) => $option(
+            'vehicles' => $freeFirst(Vehicle::inEventPool($movement->event_id)->when($providerId, fn ($q) => $q->where('provider_id', $providerId))->orderBy('code')->get(['id', 'code', 'plate_number', 'vehicle_type', 'capacity', 'status'])->map(fn (Vehicle $v) => $option(
                 $v->id,
                 ($v->code ?? $v->plate_number ?? "#{$v->id}") . ($v->capacity ? " · {$v->capacity} seats" : ''),
                 match (true) {
@@ -216,7 +222,8 @@ class ConflictDetectionService
             return [];
         }
 
-        $spans = $this->occupations($movements);
+        $shared = $movements->concat($this->foreignMovements($movements, $eventId));
+        $spans = $this->occupations($shared);
         $out = [];
         foreach ($movements as $m) {
             $span = $this->wholeSpan($m, $spans);
@@ -226,13 +233,15 @@ class ConflictDetectionService
         $roles = ['Vehicle Double-Booked' => 'vehicle', 'Driver Double-Booked' => 'driver', 'Supervisor Double-Booked' => 'supervisor'];
         $accepted = ConflictAcceptance::where('event_id', $eventId)->pluck('conflict_id')->flip();
 
-        foreach (array_merge($this->resourceClashes($movements, $spans), $this->crewClashes($movements, $spans)) as $c) {
+        foreach (array_merge($this->resourceClashes($shared, $spans), $this->crewClashes($shared, $spans)) as $c) {
             $role = $roles[$c['type']] ?? null;
             if (!$role || $accepted->has($c['id'])) {
                 continue;
             }
             foreach ($c['movement_ids'] as $id) {
-                $out[$id]['clashes'][$role][] = $c['text'];
+                if (isset($out[$id])) {
+                    $out[$id]['clashes'][$role][] = $c['text'];
+                }
             }
         }
 
@@ -242,9 +251,19 @@ class ConflictDetectionService
     /** Every live movement of an event with what the checks need. */
     private function eventMovements(int $eventId): Collection
     {
-        return Movement::with([
+        return $this->withChecksData(Movement::query())
+            ->where('event_id', $eventId)
+            ->whereNotIn('status', ['cancelled', 'completed'])
+            ->orderBy('window_start')
+            ->get();
+    }
+
+    private function withChecksData($query)
+    {
+        return $query->with([
                 'plan:id,code,name,date',
                 'team:id,code,team_name',
+                'event:id,short_name,name',
                 'vehicle:id,code,capacity,status,vehicle_type',
                 'driver:id,name,status',
                 'fieldSupervisor:id,name',
@@ -257,11 +276,50 @@ class ConflictDetectionService
                 'checkpointTemplate.checkpoints:id,name',
                 'job:id,movement_id',
                 'job.checkpoints:id,job_id,scheduled_at',
-            ])
-            ->where('event_id', $eventId)
+            ]);
+    }
+
+    /**
+     * Other events' movements that use the same drivers, vehicles or supervisors
+     * around the same time. Drivers and vehicles are shared across events, so a
+     * clash with them is as real as one inside the event.
+     */
+    private function foreignMovements(Collection $own, int $eventId): Collection
+    {
+        $vehicles = $own->flatMap(fn ($m) => $m->resourceIds('vehicle_id'))->filter()->unique()->values()->all();
+        $drivers = $own->flatMap(fn ($m) => $m->resourceIds('driver_id'))->filter()->unique()->values()->all();
+        $supervisors = $own->flatMap(fn ($m) => $m->resourceIds('field_supervisor_id'))->filter()->unique()->values()->all();
+        $starts = $own->pluck('window_start')->filter();
+
+        if ($starts->isEmpty() || ! ($vehicles || $drivers || $supervisors)) {
+            return collect();
+        }
+
+        $viewer = Auth::user();
+        $reachable = fn (Movement $m) => ! $viewer || $viewer->canAccessEvent((int) $m->event_id);
+
+        return $this->withChecksData(Movement::withoutGlobalScope(ProviderScope::class))
+            ->where('event_id', '!=', $eventId)
             ->whereNotIn('status', ['cancelled', 'completed'])
+            ->whereBetween('window_start', [$starts->min()->copy()->subDay(), $starts->max()->copy()->addDays(2)])
+            ->where(function ($q) use ($vehicles, $drivers, $supervisors) {
+                $q->whereIn('vehicle_id', $vehicles)
+                    ->orWhereIn('driver_id', $drivers)
+                    ->orWhereIn('field_supervisor_id', $supervisors)
+                    ->orWhereHas('units', fn ($u) => $u->whereIn('vehicle_id', $vehicles)->orWhereIn('driver_id', $drivers))
+                    ->orWhereHas('extraSupervisors', fn ($u) => $u->whereIn('users.id', $supervisors));
+            })
             ->orderBy('window_start')
-            ->get();
+            ->get()
+            ->each(fn (Movement $m) => $m->setAttribute('foreign_event', $reachable($m) ? ($m->event?->short_name ?: $m->event?->name ?: 'another event') : 'another event'));
+    }
+
+    /** Conflicts that involve at least one of this event's own movements. */
+    private function ownOnly(array $conflicts, Collection $own): array
+    {
+        $ids = $own->pluck('id')->flip();
+
+        return array_values(array_filter($conflicts, fn (array $c) => collect($c['movement_ids'])->contains(fn ($id) => $ids->has($id))));
     }
 
     /* ------------------------------------------------------------------ */
@@ -952,6 +1010,8 @@ class ConflictDetectionService
 
     private function label(Movement $m): string
     {
-        return $m->code ?: 'MV-' . $m->id;
+        $code = $m->code ?: 'MV-' . $m->id;
+
+        return $m->foreign_event ? "{$code} [{$m->foreign_event}]" : $code;
     }
 }

@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Scopes\ProviderScope;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -37,8 +38,21 @@ class Movement extends Model
         return sprintf('%s%05d', self::CODE_PREFIX, $number);
     }
 
+    protected static function booted(): void
+    {
+        static::addGlobalScope(new ProviderScope);
+
+        // New movements start with the event's provider; planning can move them to another.
+        static::creating(function (Movement $movement) {
+            if ($movement->fleet_provider_id === null && $movement->event_id) {
+                $movement->fleet_provider_id = Event::whereKey($movement->event_id)->value('fleet_provider_id');
+            }
+        });
+    }
+
     protected $fillable = [
         'code',
+        'fleet_provider_id',
         'plan_id',
         'event_id',
         'team_id',
@@ -91,6 +105,12 @@ class Movement extends Model
     public function event(): BelongsTo
     {
         return $this->belongsTo(Event::class);
+    }
+
+    /** The one transport provider whose crew works this movement. */
+    public function fleetProvider(): BelongsTo
+    {
+        return $this->belongsTo(FleetProvider::class, 'fleet_provider_id')->withoutGlobalScopes();
     }
 
     /**

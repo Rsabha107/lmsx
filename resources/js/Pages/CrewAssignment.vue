@@ -18,7 +18,8 @@
         </div>
         <div class="rh-actions">
           <DatePicker :model-value="selectedDate" @update:model-value="onDateChange" />
-          <RefreshButton :only="['movements', 'date', 'days', 'week', 'vehicles', 'drivers', 'supervisors']" />
+          <RefreshButton :only="['movements', 'date', 'days', 'week', 'vehicles', 'drivers', 'supervisors', 'providers']" />
+          <a class="rh-export" :href="`/crew-assignment/export?date=${selectedDate}`">Excel</a>
           <div class="rh-seg">
             <button v-for="v in views" :key="v.value" type="button"
               :class="['rh-seg-btn', { 'rh-seg-btn--active': view === v.value }]" @click="view = v.value">{{ v.label }}</button>
@@ -90,6 +91,14 @@
                 <div class="sub">{{ mv.start ?? '--:--' }}–{{ mv.end ?? '--:--' }} · {{ mv.kind }}</div>
                 <status-pill v-if="mv.job_status" :tone="jobTone(mv.job_status)">{{ statusLabel(mv.job_status) }}</status-pill>
                 <status-pill v-if="hasClash(mv)" tone="danger" :title="clashTexts(mv).join('\n')">Clash</status-pill>
+                <div v-if="providers.length || mv.provider" class="sub">
+                  <select v-if="providers.length" class="prov-select" :value="mv.fleet_provider_id ?? ''"
+                    :aria-label="`Provider for ${mv.code}`" @change="setProvider(mv, $event.target.value)">
+                    <option value="">No provider</option>
+                    <option v-for="p in providers" :key="p.id" :value="p.id">{{ p.name }}</option>
+                  </select>
+                  <template v-else>{{ mv.provider }}</template>
+                </div>
               </td>
               <td data-label="Team">
                 <span class="team-badge-sm">{{ mv.team_code }}</span> {{ mv.team }}
@@ -102,19 +111,19 @@
               <td data-label="Vehicle">
                 <select v-model="drafts[mv.id].vehicle_id" :aria-label="`Vehicle for ${mv.code}`">
                   <option :value="null">Unassigned</option>
-                  <option v-for="v in vehicles" :key="v.id" :value="v.id">{{ vehicleLabel(v) }}</option>
+                  <option v-for="v in optionsFor('vehicle', mv)" :key="v.id" :value="v.id">{{ vehicleLabel(v) }}</option>
                 </select>
               </td>
               <td data-label="Driver">
                 <select v-model="drafts[mv.id].driver_id" :aria-label="`Driver for ${mv.code}`">
                   <option :value="null">Unassigned</option>
-                  <option v-for="d in drivers" :key="d.id" :value="d.id">{{ d.name }}</option>
+                  <option v-for="d in optionsFor('driver', mv)" :key="d.id" :value="d.id">{{ d.name }}</option>
                 </select>
               </td>
               <td data-label="Supervisor">
                 <select v-model="drafts[mv.id].field_supervisor_id" :aria-label="`Supervisor for ${mv.code}`">
                   <option :value="null">Unassigned</option>
-                  <option v-for="s in supervisors" :key="s.id" :value="s.id">{{ s.name }}</option>
+                  <option v-for="s in optionsFor('supervisor', mv)" :key="s.id" :value="s.id">{{ s.name }}</option>
                 </select>
               </td>
               <td class="actions">
@@ -129,14 +138,14 @@
               <td data-label="Extra vehicle">
                 <select v-if="drafts[mv.id].units[i]" v-model="drafts[mv.id].units[i].vehicle_id" :aria-label="`Extra vehicle ${i + 2} for ${mv.code}`">
                   <option :value="null">Unassigned</option>
-                  <option v-for="v in vehicles" :key="v.id" :value="v.id">{{ vehicleLabel(v) }}</option>
+                  <option v-for="v in optionsFor('vehicle', mv)" :key="v.id" :value="v.id">{{ vehicleLabel(v) }}</option>
                 </select>
               </td>
               <td data-label="Its driver">
                 <div v-if="drafts[mv.id].units[i]" class="unit-pair">
                   <select v-model="drafts[mv.id].units[i].driver_id" :aria-label="`Driver of extra vehicle ${i + 2} for ${mv.code}`">
                     <option :value="null">Unassigned</option>
-                    <option v-for="d in drivers" :key="d.id" :value="d.id">{{ d.name }}</option>
+                    <option v-for="d in optionsFor('driver', mv)" :key="d.id" :value="d.id">{{ d.name }}</option>
                   </select>
                   <button type="button" class="unit-remove" :aria-label="`Remove extra vehicle ${i + 2}`" title="Remove this vehicle" @click="removeUnit(mv, i)">✕</button>
                 </div>
@@ -145,7 +154,7 @@
                 <div v-if="i < drafts[mv.id].supervisors.length" class="unit-pair">
                   <select v-model="drafts[mv.id].supervisors[i]" :aria-label="`Extra supervisor ${i + 2} for ${mv.code}`">
                     <option :value="null">Unassigned</option>
-                    <option v-for="s in supervisors" :key="s.id" :value="s.id">{{ s.name }}</option>
+                    <option v-for="s in optionsFor('supervisor', mv)" :key="s.id" :value="s.id">{{ s.name }}</option>
                   </select>
                   <button type="button" class="unit-remove" :aria-label="`Remove extra supervisor ${i + 2}`" title="Remove this supervisor" @click="removeSupervisor(mv, i)">✕</button>
                 </div>
@@ -190,7 +199,7 @@
           <span>{{ r.singular }}</span>
           <select v-model="drafts[selected.id][r.idField]">
             <option :value="null">Unassigned</option>
-            <option v-for="o in resourcesFor(key)" :key="o.id" :value="o.id">
+            <option v-for="o in optionsFor(key, selected)" :key="o.id" :value="o.id">
               {{ key === 'vehicle' ? vehicleLabel(o) : o.name }}{{ busyNote(key, o.id, selected) }}
             </option>
           </select>
@@ -202,11 +211,11 @@
           <div v-for="(unit, i) in drafts[selected.id].units" :key="i" class="cap-unit">
             <select v-model="unit.vehicle_id" :aria-label="`Extra vehicle ${i + 2}`">
               <option :value="null">Vehicle…</option>
-              <option v-for="o in vehicles" :key="o.id" :value="o.id">{{ vehicleLabel(o) }}{{ busyNote('vehicle', o.id, selected) }}</option>
+              <option v-for="o in optionsFor('vehicle', selected)" :key="o.id" :value="o.id">{{ vehicleLabel(o) }}{{ busyNote('vehicle', o.id, selected) }}</option>
             </select>
             <select v-model="unit.driver_id" :aria-label="`Driver of extra vehicle ${i + 2}`">
               <option :value="null">Driver…</option>
-              <option v-for="o in drivers" :key="o.id" :value="o.id">{{ o.name }}{{ busyNote('driver', o.id, selected) }}</option>
+              <option v-for="o in optionsFor('driver', selected)" :key="o.id" :value="o.id">{{ o.name }}{{ busyNote('driver', o.id, selected) }}</option>
             </select>
             <button type="button" class="unit-remove" :aria-label="`Remove extra vehicle ${i + 2}`" @click="removeUnit(selected, i)">✕</button>
           </div>
@@ -218,7 +227,7 @@
           <div v-for="(_, i) in drafts[selected.id].supervisors" :key="i" class="cap-unit cap-unit--single">
             <select v-model="drafts[selected.id].supervisors[i]" :aria-label="`Extra supervisor ${i + 2}`">
               <option :value="null">Supervisor…</option>
-              <option v-for="o in supervisors" :key="o.id" :value="o.id">{{ o.name }}{{ busyNote('supervisor', o.id, selected) }}</option>
+              <option v-for="o in optionsFor('supervisor', selected)" :key="o.id" :value="o.id">{{ o.name }}{{ busyNote('supervisor', o.id, selected) }}</option>
             </select>
             <button type="button" class="unit-remove" :aria-label="`Remove extra supervisor ${i + 2}`" @click="removeSupervisor(selected, i)">✕</button>
           </div>
@@ -257,6 +266,7 @@ const props = defineProps({
   vehicles: { type: Array, default: () => [] },
   drivers: { type: Array, default: () => [] },
   supervisors: { type: Array, default: () => [] },
+  providers: { type: Array, default: () => [] },
 });
 
 const page = usePage();
@@ -359,6 +369,26 @@ const tab = ref(ROLES[localStorage.getItem('crew.tab')] ? localStorage.getItem('
 watch(tab, (v) => localStorage.setItem('crew.tab', v));
 
 const resourcesFor = (key) => ({ driver: props.drivers, vehicle: props.vehicles, supervisor: props.supervisors }[key] ?? []);
+
+// A movement belongs to one provider, so only that provider's people and fleet are offered (plus whoever is already on it).
+function optionsFor(key, mv) {
+  const list = resourcesFor(key);
+  if (!mv?.fleet_provider_id) return list;
+  const field = key === 'supervisor' ? 'fleet_provider_id' : 'provider_id';
+  const idField = ROLES[key].idField;
+  const current = key === 'supervisor'
+    ? [mv[idField], ...(mv.extra_supervisors ?? []).map((s) => s.id)]
+    : [mv[idField], ...(mv.units ?? []).map((u) => u[idField])];
+  return list.filter((o) => o[field] === mv.fleet_provider_id || current.includes(o.id));
+}
+
+function setProvider(mv, value) {
+  router.patch(`/movements/${mv.id}/provider`, { fleet_provider_id: value ? Number(value) : null }, {
+    preserveScroll: true,
+    preserveState: true,
+    onError: (errors) => showErrorToast(Object.values(errors)[0] ?? 'Could not change the provider.'),
+  });
+}
 
 const selectedId = ref(null);
 const selected = computed(() => props.movements.find((mv) => mv.id === selectedId.value) ?? null);
@@ -492,6 +522,13 @@ const selectedSpan = computed(() => {
 }
 .rh-h1 { margin: 0; font-size: 28px; font-weight: 600; letter-spacing: -0.01em; color: var(--ink); }
 .rh-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.rh-export {
+  display: inline-flex; align-items: center; padding: 7px 14px; border-radius: 7px;
+  border: 1px solid var(--border); background: var(--surface); color: var(--ink);
+  font-size: 13px; font-weight: 600; text-decoration: none;
+}
+.rh-export:hover { background: var(--panel); }
+.prov-select { font-size: 12px; padding: 2px 4px; max-width: 160px; }
 .rh-seg { display: inline-flex; gap: 4px; background: var(--panel); border: 1px solid var(--border); padding: 4px; border-radius: 8px; }
 .rh-seg-btn {
   border: 0; cursor: pointer; font-size: 14px; font-weight: 500; padding: 7px 14px;

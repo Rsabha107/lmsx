@@ -7,6 +7,7 @@ use App\Models\FleetProvider;
 use App\Models\Vehicle;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\Rule;
 
 /**
@@ -18,7 +19,8 @@ class FleetController extends Controller
 
     public function storeVehicle(Request $request): RedirectResponse
     {
-        Vehicle::create($this->validateVehicle($request));
+        $vehicle = Vehicle::create($this->pinProvider($request, $this->validateVehicle($request)));
+        $this->addToActiveEvent($request, $vehicle->events());
 
         // back() keeps the ?tab= query the page uses to restore the active tab.
         return back()->with('success', 'Vehicle added');
@@ -26,7 +28,7 @@ class FleetController extends Controller
 
     public function updateVehicle(Request $request, Vehicle $vehicle): RedirectResponse
     {
-        $vehicle->update($this->validateVehicle($request, $vehicle));
+        $vehicle->update($this->pinProvider($request, $this->validateVehicle($request, $vehicle)));
 
         return back()->with('success', 'Vehicle updated');
     }
@@ -53,14 +55,15 @@ class FleetController extends Controller
 
     public function storeDriver(Request $request): RedirectResponse
     {
-        Driver::create($this->validateDriver($request));
+        $driver = Driver::create($this->pinProvider($request, $this->validateDriver($request)));
+        $this->addToActiveEvent($request, $driver->events());
 
         return back()->with('success', 'Driver added');
     }
 
     public function updateDriver(Request $request, Driver $driver): RedirectResponse
     {
-        $driver->update($this->validateDriver($request));
+        $driver->update($this->pinProvider($request, $this->validateDriver($request)));
 
         return back()->with('success', 'Driver updated');
     }
@@ -85,6 +88,8 @@ class FleetController extends Controller
 
     public function storeProvider(Request $request): RedirectResponse
     {
+        abort_if($request->user()->isProviderRestricted(), 403, 'A provider account cannot add other providers.');
+
         FleetProvider::create($this->validateProvider($request));
 
         return back()->with('success', 'Provider added');
@@ -99,6 +104,8 @@ class FleetController extends Controller
 
     public function destroyProvider(FleetProvider $provider): RedirectResponse
     {
+        abort_if(Auth::user()->isProviderRestricted(), 403, 'A provider account cannot delete its provider.');
+
         // vehicles.provider_id / drivers.provider_id have no FK constraint, so a
         // delete here would silently orphan them rather than fail.
         $vehicles = $provider->vehicles()->count();
@@ -116,6 +123,119 @@ class FleetController extends Controller
         return back()->with('success', 'Provider deleted');
     }
 
+    /* ----------------------------- Event fleet -------------------------- */
+
+    /** Deletes the ticked rows, skipping any still in use, and reports what was left. */
+    public function bulkDestroy(Request $request): RedirectResponse
+    {
+        $data = $request->validate([
+            'type' => ['required', Rule::in(['vehicle', 'driver', 'provider'])],
+            'ids' => ['required', 'array', 'min:1'],
+            'ids.*' => ['integer'],
+        ]);
+
+        if ($data['type'] === 'provider') {
+            abort_if($request->user()->isProviderRestricted(), 403, 'A provider account cannot delete its provider.');
+        }
+
+        // Scoped lookup, so a provider account can only reach its own rows.
+        $rows = match ($data['type']) {
+            'vehicle' => Vehicle::whereIn('id', $data['ids'])->get(),
+            'driver' => Driver::whereIn('id', $data['ids'])->get(),
+            'provider' => FleetProvider::whereIn('id', $data['ids'])->get(),
+        };
+
+        $deleted = 0;
+        $skipped = [];
+
+        foreach ($rows as $row) {
+            $inUse = $data['type'] === 'provider'
+                ? $row->vehicles()->count() + $row->drivers()->count()
+                : $row->movements()->count() + $row->jobs()->count();
+
+            if ($inUse > 0) {
+                $skipped[] = $row->code ?? $row->name;
+
+                continue;
+            }
+
+            $row->delete();
+            $deleted++;
+        }
+
+        $message = "{$deleted} deleted";
+
+        if ($skipped) {
+            return back()->with('error', "{$message}. Skipped because they are still in use: ".implode(', ', $skipped).'.');
+        }
+
+        return back()->with('success', $message);
+    }
+
+    /** Admin only: moves the ticked vehicles or drivers to one provider. */
+    public function bulkAssignProvider(Request $request): RedirectResponse
+    {
+        abort_unless($request->user()->hasRole('admin'), 403, 'Only an admin can reassign providers.');
+
+        $data = $request->validate([
+            'type' => ['required', Rule::in(['vehicle', 'driver'])],
+            'ids' => ['required', 'array', 'min:1'],
+            'ids.*' => ['integer'],
+            'provider_id' => ['required', 'exists:fleet_providers,id'],
+        ]);
+
+        $model = $data['type'] === 'vehicle' ? Vehicle::class : Driver::class;
+        $count = $model::whereIn('id', $data['ids'])->update(['provider_id' => $data['provider_id']]);
+
+        return back()->with('success', "{$count} updated");
+    }
+
+    /* ----------------------------- Event fleet (pool) -------------------- */
+
+    /** Puts a vehicle or driver in, or takes it out of, the active event's fleet. */
+    public function setPool(Request $request): RedirectResponse
+    {
+        $data = $request->validate([
+            'type' => ['required', Rule::in(['vehicle', 'driver'])],
+            'id' => ['required', 'integer'],
+            'in_pool' => ['required', 'boolean'],
+        ]);
+
+        $eventId = (int) $request->session()->get('active_event_id');
+        abort_unless($request->user()->canAccessEvent($eventId), 403, 'Pick an event you can access first.');
+
+        // Scoped lookup: a provider account can only toggle its own fleet.
+        $resource = $data['type'] === 'vehicle' ? Vehicle::findOrFail($data['id']) : Driver::findOrFail($data['id']);
+        $events = $resource->events();
+
+        $data['in_pool'] ? $events->syncWithoutDetaching([$eventId]) : $events->detach($eventId);
+
+        return back();
+    }
+
+    /** A provider's own people always work for that provider. */
+    private function pinProvider(Request $request, array $data): array
+    {
+        $user = $request->user();
+
+        if ($user->isProviderRestricted()) {
+            abort_unless($user->fleet_provider_id, 403, 'Your account is not linked to a provider.');
+            $data['provider_id'] = $user->fleet_provider_id;
+        }
+
+        return $data;
+    }
+
+    /** New fleet is offered for the event the user is working in. */
+    private function addToActiveEvent(Request $request, $events): void
+    {
+        $eventId = (int) $request->session()->get('active_event_id');
+
+        if ($eventId && $request->user()->canAccessEvent($eventId)) {
+            $events->syncWithoutDetaching([$eventId]);
+        }
+    }
+
     /* ----------------------------- Validation --------------------------- */
 
     private function validateVehicle(Request $request, ?Vehicle $vehicle = null): array
@@ -128,7 +248,8 @@ class FleetController extends Controller
             'category' => ['nullable', Rule::in(['Team', 'Official', 'VIP', 'Media'])],
             'fuel_level' => ['nullable', 'string', 'max:50'],
             'status' => ['required', Rule::in(['available', 'on_job', 'maintenance', 'standby'])],
-            'provider_id' => ['nullable', 'exists:fleet_providers,id'],
+            // Provider accounts are pinned to their own provider afterwards.
+            'provider_id' => [Rule::requiredIf(! $request->user()->isProviderRestricted()), 'nullable', 'exists:fleet_providers,id'],
             'notes' => ['nullable', 'string', 'max:255'],
         ]);
     }

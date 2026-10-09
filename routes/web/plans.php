@@ -19,6 +19,10 @@ Route::middleware(['auth'])->group(function () {
         ->middleware('permission:movements.assign-crew')
         ->name('crew-assignment');
 
+    Route::get('/crew-assignment/export', [MovementCrewController::class, 'export'])
+        ->middleware('permission:movements.assign-crew')
+        ->name('crew-assignment.export');
+
     Route::middleware('permission:movements.view')->group(function () {
         Route::get('/resource-schedule', [ResourceScheduleController::class, 'index'])->name('resource-schedule');
         Route::get('/resource-schedule/export', [ResourceScheduleController::class, 'export'])->name('resource-schedule.export');
@@ -73,6 +77,7 @@ Route::middleware(['auth'])->group(function () {
             ->name('assign-crew');
 
         Route::middleware('permission:plans.manage')->group(function () {
+            Route::patch('/{movement}/provider', [MovementCrewController::class, 'updateProvider'])->name('update-provider');
             Route::post('/{movement}/recompute-window', [ConflictController::class, 'recomputeWindow'])->name('recompute-window');
             Route::delete('/bulk-delete', [PlanManagementController::class, 'deleteMovementsBulk'])->name('bulk-delete');
             Route::put('/{movement}/checkpoint-template', [PlanManagementController::class, 'updateCheckpointTemplate'])->name('update-checkpoint-template');

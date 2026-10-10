@@ -220,7 +220,7 @@
             </div>
           </div>
           <div class="panel-actions">
-            <Button variant="primary" size="md" @click="showAssign = true">Assign to job</Button>
+            <Button v-if="canAssignCrew" variant="primary" size="md" @click="router.visit('/crew-assignment')">Assign to job</Button>
             <Button variant="secondary" size="md">View history</Button>
             <Button variant="ghost" size="md" @click="selected = null">Close</Button>
           </div>
@@ -450,30 +450,6 @@
     />
 
 
-    <!-- Assign to job modal -->
-    <div v-if="showAssign" v-dialog="() => (showAssign = false)" class="modal-backdrop" @click.self="showAssign = false">
-      <div class="assign-modal">
-        <div class="modal-title">Assign Vehicle</div>
-        <div class="modal-subtitle">Assign <strong>{{ selected?.code }}</strong> to a job</div>
-        <div class="job-list">
-          <div v-for="j in availableJobs" :key="j.id" 
-            class="job-option" 
-            :class="{ 'selected': assignedJob === j.id }"
-            @click="assignedJob = j.id">
-            <div class="job-header">
-              <span class="job-id">{{ j.id }}</span>
-              <status-pill tone="neutral" size="sm">{{ j.phase }}</status-pill>
-            </div>
-            <div class="job-route">{{ j.route }}</div>
-            <div class="job-window">{{ j.window }}</div>
-          </div>
-        </div>
-        <div class="modal-actions">
-          <Button variant="ghost" size="sm" @click="showAssign = false">Cancel</Button>
-          <Button variant="primary" size="sm" @click="showAssign = false">Confirm assign</Button>
-        </div>
-      </div>
-    </div>
   </app-layout>
 </template>
 
@@ -532,8 +508,6 @@ watch(activeTab, (tab) => {
   window.history.replaceState(window.history.state, '', url);
 });
 const selected = ref(null);
-const showAssign = ref(false);
-const assignedJob = ref(null);
 
 const isSubmitting = ref(false);
 const errors = ref({});
@@ -589,12 +563,6 @@ const history = [
   { id: 'h2', date: '18 Apr 13:40', vehicle: 'Coach 07', job: 'J-1038', driver: 'S. Reyes',    notes: 'Vehicle swap after pre-dispatch check' },
   { id: 'h3', date: '17 Apr 22:10', vehicle: 'Coach 03', job: 'J-1031', driver: 'A. Bakr',     notes: 'Night run, fuel refill needed' },
   { id: 'h4', date: '17 Apr 19:45', vehicle: 'Van 22',   job: 'J-1028', driver: 'K. Petrov',   notes: 'Media pool pickup, 3 extra bags' },
-];
-
-const availableJobs = [
-  { id: 'J-1055', phase: 'Queued', route: 'Airport → Team Hotel', window: 'Today 16:30–17:00' },
-  { id: 'J-1056', phase: 'Queued', route: 'Stadium → Airport', window: 'Today 22:00–22:30' },
-  { id: 'J-1057', phase: 'Planned', route: 'Hotel → Training Ground', window: 'Tomorrow 09:00–09:30' },
 ];
 
 const tabs = computed(() => [
@@ -782,6 +750,7 @@ function performDelete() {
 
 const page = usePage();
 const isAdmin = computed(() => page.props.auth?.can?.setups === true);
+const canAssignCrew = computed(() => page.props.auth?.can?.['movements.assign-crew'] === true);
 const bulkTypes = { vehicles: 'vehicle', drivers: 'driver', providers: 'provider' };
 const bulkType = computed(() => bulkTypes[activeTab.value] ?? null);
 const selection = ref({ vehicle: [], driver: [], provider: [] });
@@ -1091,7 +1060,7 @@ td.cell-actions { display: table-cell; text-align: center; }
   line-height: 1;
 }
 
-/* Assign Modal */
+/* Modal */
 .modal-backdrop {
   position: fixed;
   inset: 0;
@@ -1102,80 +1071,11 @@ td.cell-actions { display: table-cell; text-align: center; }
   z-index: 100;
 }
 
-.assign-modal {
-  background: var(--surface);
-  border-radius: 14px;
-  padding: 20px;
-  width: 380px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
-}
-
 .modal-title {
   font-size: 16px;
   font-weight: 700;
   color: var(--ink);
   margin-bottom: 4px;
-}
-
-.modal-subtitle {
-  font-size: 12px;
-  color: var(--ink3);
-  margin-bottom: 16px;
-}
-
-.modal-subtitle strong {
-  color: var(--ink2);
-}
-
-.job-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-bottom: 16px;
-}
-
-.job-option {
-  padding: 10px 12px;
-  border-radius: 8px;
-  border: 1px solid var(--border);
-  background: var(--panel);
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.job-option:hover {
-  border-color: var(--accent);
-}
-
-.job-option.selected {
-  border-color: var(--accent);
-  background: var(--accent-soft);
-}
-
-.job-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 4px;
-}
-
-.job-id {
-  font-family: var(--font-mono, monospace);
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--ink);
-}
-
-.job-route {
-  font-size: 12px;
-  color: var(--ink2);
-  margin-top: 4px;
-}
-
-.job-window {
-  font-size: 11px;
-  color: var(--ink3);
-  margin-top: 2px;
 }
 
 .modal-actions {
@@ -1344,8 +1244,7 @@ textarea.form-input {
     grid-template-columns: 1fr;
   }
 
-  .vehicle-modal,
-  .assign-modal {
+  .vehicle-modal {
     max-width: 100%;
     margin: 0;
     border-radius: 12px 12px 0 0;

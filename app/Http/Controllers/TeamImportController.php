@@ -48,7 +48,7 @@ class TeamImportController extends Controller
             return response()->json(['message' => $e->getMessage()], 422);
         }
 
-        return response()->json($service->import($rows, $eventId));
+        return response()->json($this->audited('Team import', $eventId, $service->import($rows, $eventId)));
     }
 
     private function instructionRows(): array

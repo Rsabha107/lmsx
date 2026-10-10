@@ -54,10 +54,17 @@ class JobCheckpoint extends Model
         'bags_loaded',
         'food_bags',
         'oversized_pieces',
+        'client_op_id',
+        'event_at',
+        'received_at',
+        'clock_skew_seconds',
+        'time_source',
     ];
 
     protected $casts = [
         'completed_at' => 'datetime',
+        'event_at' => 'datetime',
+        'received_at' => 'datetime',
         'scheduled_at' => 'datetime',
         'started_at' => 'datetime',
         'skipped_at' => 'datetime',
@@ -135,106 +142,6 @@ class JobCheckpoint extends Model
     public function overriddenBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'overridden_by');
-    }
-
-    /**
-     * Mark this checkpoint as done.
-     */
-    public function markAsDone(User $user, string $method = 'mobile', ?array $evidence = []): void
-    {
-        $completedAt = now();
-        $actualDuration = null;
-        $isOnTime = null;
-        $delayMinutes = null;
-
-        // Calculate duration
-        // Priority 1: If checkpoint was started, use start time
-        if ($this->started_at) {
-            $actualDuration = $completedAt->diffInSeconds($this->started_at);
-        }
-        // Priority 2: If we have scheduled time and estimated minutes, use estimated duration
-        elseif ($this->scheduled_at && $this->estimated_minutes) {
-            // Use estimated minutes as the baseline duration
-            $actualDuration = $this->estimated_minutes * 60;
-        }
-        // Priority 3: If we have scheduled time, calculate from scheduled to actual
-        elseif ($this->scheduled_at) {
-            $actualDuration = abs($completedAt->diffInSeconds($this->scheduled_at));
-        }
-
-        // Check if on time based on movement's window_end (not individual checkpoint scheduled_at).
-        // diffInMinutes()'s signed mode is relative to the argument, not $this, so a
-        // plain "<= 0" check on it gets the direction backwards (late completions
-        // read as on-time and vice versa). greaterThan() for direction + an explicit
-        // absolute diff for magnitude avoids that footgun (Carbon 3 also defaults
-        // diffInMinutes() to signed, unlike Carbon 2, so the flag must be explicit).
-        $movement = $this->job->movement;
-        if ($movement && $movement->window_end) {
-            $windowEnd = \Carbon\Carbon::parse($movement->window_end);
-            $isLate = $completedAt->greaterThan($windowEnd);
-            $isOnTime = !$isLate;
-            $delayMinutes = $isLate ? $completedAt->diffInMinutes($windowEnd, true) : 0;
-        }
-
-        $this->update([
-            'state' => 'done',
-            'completed_at' => $completedAt,
-            'completed_by' => $user->id,
-            'completion_method' => $method,
-            'actual_duration_seconds' => $actualDuration,
-            'is_on_time' => $isOnTime,
-            'delay_minutes' => $delayMinutes,
-            'photo_path' => $evidence['photo'] ?? null,
-            'signature_path' => $evidence['signature'] ?? null,
-            'gps_latitude' => $evidence['gps_latitude'] ?? null,
-            'gps_longitude' => $evidence['gps_longitude'] ?? null,
-            'location_name' => $evidence['location_name'] ?? null,
-            'gps_accuracy_meters' => $evidence['gps_accuracy_meters'] ?? null,
-            'notes' => $evidence['notes'] ?? null,
-        ]);
-
-        // Update job progress
-        $this->job->updateProgress();
-    }
-
-    /**
-     * Mark this checkpoint as skipped.
-     */
-    public function markAsSkipped(User $user, string $reason, ?string $exceptionType = null): void
-    {
-        $this->update([
-            'state' => 'skipped',
-            'skip_reason' => $reason,
-            'skipped_by' => $user->id,
-            'skipped_at' => now(),
-            'exception_type' => $exceptionType,
-        ]);
-
-        // Update job progress
-        $this->job->updateProgress();
-    }
-
-    /**
-     * Start this checkpoint (mark as active).
-     */
-    public function start(): void
-    {
-        $this->update([
-            'state' => 'active',
-            'started_at' => now(),
-        ]);
-    }
-
-    /**
-     * Verify this checkpoint by a supervisor.
-     */
-    public function verify(User $user, ?string $verificationCode = null): void
-    {
-        $this->update([
-            'verified_by' => $user->id,
-            'verified_at' => now(),
-            'verification_code' => $verificationCode,
-        ]);
     }
 
     /**

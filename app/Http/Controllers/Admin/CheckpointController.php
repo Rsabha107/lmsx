@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Models\AuditLog;
 use App\Models\Checkpoint;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -64,8 +65,6 @@ class CheckpointController extends Controller
      */
     public function store(Request $request)
     {
-        Log::info('Creating checkpoint', ['request' => $request->all()]);
-
         $validated = $request->validate([
             'name' => 'required|string|max:255',
             'category' => 'required|in:NA,Logistics,A&D,Transportation,Guest Services',
@@ -78,12 +77,12 @@ class CheckpointController extends Controller
             'is_active' => 'boolean',
         ]);
 
-        Log::info('Validated checkpoint data', ['validated' => $validated]);
-
         // Generate unique checkpoint code
         $validated['code'] = $this->generateCheckpointCode();
 
         $checkpoint = Checkpoint::create($validated);
+
+        AuditLog::change('Checkpoint created', $checkpoint->code, ['name' => $checkpoint->name, 'type' => $checkpoint->type], $checkpoint);
 
         return redirect()->route('library')
             ->with('success', "Checkpoint '{$checkpoint->name}' created successfully");
@@ -139,7 +138,10 @@ class CheckpointController extends Controller
             'is_active' => 'boolean',
         ]);
 
+        $original = $checkpoint->getOriginal();
         $checkpoint->update($validated);
+
+        AuditLog::change('Checkpoint updated', $checkpoint->code, AuditLog::changes($checkpoint, $original), $checkpoint);
 
         return redirect()->route('library')
             ->with('success', "Checkpoint '{$checkpoint->name}' updated successfully");
@@ -158,7 +160,10 @@ class CheckpointController extends Controller
         }
 
         $name = $checkpoint->name;
+        $code = $checkpoint->code;
         $checkpoint->delete();
+
+        AuditLog::change('Checkpoint deleted', $code, ['name' => $name]);
 
         return redirect()->route('library')
             ->with('success', "Checkpoint '{$name}' deleted successfully");
@@ -187,6 +192,8 @@ class CheckpointController extends Controller
         $skippedCount = $checkpoints->count() - $deletableIds->count();
 
         Checkpoint::whereIn('id', $deletableIds)->delete();
+
+        AuditLog::change('Checkpoints bulk deleted', "{$deletableIds->count()} checkpoint(s)", ['ids' => $deletableIds->values()->all(), 'skipped' => $skippedCount]);
 
         $message = "Deleted {$deletableIds->count()} checkpoint(s).";
         if ($skippedCount > 0) {

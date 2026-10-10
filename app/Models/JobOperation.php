@@ -205,21 +205,6 @@ class JobOperation extends Model
     }
 
     /**
-     * Update progress based on completed checkpoints.
-     */
-    public function updateProgress(): void
-    {
-        $completed = $this->checkpoints()->where('state', 'done')->count();
-        $total = $this->checkpoints()->count();
-
-        $this->update([
-            'checkpoints_completed' => $completed,
-            'checkpoints_total' => $total,
-            'progress_percentage' => $total > 0 ? ($completed / $total) * 100 : 0,
-        ]);
-    }
-
-    /**
      * Scope for active jobs.
      */
     public function scopeActive($query)

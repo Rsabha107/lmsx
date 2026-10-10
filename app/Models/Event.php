@@ -107,6 +107,16 @@ class Event extends Model
     }
 
     /** Not cancelled. */
+    /** Events the user may reach: all for admin/events.access-all, otherwise their assignments. */
+    public function scopeAccessibleTo($query, ?\App\Models\User $user)
+    {
+        if (! $user) {
+            return $query->whereRaw('1 = 0');
+        }
+
+        return $user->canAccessAllEvents() ? $query : $query->whereIn('events.id', $user->accessibleEventIds());
+    }
+
     public function scopeActive($query)
     {
         return $query->where('active_flag', true);

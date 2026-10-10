@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Models\AuditLog;
 use App\Models\Checkpoint;
 use App\Models\CheckpointTemplate;
 use App\Models\Event;
@@ -114,6 +115,8 @@ class CheckpointTemplateController extends Controller
             }
         }
 
+        AuditLog::change('Checkpoint template created', $template->code, ['name' => $template->name, 'steps' => count($validated['checkpoints'] ?? [])], $template, $template->event_id);
+
         return redirect()->route('library')
             ->with('success', "Checkpoint template '{$template->name}' created successfully");
     }
@@ -195,6 +198,9 @@ class CheckpointTemplateController extends Controller
             'checkpoints.*.estimated_minutes' => 'nullable|integer|min:1',
         ], self::NAME_TAKEN);
 
+        $original = $checkpointTemplate->getOriginal();
+        $stepsBefore = $checkpointTemplate->checkpoints()->count();
+
         $checkpointTemplate->update([
             'code' => $validated['code'],
             'name' => $validated['name'],
@@ -216,6 +222,14 @@ class CheckpointTemplateController extends Controller
             }
             $checkpointTemplate->checkpoints()->sync($syncData);
         }
+
+        AuditLog::change(
+            'Checkpoint template updated',
+            $checkpointTemplate->code,
+            AuditLog::changes($checkpointTemplate, $original) + ['steps' => ['from' => $stepsBefore, 'to' => $checkpointTemplate->checkpoints()->count()]],
+            $checkpointTemplate,
+            $checkpointTemplate->event_id,
+        );
 
         return redirect()->route('library')
             ->with('success', "Checkpoint template '{$checkpointTemplate->name}' updated successfully");
@@ -259,6 +273,8 @@ class CheckpointTemplateController extends Controller
             $copyService->copyCheckpointTemplate($source, $targetEventId);
         }
 
+        AuditLog::change('Checkpoint templates copied', "{$templates->count()} template(s)", ['from_event' => $validated['source_event_id'], 'codes' => $templates->pluck('code')->all()], null, (int) $targetEventId);
+
         return redirect()->route('library')
             ->with('success', $templates->count() . ' checkpoint template(s) copied to the active event');
     }
@@ -277,7 +293,11 @@ class CheckpointTemplateController extends Controller
         }
 
         $name = $checkpointTemplate->name;
+        $code = $checkpointTemplate->code;
+        $eventId = $checkpointTemplate->event_id;
         $checkpointTemplate->delete();
+
+        AuditLog::change('Checkpoint template deleted', $code, ['name' => $name], null, $eventId);
 
         return redirect()->route('library')
             ->with('success', "Checkpoint template '{$name}' deleted successfully");

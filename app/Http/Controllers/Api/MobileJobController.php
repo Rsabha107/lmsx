@@ -12,9 +12,12 @@ use App\Models\JobIssue;
 use App\Models\JobOperation;
 use App\Services\CheckpointUploadService;
 use App\Services\JobLifecycleService;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
 use RuntimeException;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -34,10 +37,20 @@ class MobileJobController extends Controller
 
     /**
      * Jobs for the active event, limited to the caller's functional areas.
+     *
+     * With ?updated_since=<synced_at from the last call> only jobs changed since then come back
+     * (the job, its checkpoints or its movement). visible_ids is always the full visible set, so the
+     * app can drop jobs that were reassigned or removed. Keep synced_at, not the device clock.
      */
     public function index(Request $request): JsonResponse
     {
         $this->assertCanViewJobs($request);
+
+        $since = $request->validate(['updated_since' => 'nullable|date'])['updated_since'] ?? null;
+        $since = $since ? Carbon::parse($since) : null;
+
+        // Taken before the query so a change landing mid-request is picked up next time.
+        $syncedAt = now();
 
         $query = JobOperation::with([
             'team',
@@ -54,7 +67,18 @@ class MobileJobController extends Controller
         ])
             ->where('jobs_operations.event_id', $this->activeEventId($request));
 
-        $jobs = $this->scopeToVisibleAreas($query, $request, 'jobs_operations.functional_area')
+        $this->scopeToVisibleAreas($query, $request, 'jobs_operations.functional_area');
+
+        $visibleIds = (clone $query)->pluck('jobs_operations.id')->values();
+
+        if ($since) {
+            $query->where(fn ($q) => $q
+                ->where('jobs_operations.updated_at', '>=', $since)
+                ->orWhereHas('checkpoints', fn ($c) => $c->where('job_checkpoints.updated_at', '>=', $since))
+                ->orWhereHas('movement', fn ($m) => $m->where('movements.updated_at', '>=', $since)));
+        }
+
+        $jobs = $query
             ->leftJoin('movements', 'jobs_operations.movement_id', '=', 'movements.id')
             ->orderByRaw('movements.window_start IS NULL, movements.window_start asc')
             ->select('jobs_operations.*')
@@ -62,7 +86,9 @@ class MobileJobController extends Controller
 
         return response()->json([
             'data' => JobResource::collection($jobs)->resolve(),
-            'synced_at' => now()->toIso8601String(),
+            'visible_ids' => $visibleIds,
+            'delta' => $since !== null,
+            'synced_at' => $syncedAt->toIso8601String(),
         ]);
     }
 
@@ -92,6 +118,10 @@ class MobileJobController extends Controller
 
     /**
      * Complete a checkpoint with optional photo / signature evidence.
+     *
+     * Replay-safe: send the same Idempotency-Key (or client_op_id) on every retry of one queued
+     * action. A retry after the first attempt committed returns 200 with the current job instead
+     * of a 409, flagged by the Idempotent-Replayed header.
      */
     public function completeCheckpoint(
         Request $request,
@@ -107,6 +137,12 @@ class MobileJobController extends Controller
             );
         }
 
+        $opId = $this->operationId($request);
+
+        if ($this->isReplay($checkpoint, $request, $opId)) {
+            return $this->checkpointResponse($job, 'Checkpoint already completed.', replayed: true);
+        }
+
         if ($checkpoint->state === 'done') {
             return response()->json(
                 ['message' => 'Checkpoint already completed.'],
@@ -116,6 +152,10 @@ class MobileJobController extends Controller
 
         $validated = $request->validate([
             'actual_time' => 'nullable|date_format:H:i',
+            // ISO 8601 with an offset (2026-10-09T14:05:00+03:00): when the supervisor acted, and the
+            // device clock when it was sent. The offset is required so skew can be measured.
+            'event_at' => ['nullable', 'regex:/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/'],
+            'client_sent_at' => ['nullable', 'required_with:event_at', 'regex:/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/'],
             'notes' => 'nullable|string|max:500',
             'photo' => 'nullable|image|max:10240',
             'signature' => 'nullable|string',
@@ -133,6 +173,8 @@ class MobileJobController extends Controller
                 $request->user(),
                 [
                     'actual_time' => $validated['actual_time'] ?? null,
+                    'event_at' => $validated['event_at'] ?? null,
+                    'client_sent_at' => $validated['client_sent_at'] ?? null,
                     'notes' => $validated['notes'] ?? null,
                     'photo' => $request->file('photo'),
                     'signature' => $validated['signature'] ?? null,
@@ -142,13 +184,24 @@ class MobileJobController extends Controller
                     'oversized_pieces' => $validated['oversized_pieces'] ?? null,
                     'gps_latitude' => $validated['gps_latitude'] ?? null,
                     'gps_longitude' => $validated['gps_longitude'] ?? null,
+                    'client_op_id' => $opId,
                 ],
                 'mobile',
             );
         } catch (RuntimeException $e) {
+            // A concurrent duplicate can lose the race to the row lock; it is still a replay.
+            if ($this->isReplay($checkpoint->refresh(), $request, $opId)) {
+                return $this->checkpointResponse($job, 'Checkpoint already completed.', replayed: true);
+            }
+
             return response()->json(['message' => $e->getMessage()], 409);
         }
 
+        return $this->checkpointResponse($job, 'Checkpoint completed.');
+    }
+
+    private function checkpointResponse(JobOperation $job, string $message, bool $replayed = false): JsonResponse
+    {
         $job->refresh();
 
         $job->load([
@@ -166,13 +219,38 @@ class MobileJobController extends Controller
         ]);
 
         return response()->json([
-            'message' => 'Checkpoint completed.',
+            'message' => $message,
             'data' => JobResource::withCheckpoints($job)->resolve(),
-        ]);
+        ], 200, $replayed ? ['Idempotent-Replayed' => 'true'] : []);
+    }
+
+    /** The client's key for one queued action, or null when it sent none. */
+    private function operationId(Request $request): ?string
+    {
+        $key = $request->header('Idempotency-Key') ?? $request->input('client_op_id');
+
+        if ($key === null || $key === '') {
+            return null;
+        }
+
+        Validator::make(['key' => $key], ['key' => ['string', 'regex:/^[A-Za-z0-9._:\-]{8,64}$/']], [
+            'key.regex' => 'The idempotency key must be 8-64 letters, digits or . _ : -',
+        ])->validate();
+
+        return $key;
+    }
+
+    /** Same user, same key, already done: the earlier attempt succeeded and only its reply was lost. */
+    private function isReplay(JobCheckpoint $checkpoint, Request $request, ?string $opId): bool
+    {
+        return $opId !== null
+            && $checkpoint->state === 'done'
+            && $checkpoint->client_op_id === $opId
+            && (int) $checkpoint->completed_by === (int) $request->user()->id;
     }
 
     /**
-     * Records a field-reported problem against a job.
+     * Records a field-reported problem against a job. Replay-safe with the same Idempotency-Key.
      */
     public function reportIssue(Request $request, JobOperation $job): JsonResponse
     {
@@ -183,14 +261,27 @@ class MobileJobController extends Controller
             'notes' => ['nullable', 'string', 'max:500'],
         ]);
 
-        $issue = JobIssue::create([
-            'job_id' => $job->id,
-            'event_id' => $job->event_id,
-            'reported_by' => $request->user()->id,
-            'type' => $validated['type'],
-            'severity' => JobIssue::TYPES[$validated['type']],
-            'notes' => $validated['notes'] ?? null,
-        ]);
+        $opId = $this->operationId($request);
+        $existing = $opId ? $this->issueFor($job, $request, $opId) : null;
+
+        if ($existing) {
+            return $this->issueResponse($existing, 200, replayed: true);
+        }
+
+        try {
+            $issue = JobIssue::create([
+                'job_id' => $job->id,
+                'event_id' => $job->event_id,
+                'reported_by' => $request->user()->id,
+                'type' => $validated['type'],
+                'severity' => JobIssue::TYPES[$validated['type']],
+                'notes' => $validated['notes'] ?? null,
+                'client_op_id' => $opId,
+            ]);
+        } catch (UniqueConstraintViolationException $e) {
+            // A concurrent duplicate won the unique index.
+            return $this->issueResponse($this->issueFor($job, $request, $opId) ?? throw $e, 200, replayed: true);
+        }
 
         AuditLog::record(
             action: 'Issue reported',
@@ -200,6 +291,19 @@ class MobileJobController extends Controller
             eventId: $job->event_id,
         );
 
+        return $this->issueResponse($issue, 201);
+    }
+
+    private function issueFor(JobOperation $job, Request $request, string $opId): ?JobIssue
+    {
+        return JobIssue::where('job_id', $job->id)
+            ->where('reported_by', $request->user()->id)
+            ->where('client_op_id', $opId)
+            ->first();
+    }
+
+    private function issueResponse(JobIssue $issue, int $status, bool $replayed = false): JsonResponse
+    {
         return response()->json([
             'message' => 'Issue reported.',
             'data' => [
@@ -210,7 +314,7 @@ class MobileJobController extends Controller
                 'notes' => $issue->notes,
                 'reported_at' => $issue->created_at->toIso8601String(),
             ],
-        ], 201);
+        ], $status, $replayed ? ['Idempotent-Replayed' => 'true'] : []);
     }
 
     public function photo(Request $request, JobCheckpoint $checkpoint): StreamedResponse

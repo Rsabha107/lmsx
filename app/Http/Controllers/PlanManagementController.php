@@ -407,7 +407,7 @@ class PlanManagementController extends Controller
      */
     public function store(Request $request)
     {
-        Log::info('Creating plan', ['request' => $request->all()]);
+        Log::info('Creating plan', ['fields' => array_keys($request->all())]);
         
         // Get active event from session
         $activeEventId = session('active_event_id');
@@ -595,7 +595,7 @@ class PlanManagementController extends Controller
      */
     public function bulkStore(Request $request)
     {
-        Log::info('Bulk creating plans', ['request' => $request->all()]);
+        Log::info('Bulk creating plans', ['fields' => array_keys($request->all())]);
         
         // Get active event from session
         $activeEventId = session('active_event_id');
@@ -705,7 +705,7 @@ class PlanManagementController extends Controller
      */
     public function bulkMatchStore(Request $request)
     {
-        Log::info('Bulk creating match plans', ['request' => $request->all()]);
+        Log::info('Bulk creating match plans', ['fields' => array_keys($request->all())]);
         
         // Get active event from session
         $activeEventId = session('active_event_id');

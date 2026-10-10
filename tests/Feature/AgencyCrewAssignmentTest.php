@@ -165,7 +165,6 @@ class AgencyCrewAssignmentTest extends TestCase
         $this->agency($event)->put("/movements/{$movement->id}", ['notes' => 'x'])->assertForbidden();
         $this->agency($event)->postJson("/jobs/{$job->id}/status", ['status' => 'dispatched'])->assertForbidden();
         $this->agency($event)->postJson("/jobs/checkpoint/{$checkpoint->id}/complete")->assertForbidden();
-        $this->agency($event)->post("/jobs/{$job->id}/dispatch")->assertForbidden();
         $this->agency($event)->post('/venues', ['name' => 'x'])->assertForbidden();
         $this->agency($event)->post('/email/send')->assertForbidden();
 

@@ -48,5 +48,11 @@ class AppServiceProvider extends ServiceProvider
         RateLimiter::for('ai', function (Request $request) {
             return Limit::perMinute(10)->by($request->user()?->id ?: $request->ip());
         });
+
+        // Per signed-in user, so one supervisor's retry storm can't starve the others behind a shared NAT.
+        RateLimiter::for('mobile', fn (Request $request) => Limit::perMinute(120)->by($request->user()?->id ?: $request->ip()));
+
+        // Photo/signature uploads cost storage and CPU.
+        RateLimiter::for('mobile-upload', fn (Request $request) => Limit::perMinute(30)->by($request->user()?->id ?: $request->ip()));
     }
 }

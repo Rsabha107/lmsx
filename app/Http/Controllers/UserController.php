@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\AuditLog;
 use App\Models\Event;
 use App\Models\FleetProvider;
 use App\Models\User;
@@ -53,6 +54,7 @@ class UserController extends Controller
         $user->events()->sync($data['events'] ?? []);
 
         Log::info("User created: {$user->email}");
+        AuditLog::change('User created', $user->email, $this->snapshot($user), $user);
 
         return redirect()->route('setups.users.index')->with('success', 'User created.');
     }
@@ -74,6 +76,8 @@ class UserController extends Controller
 
         $this->guardSecurityRole($request, $data['roles'] ?? [], $user);
 
+        $before = $this->snapshot($user);
+
         $user->name  = $data['name'];
         $user->email = $data['email'];
         $user->fleet_provider_id = $data['fleet_provider_id'] ?? null;
@@ -87,6 +91,7 @@ class UserController extends Controller
         $user->events()->sync($data['events'] ?? []);
 
         Log::info("User updated: {$user->email}");
+        AuditLog::change('User updated', $user->email, ['from' => $before, 'to' => $this->snapshot($user->refresh()), 'password_changed' => ! empty($data['password'])], $user);
 
         return redirect()->route('setups.users.index')->with('success', 'User updated.');
     }
@@ -106,11 +111,24 @@ class UserController extends Controller
         );
 
         $email = $user->email;
+        $snapshot = $this->snapshot($user);
         $user->delete();
 
         Log::info("User deleted: {$email}");
+        AuditLog::change('User deleted', $email, $snapshot);
 
         return redirect()->route('setups.users.index')->with('success', 'User deleted.');
+    }
+
+    /** What an audit entry records about a user: access, never credentials. */
+    private function snapshot(User $user): array
+    {
+        return [
+            'name' => $user->name,
+            'roles' => $user->getRoleNames()->sort()->values()->all(),
+            'provider_id' => $user->fleet_provider_id,
+            'events' => $user->events()->pluck('events.id')->sort()->values()->all(),
+        ];
     }
 
     /** Granting, removing or deleting a SecurityRole holder needs access.manage, or any admin could hand it to themselves. */

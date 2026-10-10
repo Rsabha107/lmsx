@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\AuditLog;
 use App\Models\User;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -22,6 +23,7 @@ class RoleController extends Controller
         $role->syncPermissions($data['permissions'] ?? []);
 
         Log::info("Role created: {$role->name}");
+        AuditLog::change('Role created', $role->name, ['permissions' => $role->permissions()->pluck('name')->sort()->values()->all()]);
 
         return redirect()->route('setups.access.index')->with('success', 'Role created.');
     }
@@ -40,10 +42,20 @@ class RoleController extends Controller
             return back()->withErrors(['name' => "The {$role->name} role is built in and cannot be renamed."]);
         }
 
+        $oldName = $role->name;
+        $before = $role->permissions()->pluck('name')->all();
+
         $role->update(['name' => $data['name']]);
         $role->syncPermissions($data['permissions'] ?? []);
 
+        $after = $role->permissions()->pluck('name')->all();
+
         Log::info("Role updated: {$role->name}");
+        AuditLog::change('Role updated', $role->name, [
+            'renamed_from' => $oldName !== $role->name ? $oldName : null,
+            'permissions_added' => array_values(array_diff($after, $before)),
+            'permissions_removed' => array_values(array_diff($before, $after)),
+        ]);
 
         return redirect()->route('setups.access.index')->with('success', 'Role updated.');
     }
@@ -55,9 +67,11 @@ class RoleController extends Controller
         abort_if(in_array($role->name, User::PROTECTED_ROLES, true), 403, "The {$role->name} role is built in and cannot be deleted.");
 
         $name = $role->name;
+        $permissions = $role->permissions()->pluck('name')->all();
         $role->delete();
 
         Log::info("Role deleted: {$name}");
+        AuditLog::change('Role deleted', $name, ['permissions' => $permissions]);
 
         return redirect()->route('setups.access.index')->with('success', 'Role deleted.');
     }

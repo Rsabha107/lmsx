@@ -14,6 +14,14 @@ class JobOperationPolicy
 
     public function view(User $user, JobOperation $job): bool
     {
+        // Field supervisors work only their own jobs, as in the mobile API.
+        return $this->inScope($user, $job)
+            && ($user->can('jobs.view-unassigned') || $job->isSupervisedBy((int) $user->id));
+    }
+
+    /** Same active event, jobs.view and functional area. */
+    private function inScope(User $user, JobOperation $job): bool
+    {
         if ((int) $job->event_id !== (int) session('active_event_id')) {
             return false;
         }
@@ -27,8 +35,8 @@ class JobOperationPolicy
     }
 
     /**
-     * Acting on a job (status changes, checkpoint completion, overrides) is
-     * scoped exactly like reading it: same active event, same functional area.
+     * Acting on a job (status changes, checkpoint completion) is scoped exactly like reading it:
+     * same active event, same functional area, and a field supervisor's own jobs.
      */
     public function update(User $user, JobOperation $job): bool
     {
@@ -42,13 +50,13 @@ class JobOperationPolicy
     public function override(User $user, JobOperation $job): bool
     {
         return $job->status !== 'cancelled'
-            && $this->update($user, $job)
+            && $this->inScope($user, $job)
             && $user->can('jobs.override');
     }
 
     /** Deleting discards the job's field record, so it needs planning rights too. */
     public function delete(User $user, JobOperation $job): bool
     {
-        return $this->update($user, $job) && $user->can('plans.manage');
+        return $this->inScope($user, $job) && $user->can('plans.manage');
     }
 }

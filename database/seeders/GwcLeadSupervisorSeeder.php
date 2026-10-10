@@ -27,7 +27,7 @@ class GwcLeadSupervisorSeeder extends Seeder
         $eventIds = Event::active()->pluck('id');
 
         // Agency users see only their provider's movements, so they must be tied to GWC.
-        $gwc = FleetProvider::withoutGlobalScopes()->where('name', 'like', '%GWC%')->first()
+        $gwc = FleetProvider::withoutGlobalScopes()->where('code', 'GWC')->orWhere('name', 'like', '%GWC%')->first()
             ?? FleetProvider::withoutGlobalScopes()->create(['code' => 'GWC', 'name' => 'GWC']);
 
         foreach ($supervisors as $email => $name) {

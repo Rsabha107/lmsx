@@ -194,11 +194,8 @@ class JobLifecycleService
                 $this->lockCheckpoint($checkpoint);
                 $this->assertOutstanding($checkpoint);
 
-                $completedAt = $this->resolveCompletedAt(
-                    $checkpoint,
-                    $data['actual_time'] ?? null,
-                    $data['exclude_date'] ?? false
-                );
+                $time = $this->resolveTimeEvidence($checkpoint, $data);
+                $completedAt = $time['completed_at'];
 
                 $attrs = [
                     'state' => 'done',
@@ -206,10 +203,14 @@ class JobLifecycleService
                     'completion_method' => $method,
                     'completed_at' => $completedAt,
                     'actual_duration_seconds' => $this->resolveDuration($checkpoint, $completedAt),
-                ];
+                ] + $time['attrs'];
 
                 if (array_key_exists('notes', $data)) {
                     $attrs['notes'] = $data['notes'];
+                }
+
+                if (! empty($data['client_op_id'])) {
+                    $attrs['client_op_id'] = $data['client_op_id'];
                 }
 
                 foreach (['planned_bags', 'bags_loaded', 'food_bags', 'oversized_pieces', 'gps_latitude', 'gps_longitude'] as $field) {
@@ -233,7 +234,7 @@ class JobLifecycleService
                 AuditLog::record(
                     action: 'Checkpoint completed',
                     target: ($checkpoint->job?->job_id ?? 'JOB').' · '.$checkpoint->name,
-                    meta: $method.($attrs['is_on_time'] ?? true ? '' : ' · late'),
+                    meta: $method.($attrs['is_on_time'] ?? true ? '' : ' · late').' · time: '.$attrs['time_source'],
                     subject: $checkpoint->job,
                     eventId: $checkpoint->job?->event_id,
                 );
@@ -333,6 +334,8 @@ class JobLifecycleService
                         'completed_at' => $completedAt,
                         'completed_by' => $actor->id,
                         'completion_method' => 'web',
+                        'received_at' => now(),
+                        'time_source' => 'override',
                         'actual_duration_seconds' => $this->resolveDuration($checkpoint, $completedAt),
                     ];
 
@@ -665,7 +668,7 @@ class JobLifecycleService
             return;
         }
 
-        $job->updateProgress();
+        $this->recountProgress($job);
         $job->refresh();
 
         if ($job->status === 'pending' || $job->status === 'dispatched') {
@@ -680,6 +683,19 @@ class JobLifecycleService
             && $job->checkpoints_completed === $job->checkpoints_total) {
             $this->silentlyTransition($job, 'completed');
         }
+    }
+
+    /** Counts only; status moves go through transitionStatus(). */
+    private function recountProgress(JobOperation $job): void
+    {
+        $completed = $job->checkpoints()->where('state', 'done')->count();
+        $total = $job->checkpoints()->count();
+
+        $job->update([
+            'checkpoints_completed' => $completed,
+            'checkpoints_total' => $total,
+            'progress_percentage' => $total > 0 ? ($completed / $total) * 100 : 0,
+        ]);
     }
 
     /**
@@ -799,6 +815,59 @@ class JobLifecycleService
                 "Checkpoint \"{$checkpoint->name}\" requires ".implode(' and ', $missing).'.'
             );
         }
+    }
+
+    /**
+     * Which time a completion counts as, and the evidence behind it.
+     *
+     * The app stores venue wall-clock times with no timezone, so a device time (event_at, with the
+     * device's own clock at send time in client_sent_at) is shifted by the measured clock skew and
+     * then kept as the wall-clock reading in the device's offset. A time that is wildly off, in the
+     * future or older than a week is rejected in favour of the server's receipt time; the raw
+     * claim is still kept.
+     *
+     * @param  array<string, mixed>  $data
+     * @return array{completed_at: Carbon, attrs: array<string, mixed>}
+     */
+    private function resolveTimeEvidence(JobCheckpoint $checkpoint, array $data): array
+    {
+        $received = now();
+
+        if (empty($data['event_at'])) {
+            return [
+                'completed_at' => $this->resolveCompletedAt($checkpoint, $data['actual_time'] ?? null, $data['exclude_date'] ?? false),
+                'attrs' => [
+                    'received_at' => $received,
+                    'time_source' => ! empty($data['actual_time']) ? 'manual' : 'server',
+                ],
+            ];
+        }
+
+        $claimed = Carbon::parse($data['event_at']);
+        $zone = $claimed->getTimezone();
+        $wall = fn (Carbon $instant): Carbon => Carbon::parse($instant->copy()->setTimezone($zone)->format('Y-m-d H:i:s'), config('app.timezone'));
+
+        $skew = ! empty($data['client_sent_at'])
+            ? (int) round(Carbon::parse($data['client_sent_at'])->diffInSeconds($received, false))
+            : null;
+
+        $corrected = $skew === null ? $claimed->copy() : $claimed->copy()->addSeconds($skew);
+
+        $plausible = ($skew === null || abs($skew) <= 86400)
+            && $corrected->lessThanOrEqualTo($received->copy()->addMinutes(2))
+            && $corrected->greaterThanOrEqualTo($received->copy()->subDays(7));
+
+        $used = $plausible ? ($corrected->greaterThan($received) ? $received : $corrected) : $received;
+
+        return [
+            'completed_at' => $wall($used),
+            'attrs' => [
+                'event_at' => $wall($claimed),
+                'received_at' => $wall($received),
+                'clock_skew_seconds' => $skew,
+                'time_source' => $plausible ? 'device' : 'server',
+            ],
+        ];
     }
 
     /**

@@ -17,20 +17,10 @@ use App\Http\Controllers\JobOperationController;
 use App\Models\MovementTemplate;
 use Illuminate\Support\Facades\Route;
 
-// Job Operations (Field Execution)
-Route::prefix('jobs')->name('jobs.')->middleware('auth')->group(function () {
-    // Route::get('/', [JobOperationController::class, 'index'])->name('index'); // Commented out - conflicts with LmsController@jobs
-    Route::get('/{job}', [JobOperationController::class, 'show'])->name('show');
-    Route::post('/{job}/dispatch', [JobOperationController::class, 'dispatch'])->name('dispatch');
-    Route::post('/{job}/start', [JobOperationController::class, 'start'])->name('start');
-    Route::post('/{job}/complete', [JobOperationController::class, 'complete'])->name('complete');
-    
-    // Checkpoint Actions
-    Route::post('/{job}/checkpoints/{checkpoint}/complete', [JobOperationController::class, 'completeCheckpoint'])->name('checkpoint.complete');
-    Route::post('/{job}/checkpoints/{checkpoint}/skip', [JobOperationController::class, 'skipCheckpoint'])->name('checkpoint.skip');
-});
+// Job Operations (field execution): the old web routes (jobs/{job}/start, /complete, checkpoint actions)
+// were authenticated-only and have been removed; web job actions are in routes/web/jobs.php.
 
-// Mobile API for field operations
+// Legacy token API, authorised per job inside the controller.
 Route::prefix('api')->name('api.')->middleware(['auth:sanctum'])->group(function () {
     Route::get('/my-jobs', [JobOperationController::class, 'myJobs'])->name('my-jobs');
     Route::post('/checkpoints/{checkpoint}/quick-complete', [JobOperationController::class, 'quickCompleteCheckpoint'])->name('checkpoint.quick-complete');

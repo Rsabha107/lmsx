@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\AuditLog;
 use App\Models\Checkpoint;
 use App\Models\Event;
 use App\Models\Movement;
@@ -127,6 +128,8 @@ class SettingsController extends Controller
             SettingsService::UI_FLAGS[$validated['key']],
         );
 
+        AuditLog::change('Feature switch changed', $validated['key'], ['enabled' => (bool) $validated['enabled']]);
+
         return back()->with('success', 'Feature visibility updated.');
     }
 
@@ -182,6 +185,12 @@ class SettingsController extends Controller
 
         $activeEventId = $request->session()->get('active_event_id');
         $message = 'Global setting updated successfully.';
+
+        AuditLog::change('Global offset saved', $validated['movement_type'], [
+            'checkpoint_id' => $checkpointId,
+            'from' => isset($existing) ? $existing->value : null,
+            'to' => (int) $validated['value'],
+        ]);
 
         if ($activeEventId) {
             // If editing changed which movement type this row applies to,
@@ -262,6 +271,13 @@ class SettingsController extends Controller
             $updated += $this->jobGenerationService->recomputeWindowsForEventAndKind((int) $validated['event_id'], $type);
         }
 
+        AuditLog::change('Event offset saved', $validated['movement_type'], [
+            'checkpoint_id' => $checkpointId,
+            'from' => isset($existing) ? $existing->value : null,
+            'to' => (int) $validated['value'],
+            'windows_recalculated' => $updated,
+        ], null, (int) $validated['event_id']);
+
         $message = 'Event override created successfully.';
         $message .= $updated > 0
             ? " {$updated} movement window(s) recalculated."
@@ -287,6 +303,13 @@ class SettingsController extends Controller
 
         $setting->delete();
         $this->settingsService->clearCache();
+
+        AuditLog::change('Offset deleted', $movementType, [
+            'scope' => $scope,
+            'scope_id' => $scopeId,
+            'checkpoint_id' => $setting->checkpoint_id,
+            'was' => $setting->value,
+        ], null, $scope === Setting::SCOPE_EVENT ? (int) $scopeId : null);
 
         $message = $isBaseGlobalDefault
             ? 'Global default removed — this movement type now uses the hardcoded fallback offset.'

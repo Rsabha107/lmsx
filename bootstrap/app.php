@@ -21,17 +21,18 @@ return Application::configure(basePath: dirname(__DIR__))
         // since the scheme used to validate the signature won't match the one
         // used to generate it.
         //
-        // Trusting '*' is only safe while the origin is unreachable except through
-        // the load balancer: anyone who can hit it directly can forge their client
-        // IP, scheme and host. Set TRUSTED_PROXIES to the balancer's CIDR(s) if the
-        // origin is ever exposed.
+        // Trusting '*' lets anyone who can reach the origin directly forge their client IP,
+        // scheme and host, so the default is private/loopback ranges only: a TLS-terminating
+        // balancer (Azure App Service) reaches the app from a private address, while a direct
+        // public request is not trusted. Set TRUSTED_PROXIES to the balancer's CIDR(s) to be
+        // exact, or to '*' only if the origin is unreachable except through it.
         //
         // Passed through as a raw string: TrustProxies only recognises the wildcard
         // as the literal string '*', and splits comma-separated lists itself. Handing
         // it ['*'] instead makes it match '*' as an IP, which never matches - the
         // proxy goes untrusted and every generated URL falls back to http://.
         $middleware->trustProxies(
-            at: env('TRUSTED_PROXIES', '*'),
+            at: env('TRUSTED_PROXIES', '127.0.0.1,::1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,169.254.0.0/16,fc00::/7'),
             headers: Request::HEADER_X_FORWARDED_FOR
                 | Request::HEADER_X_FORWARDED_HOST
                 | Request::HEADER_X_FORWARDED_PORT

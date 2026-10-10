@@ -24,6 +24,7 @@ class JobIssue extends Model
         'severity',
         'notes',
         'resolved_at',
+        'client_op_id',
     ];
 
     protected $casts = [

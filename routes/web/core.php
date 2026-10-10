@@ -61,7 +61,9 @@ Route::middleware('auth')->group(function () {
 
     // Session: active plan selector
     Route::post('/session/active-plan', function (Request $request) {
-        $request->session()->put('active_plan_id', $request->input('plan_id'));
+        $validated = $request->validate(['plan_id' => ['nullable', 'integer']]);
+
+        $request->session()->put('active_plan_id', $validated['plan_id'] ?? null);
         return response()->json(['success' => true]);
     })->name('session.active-plan');
 });

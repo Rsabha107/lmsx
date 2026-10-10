@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Airport;
+use App\Models\AuditLog;
 use App\Models\Country;
 use App\Models\Event;
 use App\Models\MovementTemplate;
@@ -11,6 +12,7 @@ use App\Models\TeamClassification;
 use App\Models\TeamFlight;
 use App\Models\TeamStay;
 use App\Models\Venue;
+use App\Support\EventFleetPool;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -24,9 +26,10 @@ use Inertia\Response;
 
 class EventsController extends Controller
 {
-    public function index(): Response
+    public function index(Request $request): Response
     {
-        $events = Event::with(['country', 'teams.country', 'teams.classification', 'venues.country'])
+        $events = Event::accessibleTo($request->user())
+                       ->with(['country', 'teams.country', 'teams.classification', 'venues.country'])
                        ->orderBy('start_date', 'desc')
                        ->get();
 
@@ -85,6 +88,10 @@ class EventsController extends Controller
         $event = Event::create($attributes);
         $event->venues()->sync($validated['venue_ids'] ?? []);
 
+        AuditLog::change('Event created', $event->name, ['dates' => [$event->start_date, $event->end_date], 'provider_id' => $event->fleet_provider_id], $event, $event->id);
+
+        EventFleetPool::fill($event->id);
+
         return redirect()->back()->with('success', 'Event created successfully.');
     }
 
@@ -117,8 +124,15 @@ class EventsController extends Controller
             $attributes['event_logo'] = null;
         }
 
+        $original = $event->getOriginal();
         $event->update($attributes);
 
+        AuditLog::change('Event updated', $event->name, AuditLog::changes($event, $original), $event, $event->id);
+
+        // Only on a provider change, so vehicles taken out of the pool on purpose stay out.
+        if ($event->wasChanged('fleet_provider_id')) {
+            EventFleetPool::fill($event->id);
+        }
         // Only touch assignments when the form actually submitted them, so other
         // callers can't silently wipe the pivot (purpose/notes included).
         if ($request->has('venue_ids')) {
@@ -172,12 +186,17 @@ class EventsController extends Controller
             DB::transaction(fn () => $event->delete());
             $this->deleteLogo($event->event_logo);
 
+            AuditLog::change('Event deleted', $event->name, ['via' => 'stepwise']);
+
             return response()->json(['deleted' => 1]);
         }
 
         [, $table] = self::DELETE_STEPS[$data['step']];
 
-        return response()->json(['deleted' => DB::table($table)->where('event_id', $id)->delete()]);
+        $deleted = DB::table($table)->where('event_id', $id)->delete();
+        AuditLog::change('Event data deleted', $event->name, ['step' => $data['step'], 'rows' => $deleted], null, $id);
+
+        return response()->json(['deleted' => $deleted]);
     }
 
     public function destroy(Request $request, int $id): RedirectResponse
@@ -194,6 +213,8 @@ class EventsController extends Controller
         });
 
         $this->deleteLogo($event->event_logo);
+
+        AuditLog::change('Event deleted', $event->name);
 
         return redirect()->back()->with('success', 'Event deleted successfully.');
     }
@@ -240,6 +261,7 @@ class EventsController extends Controller
 
         $count = count($validated['venue_ids']);
 
+        AuditLog::change('Venues assigned to event', $event->name, ['venue_ids' => $validated['venue_ids'], 'purpose' => $pivot['purpose']], $event, $event->id);
         return redirect()->back()->with('success', $count === 1
             ? 'Venue assigned to event.'
             : "{$count} venues assigned to event.");
@@ -251,6 +273,7 @@ class EventsController extends Controller
         $event = Event::findOrFail($id);
         $event->venues()->detach($venueId);
 
+        AuditLog::change('Venue removed from event', $event->name, ['venue_id' => $venueId], $event, $event->id);
         return redirect()->back()->with('success', 'Venue removed from event.');
     }
 }

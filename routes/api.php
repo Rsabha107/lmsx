@@ -18,7 +18,7 @@ Route::name('api.mobile.')->group(function () {
         ->middleware('throttle:5,1')
         ->name('login');
 
-    Route::middleware('auth:sanctum')->group(function () {
+    Route::middleware(['auth:sanctum', 'throttle:mobile'])->group(function () {
         Route::get('/me', [AuthController::class, 'me'])->name('me');
         Route::post('/logout', [AuthController::class, 'logout'])->name('logout');
 
@@ -27,9 +27,10 @@ Route::name('api.mobile.')->group(function () {
         Route::post(
             '/jobs/{job}/checkpoints/{checkpoint}/complete',
             [MobileJobController::class, 'completeCheckpoint']
-        )->name('checkpoints.complete');
+        )->middleware('throttle:mobile-upload')->name('checkpoints.complete');
 
         Route::post('/jobs/{job}/issues', [MobileJobController::class, 'reportIssue'])
+            ->middleware('throttle:mobile-upload')
             ->name('jobs.issues.store');
 
         Route::get('/checkpoints/{checkpoint}/photo', [MobileJobController::class, 'photo'])

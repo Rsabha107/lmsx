@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\AuditLog;
 use App\Models\Driver;
 use App\Models\FleetProvider;
 use App\Models\Vehicle;
@@ -22,14 +23,17 @@ class FleetController extends Controller
         $vehicle = Vehicle::create($this->pinProvider($request, $this->validateVehicle($request)));
         $this->addToActiveEvent($request, $vehicle->events());
 
+        AuditLog::change('Vehicle created', $vehicle->code, ['provider_id' => $vehicle->provider_id], $vehicle);
         // back() keeps the ?tab= query the page uses to restore the active tab.
         return back()->with('success', 'Vehicle added');
     }
 
     public function updateVehicle(Request $request, Vehicle $vehicle): RedirectResponse
     {
+        $original = $vehicle->getOriginal();
         $vehicle->update($this->pinProvider($request, $this->validateVehicle($request, $vehicle)));
 
+        AuditLog::change('Vehicle updated', $vehicle->code, AuditLog::changes($vehicle, $original), $vehicle);
         return back()->with('success', 'Vehicle updated');
     }
 
@@ -48,6 +52,7 @@ class FleetController extends Controller
 
         $vehicle->delete();
 
+        AuditLog::change('Vehicle deleted', $vehicle->code, ['provider_id' => $vehicle->provider_id]);
         return back()->with('success', 'Vehicle deleted');
     }
 
@@ -58,13 +63,16 @@ class FleetController extends Controller
         $driver = Driver::create($this->pinProvider($request, $this->validateDriver($request)));
         $this->addToActiveEvent($request, $driver->events());
 
+        AuditLog::change('Driver created', $driver->name, ['provider_id' => $driver->provider_id], $driver);
         return back()->with('success', 'Driver added');
     }
 
     public function updateDriver(Request $request, Driver $driver): RedirectResponse
     {
+        $original = $driver->getOriginal();
         $driver->update($this->pinProvider($request, $this->validateDriver($request)));
 
+        AuditLog::change('Driver updated', $driver->name, AuditLog::changes($driver, $original), $driver);
         return back()->with('success', 'Driver updated');
     }
 
@@ -81,6 +89,7 @@ class FleetController extends Controller
 
         $driver->delete();
 
+        AuditLog::change('Driver deleted', $driver->name, ['provider_id' => $driver->provider_id]);
         return back()->with('success', 'Driver deleted');
     }
 
@@ -90,15 +99,18 @@ class FleetController extends Controller
     {
         abort_if($request->user()->isProviderRestricted(), 403, 'A provider account cannot add other providers.');
 
-        FleetProvider::create($this->validateProvider($request));
+        $provider = FleetProvider::create($this->validateProvider($request));
 
+        AuditLog::change('Provider created', $provider->code, ['name' => $provider->name], $provider);
         return back()->with('success', 'Provider added');
     }
 
     public function updateProvider(Request $request, FleetProvider $provider): RedirectResponse
     {
+        $original = $provider->getOriginal();
         $provider->update($this->validateProvider($request, $provider));
 
+        AuditLog::change('Provider updated', $provider->code, AuditLog::changes($provider, $original), $provider);
         return back()->with('success', 'Provider updated');
     }
 
@@ -120,6 +132,7 @@ class FleetController extends Controller
 
         $provider->delete();
 
+        AuditLog::change('Provider deleted', $provider->code, ['name' => $provider->name]);
         return back()->with('success', 'Provider deleted');
     }
 
@@ -165,6 +178,7 @@ class FleetController extends Controller
 
         $message = "{$deleted} deleted";
 
+        AuditLog::change("Bulk deleted {$data['type']}s", "{$deleted} {$data['type']}(s)", ['requested' => count($data['ids']), 'skipped_in_use' => $skipped]);
         if ($skipped) {
             return back()->with('error', "{$message}. Skipped because they are still in use: ".implode(', ', $skipped).'.');
         }
@@ -187,6 +201,7 @@ class FleetController extends Controller
         $model = $data['type'] === 'vehicle' ? Vehicle::class : Driver::class;
         $count = $model::whereIn('id', $data['ids'])->update(['provider_id' => $data['provider_id']]);
 
+        AuditLog::change("Bulk provider change ({$data['type']}s)", "{$count} {$data['type']}(s)", ['ids' => $data['ids'], 'provider_id' => (int) $data['provider_id']]);
         return back()->with('success', "{$count} updated");
     }
 

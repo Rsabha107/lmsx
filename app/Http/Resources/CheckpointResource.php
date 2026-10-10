@@ -33,6 +33,12 @@ class CheckpointResource extends JsonResource
             'scheduled_time' => $this->scheduled_at?->format('H:i'),
             'actual_time' => $this->completed_at?->format('H:i'),
 
+            // Where completed_at came from: device | manual | server | override.
+            'time_source' => $this->time_source,
+            'event_at' => $this->event_at?->toIso8601String(),
+            'received_at' => $this->received_at?->toIso8601String(),
+            'clock_skew_seconds' => $this->clock_skew_seconds,
+
             'is_on_time' => $this->is_on_time,
             // JobCheckpoint::getDelayMinutesAttribute() shadows this column and
             // returns null whenever scheduled_at is unset, which contradicts

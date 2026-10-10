@@ -35,6 +35,44 @@ class AuditLog extends Model
     }
 
     /**
+     * Old and new values of the attributes a save just changed. Capture $model->getOriginal()
+     * before the update and pass it in.
+     *
+     * @param  array<string, mixed>  $original
+     * @return array{from: array<string, mixed>, to: array<string, mixed>}
+     */
+    public static function changes(Model $model, array $original): array
+    {
+        $to = array_diff_key($model->getChanges(), ['updated_at' => true, 'password' => true, 'remember_token' => true]);
+
+        return ['from' => array_intersect_key($original, $to), 'to' => $to];
+    }
+
+    /**
+     * For privileged or configuration changes: who did it, from where, and a short summary
+     * (before/after values, never secrets) stored as JSON in meta.
+     *
+     * @param  array<string, mixed>  $summary
+     */
+    public static function change(
+        string $action,
+        ?string $target = null,
+        array $summary = [],
+        ?Model $subject = null,
+        ?int $eventId = null
+    ): self {
+        $summary['ip'] = request()->ip();
+
+        return self::record(
+            action: $action,
+            target: $target,
+            meta: json_encode($summary, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+            subject: $subject,
+            eventId: $eventId,
+        );
+    }
+
+    /**
      * Write an entry, attributing it to the authenticated user or to "System"
      * for anything triggered without a session (queues, automation).
      */

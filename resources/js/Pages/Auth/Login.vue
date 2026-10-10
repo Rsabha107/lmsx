@@ -31,7 +31,7 @@
       <div class="form-group">
         <div class="pw-label-row">
           <label class="form-label" for="password">Password</label>
-          <a href="/forgot-password" class="forgot-link">Forgot password?</a>
+          <a href="/forgot-password" class="forgot-link" tabindex="-1">Forgot password?</a>
         </div>
         <div class="pw-wrap">
           <input

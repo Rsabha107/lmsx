@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Data\LmsData;
+use App\Http\Controllers\Api\Concerns\ScopesMobileAccess;
 use App\Mail\DailySummaryMail;
 use App\Models\AuditLog;
 use App\Models\Vehicle;
@@ -45,6 +46,7 @@ use Inertia\Response;
 class LmsController extends Controller
 {
     use AuthorizesRequests;
+    use ScopesMobileAccess;
 
     public function dashboard(Request $request, NotificationFeedService $notifications): Response|RedirectResponse
     {
@@ -482,7 +484,7 @@ class LmsController extends Controller
 
         // "My Jobs" is a field supervisor's active worklist — only jobs
         // currently underway, real data only (no mock/demo rows).
-        $dbJobs = JobOperation::with([
+        $query = JobOperation::with([
             'movement.team',
             'movement.flight.originAirport',
             'movement.flight.destinationAirport',
@@ -497,9 +499,12 @@ class LmsController extends Controller
         ])
             ->join('movements', 'jobs_operations.movement_id', '=', 'movements.id')
             ->where('jobs_operations.status', 'in-progress')
-            ->when($activeEventId, fn ($q) => $q->where('jobs_operations.event_id', $activeEventId))
+            ->where('jobs_operations.event_id', (int) $activeEventId)
             ->orderBy('movements.window_start', 'asc')
-            ->select('jobs_operations.*')
+            ->select('jobs_operations.*');
+
+        // Same area and own-job limits as the mobile API; a supervisor never lists a colleague's job.
+        $dbJobs = $this->scopeToVisibleAreas($query, $request, 'jobs_operations.functional_area')
             ->get()
             ->map(function ($job) {
                 $movement = $job->movement;
@@ -585,6 +590,8 @@ class LmsController extends Controller
             ->first();
 
         if ($jobOperation) {
+            $this->authorize('view', $jobOperation);
+
             $movement = $jobOperation->movement;
             $team = $movement?->team;
 

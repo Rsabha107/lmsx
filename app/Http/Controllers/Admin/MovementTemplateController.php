@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Models\AuditLog;
 use App\Models\CheckpointTemplate;
 use App\Models\Event;
 use App\Models\MovementTemplate;
@@ -87,7 +88,7 @@ class MovementTemplateController extends Controller
      */
     public function store(Request $request)
     {
-        Log::info('Creating movement template', ['request' => $request->all()]);
+        Log::info('Creating movement template', ['fields' => array_keys($request->all())]);
         
         $validated = $request->validate([
             'code' => 'required|string|max:50|unique:movement_templates,code',
@@ -108,8 +109,6 @@ class MovementTemplateController extends Controller
             'legs.*.estimated_duration_minutes' => 'nullable|integer|min:1',
         ], self::NAME_TAKEN);
 
-        Log::info('Validated movement template data', ['validated' => $validated]);
-
         try {
             DB::beginTransaction();
 
@@ -128,7 +127,6 @@ class MovementTemplateController extends Controller
             // Create legs if provided
             if (!empty($validated['legs'])) {
                 foreach ($validated['legs'] as $leg) {
-                    Log::info('Creating leg for movement template', ['leg' => $leg]);
                     MovementTemplateLeg::create([
                         'movement_template_id' => $template->id,
                         'checkpoint_template_id' => $leg['checkpoint_template_id'],
@@ -143,7 +141,8 @@ class MovementTemplateController extends Controller
             }
 
             DB::commit();
-            Log::info('Movement template created', ['template' => $template]);
+            Log::info('Movement template created', ['id' => $template->id]);
+            AuditLog::change('Movement template created', $template->code, ['name' => $template->name, 'legs' => $template->total_legs], $template, $template->event_id);
 
             return redirect()->route('library')
                 ->with('success', "Movement template '{$template->name}' created successfully");
@@ -258,6 +257,9 @@ class MovementTemplateController extends Controller
         try {
             DB::beginTransaction();
 
+            $original = $movementTemplate->getOriginal();
+            $legsBefore = $movementTemplate->legs()->count();
+
             $movementTemplate->update([
                 'code' => $validated['code'],
                 'name' => $validated['name'],
@@ -292,6 +294,14 @@ class MovementTemplateController extends Controller
             ]);
 
             DB::commit();
+
+            AuditLog::change(
+                'Movement template updated',
+                $movementTemplate->code,
+                AuditLog::changes($movementTemplate, $original) + ['legs' => ['from' => $legsBefore, 'to' => $movementTemplate->total_legs]],
+                $movementTemplate,
+                $movementTemplate->event_id,
+            );
 
             $resized = app(JobGenerationService::class)->applyTemplateDurations($movementTemplate);
 
@@ -351,6 +361,8 @@ class MovementTemplateController extends Controller
             $copyService->copyMovementTemplate($source, $targetEventId);
         }
 
+        AuditLog::change('Movement templates copied', "{$templates->count()} template(s)", ['from_event' => $validated['source_event_id'], 'codes' => $templates->pluck('code')->all()], null, (int) $targetEventId);
+
         return redirect()->route('library')
             ->with('success', $templates->count() . ' movement template(s) copied to the active event');
     }
@@ -368,7 +380,11 @@ class MovementTemplateController extends Controller
         }
 
         $name = $movementTemplate->name;
+        $code = $movementTemplate->code;
+        $eventId = $movementTemplate->event_id;
         $movementTemplate->delete();
+
+        AuditLog::change('Movement template deleted', $code, ['name' => $name], null, $eventId);
 
         return redirect()->route('library')
             ->with('success', "Movement template '{$name}' deleted successfully");

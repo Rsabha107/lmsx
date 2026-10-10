@@ -32,6 +32,22 @@ trait ReadsSpreadsheetRows
     /** Excel's own error-value strings - never usable data, always treated as blank. */
     private const EXCEL_ERROR_VALUES = ['#VALUE!', '#REF!', '#NAME?', '#N/A', '#DIV/0!', '#NULL!', '#NUM!'];
 
+    /** Records an import in the audit trail (counts only, no row data) and returns the result unchanged. */
+    protected function audited(string $action, int $eventId, array $result): array
+    {
+        $counts = [];
+
+        foreach (['created', 'updated', 'unchanged', 'incomplete', 'failed'] as $key) {
+            if (array_key_exists($key, $result)) {
+                $counts[$key] = is_countable($result[$key]) ? count($result[$key]) : $result[$key];
+            }
+        }
+
+        \App\Models\AuditLog::change($action, "event #{$eventId}", $counts, null, $eventId);
+
+        return $result;
+    }
+
     /**
      * @param UploadedFile|string $file an uploaded file, or an absolute path to a local file
      */

@@ -122,12 +122,12 @@
               <div class="cg-col">
                 <select v-model="drafts[mv.id].field_supervisor_id" :class="fieldClass(mv, 'supervisor', drafts[mv.id].field_supervisor_id)" :aria-label="`Supervisor for ${mv.code}`">
                   <option :value="null">Select supervisor</option>
-                  <option v-for="s in optionsFor('supervisor', mv)" :key="s.id" :value="s.id">{{ s.name }}{{ busyNote('supervisor', s.id, mv) }}</option>
+                  <option v-for="s in optionsFor('supervisor', mv)" :key="s.id" :value="s.id">{{ personName(s) }}{{ busyNote('supervisor', s.id, mv) }}</option>
                 </select>
                 <div v-for="(sid, i) in drafts[mv.id].supervisors" :key="`s${i}`" class="cg-crew cg-crew--sup">
                   <select v-model="drafts[mv.id].supervisors[i]" :class="fieldClass(mv, 'supervisor', sid)" :aria-label="`Extra supervisor ${i + 2} for ${mv.code}`">
                     <option :value="null">Select supervisor</option>
-                    <option v-for="s in optionsFor('supervisor', mv)" :key="s.id" :value="s.id">{{ s.name }}{{ busyNote('supervisor', s.id, mv) }}</option>
+                    <option v-for="s in optionsFor('supervisor', mv)" :key="s.id" :value="s.id">{{ personName(s) }}{{ busyNote('supervisor', s.id, mv) }}</option>
                   </select>
                   <button type="button" class="cg-x" :title="`Remove supervisor ${i + 2}`" :aria-label="`Remove supervisor ${i + 2}`" @click="removeSupervisor(mv, i)">×</button>
                 </div>
@@ -184,7 +184,7 @@
           <select v-model="drafts[selected.id][r.idField]">
             <option :value="null">Unassigned</option>
             <option v-for="o in optionsFor(key, selected)" :key="o.id" :value="o.id">
-              {{ key === 'vehicle' ? vehicleLabel(o) : o.name }}{{ busyNote(key, o.id, selected) }}
+              {{ key === 'vehicle' ? vehicleLabel(o) : personName(o) }}{{ busyNote(key, o.id, selected) }}
             </option>
           </select>
         </label>
@@ -211,7 +211,7 @@
           <div v-for="(_, i) in drafts[selected.id].supervisors" :key="i" class="cap-unit cap-unit--single">
             <select v-model="drafts[selected.id].supervisors[i]" :aria-label="`Extra supervisor ${i + 2}`">
               <option :value="null">Supervisor…</option>
-              <option v-for="o in optionsFor('supervisor', selected)" :key="o.id" :value="o.id">{{ o.name }}{{ busyNote('supervisor', o.id, selected) }}</option>
+              <option v-for="o in optionsFor('supervisor', selected)" :key="o.id" :value="o.id">{{ personName(o) }}{{ busyNote('supervisor', o.id, selected) }}</option>
             </select>
             <button type="button" class="unit-remove" :aria-label="`Remove extra supervisor ${i + 2}`" @click="removeSupervisor(selected, i)">✕</button>
           </div>
@@ -230,7 +230,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch } from 'vue';
+import { ref, computed, watch, nextTick } from 'vue';
 import { router, usePage } from '@inertiajs/vue3';
 import AppLayout from '../Components/AppLayout.vue';
 import StatusPill from '../Components/StatusPill.vue';
@@ -258,11 +258,12 @@ const hasActiveEvent = computed(() => !!page.props.activeEventId);
 const { success: showSuccessToast, error: showErrorToast, warning: showWarningToast } = useToast();
 const { statusLabel } = useStatusLabels();
 
+// Not deep: a partial reload keeps the old flash object, and a deep watcher would toast it again.
 watch(() => page.props.flash, (flash) => {
   if (flash?.success) showSuccessToast(flash.success);
   if (flash?.warning) showWarningToast(flash.warning, 8000);
   if (flash?.error) showErrorToast(flash.error);
-}, { deep: true });
+});
 
 const CREW_FIELDS = ['vehicle_id', 'driver_id', 'field_supervisor_id'];
 
@@ -537,16 +538,23 @@ function save(mv) {
 
 const dirtyList = computed(() => props.movements.filter((mv) => drafts.value[mv.id] && isDirty(mv)));
 
-// One request at a time: a second visit would cancel the first.
-async function saveAll() {
+// One request for every changed movement, so the planner gets a single message.
+function saveAll() {
   savingAll.value = true;
-  let allSaved = true;
-  for (const mv of [...dirtyList.value]) allSaved = (await patchCrew(mv)) && allSaved;
-  savingAll.value = false;
-  if (!allSaved) return;
-  justSaved.value = true;
-  clearTimeout(savedTimer);
-  savedTimer = setTimeout(() => { justSaved.value = false; }, 2200);
+  router.patch('/movements/crew', {
+    movements: dirtyList.value.map((mv) => ({ id: mv.id, ...crewPayload(mv) })),
+  }, {
+    preserveScroll: true,
+    preserveState: true,
+    onSuccess: () => nextTick(() => {
+      if (dirtyList.value.length) return;
+      justSaved.value = true;
+      clearTimeout(savedTimer);
+      savedTimer = setTimeout(() => { justSaved.value = false; }, 2200);
+    }),
+    onError: (errors) => showErrorToast(Object.values(errors)[0] ?? 'Could not save the crew.'),
+    onFinish: () => { savingAll.value = false; },
+  });
 }
 
 function discardAll() {
@@ -561,6 +569,8 @@ function vehicleLabel(v) {
   const name = vehicleName(v);
   return v.capacity ? `${name} (${v.capacity} seats)` : name;
 }
+
+const personName = (p) => (p.job_title ? `${p.name} · ${p.job_title}` : p.name);
 
 const jobTones = { 'in-progress': 'live', completed: 'ok', dispatched: 'primary', cancelled: 'danger' };
 const jobTone = (s) => jobTones[s] ?? 'neutral';

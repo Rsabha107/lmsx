@@ -195,12 +195,7 @@
           </div>
           <div class="form-group">
             <label class="form-label">Role <span class="required">*</span></label>
-            <input 
-              v-model="newContact.role" 
-              type="text" 
-              :class="['form-input', { 'form-input--error': errors.role }]" 
-              placeholder="e.g., Media Manager" 
-            />
+            <RoleSelect v-model="newContact.role" :roles="props.roles" :class="['form-input', { 'form-input--error': errors.role }]" />
             <span v-if="errors.role" class="form-error">{{ errors.role }}</span>
           </div>
           <div class="form-group">
@@ -249,12 +244,7 @@
           </div>
           <div class="form-group">
             <label class="form-label">Role <span class="required">*</span></label>
-            <input 
-              v-model="editContact.role" 
-              type="text" 
-              :class="['form-input', { 'form-input--error': errors.role }]" 
-              placeholder="e.g., Media Manager" 
-            />
+            <RoleSelect v-model="editContact.role" :roles="props.roles" :class="['form-input', { 'form-input--error': errors.role }]" />
             <span v-if="errors.role" class="form-error">{{ errors.role }}</span>
           </div>
           <div class="form-group">
@@ -307,10 +297,12 @@ import TableActions from '../Components/TableActions.vue';
 import ColumnToggle from '../Components/ColumnToggle.vue';
 import RefreshButton from '../Components/RefreshButton.vue';
 import ConfirmModal from '../Components/ConfirmModal.vue';
+import RoleSelect from '../Components/RoleSelect.vue';
 import { router } from '@inertiajs/vue3';
 
 const props = defineProps({
   contacts: { type: Array, default: () => [] },
+  roles: { type: Array, default: () => [] },
 });
 
 const tokens = LMS_TOKENS

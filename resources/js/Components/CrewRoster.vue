@@ -227,7 +227,7 @@ function build(row) {
 
   const bars = items.map((s, i) => {
     const clash = !row.open && (s.mv.clashes?.[r.clashKey] ?? []).length > 0;
-    const others = ['driver', 'vehicle', 'supervisor'].filter((k) => k !== props.tab)
+    const others = ['driver', 'vehicle', 'supervisor']
       .map((k) => `${ROLES[k].singular}: ${s.mv[ROLES[k].nameField] ?? '—'}`);
     return {
       mv: s.mv,

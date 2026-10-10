@@ -36,7 +36,7 @@ class AdoptUnownedFleetData extends Command
         $validIds = FleetProvider::withoutGlobalScopes()->pluck('id')->all();
         $unowned = fn ($query, string $column) => $query->where(fn ($q) => $q->whereNull($column)->orWhereNotIn($column, $validIds));
 
-        $agencyIds = User::role('agency')->whereNull('fleet_provider_id')->pluck('users.id');
+        $agencyIds = User::role(['agency', 'ground_control'])->whereNull('fleet_provider_id')->pluck('users.id');
 
         $targets = [
             'agency users without a provider' => DB::table('users')->whereIn('id', $agencyIds)->whereNull('fleet_provider_id'),

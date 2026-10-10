@@ -31,10 +31,10 @@ class AssignOrphansToProvider extends Command
         $known = FleetProvider::withoutGlobalScopes()->pluck('id')->all();
         $orphaned = fn ($query, string $column) => $query->where(fn ($q) => $q->whereNull($column)->orWhereNotIn($column, $known));
 
-        $agencyIds = User::role('agency')->pluck('users.id');
+        $agencyIds = User::role(['agency', 'ground_control'])->pluck('users.id');
 
         $work = [
-            'agency users' => DB::table('users')->whereIn('id', $agencyIds)->whereNull('fleet_provider_id'),
+            'agency and field supervisor users' => DB::table('users')->whereIn('id', $agencyIds)->whereNull('fleet_provider_id'),
             'movements' => $orphaned(DB::table('movements'), 'fleet_provider_id'),
             'events' => DB::table('events')->whereNull('fleet_provider_id'),
             'vehicles' => $orphaned(DB::table('vehicles'), 'provider_id'),

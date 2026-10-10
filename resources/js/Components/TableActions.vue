@@ -14,6 +14,7 @@
     <button 
       class="action-btn action-btn--delete" 
       @click="$emit('delete')" 
+      v-if="!hideDelete"
       :disabled="isDeleting"
       title="Delete"
     >
@@ -32,6 +33,10 @@ defineProps({
     default: false,
   },
   showDuplicate: {
+    type: Boolean,
+    default: false,
+  },
+  hideDelete: {
     type: Boolean,
     default: false,
   },

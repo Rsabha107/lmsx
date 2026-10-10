@@ -33,6 +33,7 @@ Route::middleware(['auth', 'role:admin'])->prefix('setups')->name('setups.')->gr
         Route::post('/global', [SettingsController::class, 'updateGlobal'])->name('update-global');
         Route::post('/event', [SettingsController::class, 'updateEvent'])->name('update-event');
         Route::post('/ui-flag', [SettingsController::class, 'updateUiFlag'])->name('update-ui-flag');
+        Route::post('/thresholds', [SettingsController::class, 'updateThresholds'])->name('update-thresholds');
         Route::delete('/{id}', [SettingsController::class, 'destroy'])->name('destroy');
         Route::post('/preview', [SettingsController::class, 'preview'])->name('preview');
         Route::post('/preview-impact', [SettingsController::class, 'previewImpact'])->name('preview-impact');

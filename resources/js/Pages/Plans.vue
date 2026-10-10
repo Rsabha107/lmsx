@@ -7225,7 +7225,7 @@
               </div>
             </div>
             <div
-              style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px"
+              style="display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px"
             >
               <div class="form-field">
                 <label>VEHICLE</label>
@@ -7236,7 +7236,7 @@
                     :key="vehicle.id"
                     :value="vehicle.id"
                   >
-                    {{ vehicle.code }} - {{ vehicle.vehicle_type }}{{ vehicle.capacity ? ` (${vehicle.capacity} pax)` : '' }}
+                    {{ vehicle.code }} - {{ vehicle.vehicle_type }}{{ vehicle.capacity ? ` (${vehicle.capacity} pax)` : '' }}{{ crewNote('vehicles', vehicle.id) }}
                   </option>
                 </select>
               </div>
@@ -7249,7 +7249,7 @@
                     :key="driver.id"
                     :value="driver.id"
                   >
-                    {{ driver.name }}
+                    {{ driver.name }}{{ crewNote('drivers', driver.id) }}
                   </option>
                 </select>
               </div>
@@ -7260,7 +7260,7 @@
                 <select v-model="unit.vehicle_id">
                   <option :value="null">Select vehicle...</option>
                   <option v-for="vehicle in props.vehicles" :key="vehicle.id" :value="vehicle.id">
-                    {{ vehicle.code }} - {{ vehicle.vehicle_type }}{{ vehicle.capacity ? ` (${vehicle.capacity} pax)` : '' }}
+                    {{ vehicle.code }} - {{ vehicle.vehicle_type }}{{ vehicle.capacity ? ` (${vehicle.capacity} pax)` : '' }}{{ crewNote('vehicles', vehicle.id) }}
                   </option>
                 </select>
               </div>
@@ -7268,7 +7268,7 @@
                 <label>DRIVER {{ i + 2 }}</label>
                 <select v-model="unit.driver_id">
                   <option :value="null">Select driver...</option>
-                  <option v-for="driver in props.drivers" :key="driver.id" :value="driver.id">{{ driver.name }}</option>
+                  <option v-for="driver in props.drivers" :key="driver.id" :value="driver.id">{{ driver.name }}{{ crewNote('drivers', driver.id) }}</option>
                 </select>
               </div>
               <button type="button" class="em-unit-remove" :aria-label="`Remove vehicle ${i + 2}`" title="Remove this vehicle" @click="emUnits.splice(i, 1)">✕</button>
@@ -7281,11 +7281,11 @@
               <select v-model="emFieldSupervisorId">
                 <option value="">Select supervisor...</option>
                 <option
-                  v-for="supervisor in props.supervisors"
+                  v-for="supervisor in supervisorOptions"
                   :key="supervisor.id"
                   :value="supervisor.id"
                 >
-                  {{ supervisor.name }}
+                  {{ supervisorLabel(supervisor) }}{{ crewNote('supervisors', supervisor.id) }}
                 </option>
               </select>
             </div>
@@ -7294,7 +7294,7 @@
                 <label>SUPERVISOR {{ i + 2 }}</label>
                 <select v-model="emSupervisors[i]">
                   <option :value="null">Select supervisor...</option>
-                  <option v-for="supervisor in props.supervisors" :key="supervisor.id" :value="supervisor.id">{{ supervisor.name }}</option>
+                  <option v-for="supervisor in supervisorOptions" :key="supervisor.id" :value="supervisor.id">{{ supervisorLabel(supervisor) }}{{ crewNote('supervisors', supervisor.id) }}</option>
                 </select>
               </div>
               <button type="button" class="em-unit-remove" :aria-label="`Remove supervisor ${i + 2}`" title="Remove this supervisor" @click="emSupervisors.splice(i, 1)">✕</button>
@@ -8243,6 +8243,8 @@
 import { ref, computed, watch, nextTick } from "vue";
 import { router, usePage } from "@inertiajs/vue3";
 import { useToast } from "../Composables/useToast";
+import { useCrewBusy } from "../Composables/useCrewBusy";
+import { supervisorsFor, personLabel } from "../Composables/crewPeople";
 import axios from "axios";
 import AppLayout from "../Components/AppLayout.vue";
 import StatusPill from "../Components/StatusPill.vue";
@@ -8541,6 +8543,7 @@ watch(showNewPlan, (isOpen) => {
 
 // Watch for flash messages from backend
 const page = usePage();
+// Not deep: a partial reload keeps the old flash object, and a deep watcher would toast it again.
 watch(
   () => page.props.flash,
   (flash) => {
@@ -8550,8 +8553,7 @@ watch(
     if (flash?.error) {
       showErrorToast(flash.error);
     }
-  },
-  { deep: true }
+  }
 );
 
 const showPlanDropdown = ref(false);
@@ -8726,6 +8728,16 @@ const emDriverId = ref("");
 const emUnits = ref([]);
 const emSupervisors = ref([]);
 const emFieldSupervisorId = ref("");
+
+// Same people Crew Assignment offers: the movement's provider's, plus whoever is already on it.
+const supervisorOptions = computed(() => {
+  const mv = editingMovement.value;
+  return supervisorsFor(props.supervisors, mv?.fleet_provider_id, [mv?.field_supervisor_id, ...(mv?.extra_supervisors || []).map((s) => s.id)]);
+});
+const supervisorLabel = personLabel;
+
+// Why a vehicle, driver or supervisor is busy for the movement being edited (same checks as the Conflicts tab).
+const { note: crewNote } = useCrewBusy(() => editingMovement.value?.id ?? null);
 const emPassengers = ref("");
 const emFlightNumber = ref("");
 const emNotes = ref("");
@@ -12742,11 +12754,11 @@ function statusLabel(s) {
 
 .em-unit {
   display: grid;
-  grid-template-columns: 1fr 1fr auto;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
   gap: 12px;
   align-items: center;
 }
-.em-unit--single { grid-template-columns: 1fr auto; }
+.em-unit--single { grid-template-columns: minmax(0, 1fr) auto; }
 .unit-more {
   margin-left: 4px; padding: 0 5px; border-radius: 8px;
   background: var(--accent-soft); color: var(--accent);
@@ -12769,6 +12781,7 @@ function statusLabel(s) {
   flex-direction: column;
   gap: 5px;
   margin-bottom: 16px;
+  min-width: 0;
 }
 .form-field label {
   font-size: 12.5px;
@@ -12784,7 +12797,11 @@ function statusLabel(s) {
   color: var(--ink);
   font-size: 13.5px;
   font-family: inherit;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
 }
+.form-field select { text-overflow: ellipsis; }
 .form-field input:focus,
 .form-field select:focus {
   outline: none;

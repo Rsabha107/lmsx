@@ -54,6 +54,7 @@ User-facing documentation lives in one file: `docs/NAQLA_LMS_GUIDE.md` (source f
 - **Extra supervisors**: `movement_supervisors` pivot (`Movement::extraSupervisors`).
 - Jobs read extras through their movement. Use `Movement::resourceIds('vehicle_id'|'driver_id'|'field_supervisor_id')` to get lead + extras.
 - Mobile "own jobs" scoping: `JobOperation::supervisedBy()` / `isSupervisedBy()` and `ScopesMobileAccess::whereSupervisedBy()` — never filter on `supervisor_id` alone.
+- Who can be a supervisor: `User::fieldSupervisors()` (ground_control, provider-scoped for restricted viewers) — the one source for Crew Assignment, Planning, the Jobs override and `ConflictDetectionService::crewOptions`. Whoever is already on a movement stays allowed.
 - `ConflictDetectionService` treats extras like the lead (double-booking, turnarounds, driver duty, capacity sum). Lead-only clash ids keep the `a-b` form so existing acceptances match; extra-resource clashes append `-{id}`.
 - Option B (split a movement into linked per-vehicle movements) is recorded in `docs/decisions/multi-vehicle-jobs.md`.
 

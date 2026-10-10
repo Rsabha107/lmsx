@@ -11,6 +11,7 @@ use App\Models\Team;
 use App\Models\User;
 use App\Models\Venue;
 use App\Services\ConflictDetectionService;
+use App\Services\SettingsService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\Concerns\CreatesOperationsFixtures;
 use Tests\TestCase;
@@ -118,11 +119,42 @@ class CrewConflictTest extends TestCase
     {
         $driver = Driver::create(['name' => 'Mia', 'status' => 'available'])->id;
         $this->matchJob('A', '2026-11-27 18:00', ['2026-11-27 18:00', '2026-11-27 23:00'], ['driver_id' => $driver]);
+        $this->matchJob('B', '2026-11-28 08:30', ['2026-11-28 08:30', '2026-11-28 09:30'], ['driver_id' => $driver]);
+
+        $rest = $this->ofType('Insufficient Rest');
+        $this->assertCount(1, $rest);
+        $this->assertStringContainsString('9.5 hours', $rest[0]['text']);
+    }
+
+    public function test_work_through_midnight_is_one_shift_not_a_rest_problem(): void
+    {
+        $driver = Driver::create(['name' => 'Sofia', 'status' => 'available'])->id;
+        $this->matchJob('A', '2026-11-07 23:05', ['2026-11-07 23:05', '2026-11-08 03:05'], ['driver_id' => $driver]);
+        $this->matchJob('B', '2026-11-08 04:00', ['2026-11-08 04:00', '2026-11-08 08:00'], ['driver_id' => $driver]);
+
+        // 23:05 to 08:00 is 8.9 hours: inside both the default 14 and a 9-hour limit.
+        $this->assertSame([], $this->ofType('Insufficient Rest'));
+        $this->assertSame([], $this->ofType('Driver Shift Too Long'));
+
+        app(SettingsService::class)->setSetting('conflict.driver_span_hours', 9);
+        $this->assertSame([], $this->ofType('Insufficient Rest'));
+        $this->assertSame([], $this->ofType('Driver Shift Too Long'));
+
+        app(SettingsService::class)->setSetting('conflict.driver_span_hours', 8);
+        $this->assertCount(1, $this->ofType('Driver Shift Too Long'));
+        $this->assertSame([], $this->ofType('Insufficient Rest'));
+    }
+
+    public function test_a_short_break_after_a_nine_hour_shift_is_insufficient_rest(): void
+    {
+        app(SettingsService::class)->setSetting('conflict.driver_span_hours', 9);
+        $driver = Driver::create(['name' => 'Mia', 'status' => 'available'])->id;
+        $this->matchJob('A', '2026-11-27 14:00', ['2026-11-27 14:00', '2026-11-27 22:00'], ['driver_id' => $driver]);
         $this->matchJob('B', '2026-11-28 07:00', ['2026-11-28 07:00', '2026-11-28 08:00'], ['driver_id' => $driver]);
 
         $rest = $this->ofType('Insufficient Rest');
         $this->assertCount(1, $rest);
-        $this->assertStringContainsString('8.0 hours', $rest[0]['text']);
+        $this->assertStringContainsString('9.0 hours', $rest[0]['text']);
     }
 
     public function test_enough_rest_raises_nothing(): void

@@ -6,8 +6,8 @@
         <p class="page-sub">Vehicles, drivers & transport partners</p>
       </div>
       <div class="header-actions">
-        <RefreshButton :only="['vehicles', 'providers', 'drivers']" />
-        <Button v-if="activeTab !== 'history'" variant="primary" size="sm" @click="openAddModal">
+        <RefreshButton :only="['vehicles', 'providers', 'drivers', 'supervisors']" />
+        <Button v-if="activeTab !== 'history' && (activeTab !== 'supervisors' || canAddSupervisors)" variant="primary" size="sm" @click="openAddModal">
           <template #icon><span class="btn-icon">+</span></template>
           <span class="btn-text">{{ addButtonText }}</span>
         </Button>
@@ -132,6 +132,33 @@
                 <TableActions @edit="openEditDriver(d)" @delete="confirmDelete('driver', d)" />
               </td>
             </tr>
+          </tbody>
+        </table>
+      </div>
+    </template>
+
+      <!-- Supervisors -->
+      <template v-else-if="activeTab === 'supervisors'">
+      <div class="table-card">
+        <table class="data-table">
+          <thead><tr><th>Name</th><th>Role</th><th>Phone</th><th>Email</th><th>Provider</th><th style="text-align: center;">Actions</th></tr></thead>
+          <tbody>
+            <tr v-for="s in props.supervisors" :key="s.id">
+              <td>
+                <div class="driver-row">
+                  <div class="avatar">{{ initials(s.name || 'N/A') }}</div>
+                  <div class="driver-name">{{ s.name }}</div>
+                </div>
+              </td>
+              <td>{{ s.job_title || '—' }}</td>
+              <td class="mono">{{ s.phone || '—' }}</td>
+              <td class="mono">{{ s.email }}</td>
+              <td>{{ s.provider || '—' }}</td>
+              <td class="cell-actions">
+                <TableActions hide-delete @edit="openEditSupervisor(s)" />
+              </td>
+            </tr>
+            <tr v-if="!props.supervisors.length"><td colspan="6" class="note-cell">No field supervisors yet.</td></tr>
           </tbody>
         </table>
       </div>
@@ -357,6 +384,71 @@
       </div>
     </div>
 
+    <!-- Supervisor Modal (add + edit) -->
+    <div v-if="showSupervisorModal" v-dialog="closeSupervisorModal" class="modal-backdrop" @click.self="closeSupervisorModal">
+      <div class="vehicle-modal">
+        <div class="modal-header">
+          <h3 class="modal-title">{{ supervisorForm.id ? 'Edit Field Supervisor' : 'Add Field Supervisor' }}</h3>
+          <button class="modal-close" @click="closeSupervisorModal">✕</button>
+        </div>
+        <div class="modal-body">
+          <div v-if="!supervisorForm.id && props.contacts.length" class="form-group">
+            <label class="form-label">Start from a contact</label>
+            <select class="form-input" :value="supervisorForm.contact_id ?? ''" @change="pickContact($event.target.value)">
+              <option value="">— none —</option>
+              <option v-for="c in props.contacts" :key="c.id" :value="c.id">{{ c.name }}{{ c.role ? ` · ${c.role}` : '' }}</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Name <span class="required">*</span></label>
+            <input v-model="supervisorForm.name" type="text" class="form-input" :class="{ 'form-input--error': errors.name }" placeholder="Full name" />
+            <span v-if="errors.name" class="form-error">{{ errors.name }}</span>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Role</label>
+              <RoleSelect v-model="supervisorForm.job_title" :roles="props.roles" class="form-input" :class="{ 'form-input--error': errors.job_title }" />
+              <span v-if="errors.job_title" class="form-error">{{ errors.job_title }}</span>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Phone</label>
+              <input v-model="supervisorForm.phone" type="tel" class="form-input" :class="{ 'form-input--error': errors.phone }" placeholder="+974 …" />
+              <span v-if="errors.phone" class="form-error">{{ errors.phone }}</span>
+            </div>
+          </div>
+          <template v-if="!supervisorForm.id">
+            <div class="form-group">
+              <label class="form-label">Email <span class="required">*</span></label>
+              <input v-model="supervisorForm.email" type="email" class="form-input" :class="{ 'form-input--error': errors.email }" autocomplete="off" placeholder="name@company.com" />
+              <span v-if="errors.email" class="form-error">{{ errors.email }}</span>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Password <span class="required">*</span></label>
+                <input v-model="supervisorForm.password" type="password" class="form-input" :class="{ 'form-input--error': errors.password }" autocomplete="new-password" placeholder="At least 8 characters" />
+                <span v-if="errors.password" class="form-error">{{ errors.password }}</span>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Provider</label>
+                <select v-model="supervisorForm.provider_id" class="form-input" :class="{ 'form-input--error': errors.provider_id }">
+                  <option :value="null">Select provider</option>
+                  <option v-for="p in props.providers" :key="p.id" :value="p.id">{{ p.name }}</option>
+                </select>
+                <span v-if="errors.provider_id" class="form-error">{{ errors.provider_id }}</span>
+              </div>
+            </div>
+            <p class="form-hint">Signs in to the mobile app with this email and password, and can work the event you have open now.</p>
+          </template>
+        </div>
+        <div class="modal-footer">
+          <Button variant="ghost" size="sm" @click="closeSupervisorModal" :disabled="isSubmitting">Cancel</Button>
+          <Button variant="primary" size="sm" @click="saveSupervisor" :disabled="isSubmitting">
+            {{ isSubmitting ? 'Saving…' : supervisorForm.id ? 'Update Supervisor' : 'Add Supervisor' }}
+          </Button>
+        </div>
+      </div>
+    </div>
+
     <!-- Provider Modal (add + edit) -->
     <div v-if="showProviderModal" v-dialog="closeProviderModal" class="modal-backdrop" @click.self="closeProviderModal">
       <div class="vehicle-modal">
@@ -463,6 +555,7 @@ import Button from '../Components/Button.vue';
 import RefreshButton from '../Components/RefreshButton.vue';
 import TableActions from '../Components/TableActions.vue';
 import ConfirmModal from '../Components/ConfirmModal.vue';
+import RoleSelect from '../Components/RoleSelect.vue';
 
 const props = defineProps({
   vehicles: {
@@ -477,6 +570,22 @@ const props = defineProps({
     type: Array,
     required: true
   },
+  supervisors: {
+    type: Array,
+    default: () => []
+  },
+  canAddSupervisors: {
+    type: Boolean,
+    default: false
+  },
+  contacts: {
+    type: Array,
+    default: () => []
+  },
+  roles: {
+    type: Array,
+    default: () => []
+  },
   eventPool: {
     type: Object,
     default: () => ({ name: null, vehicles: [], drivers: [] })
@@ -487,7 +596,7 @@ function setPool(type, id, inPool) {
   router.post('/fleet/pool', { type, id, in_pool: inPool }, { preserveScroll: true, preserveState: true, only: ['eventPool'] });
 }
 
-const validTabs = ['vehicles', 'drivers', 'providers', 'history'];
+const validTabs = ['vehicles', 'drivers', 'supervisors', 'providers', 'history'];
 
 // Kept in the query string so a save (which redirects) or a browser refresh
 // comes back to the tab the user was on.
@@ -537,6 +646,17 @@ const emptyDriver = () => ({
   provider_id: null,
 });
 
+const emptySupervisor = () => ({
+  id: null,
+  contact_id: null,
+  name: '',
+  job_title: '',
+  phone: '',
+  email: '',
+  password: '',
+  provider_id: null,
+});
+
 const emptyProvider = () => ({
   id: null,
   code: '',
@@ -551,9 +671,11 @@ const emptyProvider = () => ({
 
 const showVehicleModal = ref(false);
 const showDriverModal = ref(false);
+const showSupervisorModal = ref(false);
 const showProviderModal = ref(false);
 const vehicleForm = ref(emptyVehicle());
 const driverForm = ref(emptyDriver());
+const supervisorForm = ref(emptySupervisor());
 const providerForm = ref(emptyProvider());
 
 
@@ -568,6 +690,7 @@ const history = [
 const tabs = computed(() => [
   { value: 'vehicles',  label: 'Vehicles',  count: props.vehicles.length },
   { value: 'drivers',   label: 'Drivers',   count: props.drivers.length },
+  ...(props.canAddSupervisors ? [{ value: 'supervisors', label: 'Supervisors', count: props.supervisors.length }] : []),
   { value: 'providers', label: 'Providers', count: props.providers.length },
   { value: 'history',   label: 'History',   count: history.length },
 ]);
@@ -576,6 +699,7 @@ const addButtonText = computed(() => {
   switch (activeTab.value) {
     case 'vehicles': return 'Add vehicle';
     case 'drivers': return 'Add driver';
+    case 'supervisors': return 'Add supervisor';
     case 'providers': return 'Add provider';
     default: return 'Add';
   }
@@ -607,6 +731,9 @@ function openAddModal() {
   } else if (activeTab.value === 'drivers') {
     driverForm.value = emptyDriver();
     showDriverModal.value = true;
+  } else if (activeTab.value === 'supervisors') {
+    supervisorForm.value = emptySupervisor();
+    showSupervisorModal.value = true;
   } else if (activeTab.value === 'providers') {
     providerForm.value = emptyProvider();
     showProviderModal.value = true;
@@ -674,6 +801,34 @@ function saveDriver() {
     driverForm.value,
     () => closeDriverModal(),
   );
+}
+
+/* ------------------------------- Supervisors ------------------------------- */
+
+// Starts the form from a contacts-directory entry; the entry is then tied to the new login.
+function pickContact(id) {
+  const contact = props.contacts.find((c) => c.id === Number(id));
+  supervisorForm.value = {
+    ...supervisorForm.value,
+    contact_id: contact?.id ?? null,
+    ...(contact ? { name: contact.name, job_title: contact.role ?? '', phone: contact.phone ?? '' } : {}),
+  };
+}
+
+function openEditSupervisor(s) {
+  errors.value = {};
+  supervisorForm.value = { ...emptySupervisor(), id: s.id, name: s.name ?? '', job_title: s.job_title ?? '', phone: s.phone ?? '' };
+  showSupervisorModal.value = true;
+}
+
+function closeSupervisorModal() {
+  showSupervisorModal.value = false;
+  errors.value = {};
+}
+
+function saveSupervisor() {
+  const f = supervisorForm.value;
+  submit(f.id ? 'put' : 'post', f.id ? `/fleet/supervisors/${f.id}` : '/fleet/supervisors', f, () => closeSupervisorModal());
 }
 
 /* -------------------------------- Providers -------------------------------- */
@@ -833,7 +988,7 @@ function submit(method, url, payload, onDone) {
 }
 
 function reloadFleet() {
-  router.reload({ only: ['vehicles', 'drivers', 'providers'] });
+  router.reload({ only: ['vehicles', 'drivers', 'providers', 'supervisors', 'contacts'] });
 }
 </script>
 
@@ -938,6 +1093,7 @@ td.cell-actions { display: table-cell; text-align: center; }
 .required { color: #EF4444; margin-left: 2px; }
 .form-input--error { border-color: #EF4444 !important; background: #FEF2F2; }
 .form-error { display: block; color: #EF4444; font-size: 12px; margin-top: 4px; font-weight: 500; }
+.form-hint { margin: 0; font-size: 12px; color: var(--ink3); }
 
 .fleet-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
 .fleet-card {

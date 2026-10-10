@@ -72,6 +72,10 @@ Route::middleware(['auth'])->group(function () {
             ->middleware('permission:plans.view')
             ->name('crew-options');
 
+        Route::patch('/crew', [MovementCrewController::class, 'updateMany'])
+            ->middleware('permission:movements.assign-crew|plans.manage')
+            ->name('assign-crew-many');
+
         Route::patch('/{movement}/crew', [MovementCrewController::class, 'update'])
             ->middleware('permission:movements.assign-crew|plans.manage')
             ->name('assign-crew');

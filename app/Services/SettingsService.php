@@ -32,6 +32,37 @@ class SettingsService
     ];
 
     /**
+     * Limits the conflict checks judge against, edited in Setups > Settings. A key stored as
+     * `conflict.<name>` overrides the default; with no row the default applies.
+     */
+    public const CONFLICT_THRESHOLDS = [
+        'turnaround_minutes' => [
+            'label' => 'Minimum turnaround', 'unit' => 'minutes', 'default' => 30, 'min' => 0, 'max' => 240,
+            'description' => 'Smallest gap between two jobs for the same vehicle or driver before a Tight Turnaround is raised.',
+        ],
+        'standby_gap_minutes' => [
+            'label' => 'Waiting gap', 'unit' => 'minutes', 'default' => 60, 'min' => 5, 'max' => 480,
+            'description' => 'A gap this long between a job\'s timed checkpoints is waiting (for example during a match), not work. A driver may cover another job while waiting.',
+        ],
+        'driver_span_hours' => [
+            'label' => 'Driver duty day', 'unit' => 'hours', 'default' => 14, 'min' => 1, 'max' => 24,
+            'description' => 'Longest span from a driver\'s first start to last finish in a day (waiting included) before Driver Shift Too Long is raised.',
+        ],
+        'driver_rest_hours' => [
+            'label' => 'Driver rest', 'unit' => 'hours', 'default' => 11, 'min' => 0, 'max' => 24,
+            'description' => 'Minimum rest between the end of one duty day and the start of the next before Insufficient Rest is raised.',
+        ],
+        'kickoff_lead_minutes' => [
+            'label' => 'On site before kick-off', 'unit' => 'minutes', 'default' => 90, 'min' => 0, 'max' => 600,
+            'description' => 'A team should reach the stadium at least this long before kick-off.',
+        ],
+        'offset_tolerance_minutes' => [
+            'label' => 'Window drift tolerance', 'unit' => 'minutes', 'default' => 60, 'min' => 0, 'max' => 600,
+            'description' => 'How far a movement window may drift from its configured offset before it is reported.',
+        ],
+    ];
+
+    /**
      * Per-request memoization of resolved setting values, keyed by cache
      * key. Settings are looked up per checkpoint per movement (dozens to
      * hundreds of times in a single Plans-page request), and the
@@ -196,6 +227,14 @@ class SettingsService
         $value = $this->getSetting($key, Setting::SCOPE_GLOBAL);
 
         return $value === null ? $default : filter_var($value, FILTER_VALIDATE_BOOLEAN);
+    }
+
+    /** A conflict-check limit: the saved value, else the built-in default. */
+    public function getThreshold(string $name): int
+    {
+        $value = $this->getSetting("conflict.{$name}", Setting::SCOPE_GLOBAL);
+
+        return $value === null ? self::CONFLICT_THRESHOLDS[$name]['default'] : (int) $value;
     }
 
     /**

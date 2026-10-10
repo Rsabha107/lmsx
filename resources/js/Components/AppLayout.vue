@@ -215,7 +215,7 @@ const windowWidth = ref(typeof window !== 'undefined' ? window.innerWidth : 1280
 const isMobile = computed(() => windowWidth.value < 768);
 
 // Expandable sections
-const expandedSections = ref({ Master: true, Setups: false }); // Only Master expanded by default
+const expandedSections = ref({ 'Live Ops': true, Master: false, Setups: false }); // The page's own section opens on load
 
 function toggleSection(sectionLabel) {
   const isCurrentlyExpanded = expandedSections.value[sectionLabel];
@@ -284,15 +284,24 @@ const allNavItems = [
   { label: 'Schedule',      route: 'schedule',          icon: 'schedule',  can: 'console.view' },
   { label: 'Planning',      route: 'plans',             icon: 'plans',     can: 'plans.view' },
   { label: 'Jobs Queue',    route: 'jobs',              icon: 'jobs',      can: 'console.view' },
-  { label: 'Day Board',     route: 'day-board',         icon: 'clock',     can: 'jobs.view' },
   { label: 'Crew Assignment', route: 'crew-assignment', icon: 'team',      can: 'movements.assign-crew' },
   { label: 'Jobs (Mobile)', route: 'jobs/mobile',       icon: 'phone',     can: 'jobs.view', flag: 'jobsMobileMenu' },
   { label: 'Matches',       route: 'matches',           icon: 'trophy',    can: 'fleet.view' },
   { label: 'Event Teams',   route: 'event-teams',       icon: 'team',      can: 'fleet.view' },
   { label: 'Notifications', route: 'notifications',     icon: 'bell',      can: 'console.view' },
   { label: 'Daily Email',   route: 'email',             icon: 'email',     can: 'console.view' },
-  { label: 'Analytics',     route: 'analytics',         icon: 'chart',     can: 'analytics.view' },
   { label: 'Mobile App',    route: 'downloads/mobile-app', icon: 'download', can: 'mobileApp.download', download: true },
+  {
+    type: 'section',
+    label: 'Live Ops',
+    expandable: true,
+    items: [
+      { label: 'Day Board',         route: 'day-board',         icon: 'clock',    can: 'jobs.view' },
+      { label: 'Resource Schedule', route: 'resource-schedule', icon: 'schedule', can: 'movements.view' },
+      { label: 'Movement Tracking', route: 'kit-truck',         icon: 'fleet',    can: 'fleet.view' },
+      { label: 'Analytics',         route: 'analytics',         icon: 'chart',    can: 'analytics.view' },
+    ]
+  },
   { 
     type: 'section', 
     label: 'Master', 
@@ -303,8 +312,6 @@ const allNavItems = [
       { label: 'Venues',        route: 'venues',            icon: 'building', can: 'console.view' },
       { label: 'Airports',      route: 'airports',          icon: 'plane',    can: 'fleet.view' },
       { label: 'Fleet',         route: 'fleet',             icon: 'fleet',    can: 'fleet.view' },
-      { label: 'Resource Schedule', route: 'resource-schedule', icon: 'schedule', can: 'movements.view' },
-      { label: 'Movement Tracking', route: 'kit-truck',     icon: 'fleet',    can: 'fleet.view' },
       { label: 'Contacts',      route: 'contacts',          icon: 'contacts', can: 'fleet.view' },
       { label: 'Base Camp Hotel', route: 'base-camp-hotels', icon: 'building', can: 'fleet.view' },
       { label: 'Audit Trail',   route: 'audit',             icon: 'audit',    can: 'audit.view' },
@@ -333,6 +340,12 @@ const navItems = computed(() =>
     .map(item => item.type === 'section' ? { ...item, items: item.items.filter(allowed) } : item)
     .filter(item => item.type === 'section' ? item.items.length > 0 : allowed(item))
 );
+
+// Open the section the current page lives in.
+const homeSection = allNavItems.find(i => i.type === 'section' && i.items.some(s => page.url === `/${s.route}` || page.url.startsWith(`/${s.route}?`) || page.url.startsWith(`/${s.route}/`)));
+if (homeSection) {
+  Object.keys(expandedSections.value).forEach(k => { expandedSections.value[k] = k === homeSection.label; });
+}
 
 const allMobileNavItems = [
   { label: 'Dashboard', route: 'dashboard',  icon: 'dashboard', can: 'console.view' },

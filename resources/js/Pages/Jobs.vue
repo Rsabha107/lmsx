@@ -127,24 +127,12 @@
               @change="toggleSelectAll"
             />
           </div>
-          <div class="jl-col-job">
-            <ColumnFilter label="Job" column="job" :state="jobColumns" :rows="listedJobs" :sort-labels="dateSortLabels" count-unit="job" />
-          </div>
-          <div class="jl-col-stage">
-            <ColumnFilter label="Stage" column="stage" :state="jobColumns" :rows="listedJobs" count-unit="job" />
-          </div>
-          <div class="jl-col-route">
-            <ColumnFilter label="Team · Route" column="team" :state="jobColumns" :rows="listedJobs" count-unit="job" />
-          </div>
-          <div class="jl-col-progress">
-            <ColumnFilter label="Progress" column="progress" :state="jobColumns" :rows="listedJobs" :filterable="false" :sort-labels="numberSortLabels" />
-          </div>
-          <div class="jl-col-eta">
-            <ColumnFilter label="ETA" column="eta" :state="jobColumns" :rows="listedJobs" :filterable="false" :sort-labels="dateSortLabels" align="right" />
-          </div>
-          <div class="jl-col-alerts">
-            <ColumnFilter label="Alerts" column="alerts" :state="jobColumns" :rows="listedJobs" :filterable="false" :sort-labels="numberSortLabels" align="center" />
-          </div>
+          <span class="jl-filter-label">Sort &amp; filter</span>
+          <ColumnFilter label="Date & time" column="job" :state="jobColumns" :rows="listedJobs" :sort-labels="dateSortLabels" count-unit="job" />
+          <ColumnFilter label="Stage" column="stage" :state="jobColumns" :rows="listedJobs" count-unit="job" />
+          <ColumnFilter label="Team" column="team" :state="jobColumns" :rows="listedJobs" count-unit="job" />
+          <ColumnFilter label="Progress" column="progress" :state="jobColumns" :rows="listedJobs" :filterable="false" :sort-labels="numberSortLabels" />
+          <ColumnFilter label="Estimated arrival" column="eta" :state="jobColumns" :rows="listedJobs" :filterable="false" :sort-labels="dateSortLabels" />
         </div>
         <div class="jobs-list-scroll">
           <!-- Empty State -->
@@ -162,164 +150,150 @@
             <Button v-if="jobColumnsActive" variant="secondary" size="sm" @click="jobColumns.clearAll()">Clear column filters</Button>
           </div>
 
-          <!-- Job Items -->
-          <div
-            v-for="job in filtered" :key="job.id"
-            @click="selectJob(job)"
-            :class="['job-item', selectedJob?.id === job.id ? 'job-item--active' : '']"
-          >
-            <div v-if="canDeleteJobs" class="jl-col-select" @click.stop>
-              <input
-                type="checkbox"
-                :checked="selectedJobIds.has(job.db_id)"
-                :aria-label="`Select ${job.id}`"
-                @change="toggleJobSelection(job)"
-              />
+          <!-- Job Items, grouped by day while the list is in date order -->
+          <template v-for="(job, i) in filtered" :key="job.id">
+            <div v-if="showDays && (i === 0 || filtered[i - 1].date !== job.date)" class="jl-day">
+              <span>{{ dayHeading(job.date) }}</span>
+              <span class="jl-day-count">{{ dayCounts[job.date ?? ''] }} job{{ dayCounts[job.date ?? ''] === 1 ? '' : 's' }}</span>
             </div>
-            <div class="jl-col-job">
-              <span class="jl-job-id" :title="job.id">{{ job.id }}</span>
-              <div style="display: flex; align-items: center; gap: 4px; flex-wrap: nowrap;">
-                <span v-if="job.date" class="jl-job-date">{{ formatDate(job.date) }}</span>
+            <div
+              @click="selectJob(job)"
+              :class="['job-item', selectedJob?.id === job.id ? 'job-item--active' : '']"
+            >
+              <div v-if="canDeleteJobs" class="jl-col-select" @click.stop>
+                <input
+                  type="checkbox"
+                  :checked="selectedJobIds.has(job.db_id)"
+                  :aria-label="`Select ${job.id}`"
+                  @change="toggleJobSelection(job)"
+                />
+              </div>
+              <div class="jl-time" :title="job.id">
+                <span class="jl-time-main">{{ jobTime(job).time }}</span>
+                <span class="jl-time-label">{{ jobTime(job).label }}</span>
+              </div>
+              <div class="jl-body">
+                <div class="jl-line1">
+                  <flag-icon :code="job.country_code" :fallback="job.flag" />
+                  <span class="jl-team">{{ job.team }}</span>
+                  <span
+                    v-if="job.kind"
+                    class="jl-job-phase"
+                    :class="`jl-job-phase--${job.kind}`"
+                  >{{ job.kind }}<template v-if="job.match?.match_number"> {{ job.match.match_number }}</template></span>
+                  <span v-if="job.functional_area" class="jl-fa-badge">{{ job.functional_area }}</span>
+                  <span
+                    v-if="openIssueCount(job)"
+                    class="jl-issue-badge"
+                    :title="`${openIssueCount(job)} unresolved issue(s) reported from the field`"
+                  >⚑ {{ openIssueCount(job) }}</span>
+                </div>
+                <div class="jl-sub" :title="isFlightJob(job) ? flightTitle(job.flight) : undefined">
+                  {{ jobSubtitle(job) }}
+                  <span v-if="isFlightJob(job) && job.flight.actual_time" class="jl-flight-ok"> · {{ job.flight.direction === 'arrival' ? 'Landed' : 'Took off' }} {{ job.flight.actual_time }}</span>
+                  <span v-else-if="isFlightJob(job) && job.flight.estimated_time && job.flight.estimated_time !== job.flight.scheduled_time" class="jl-flight-warn"> · Est {{ job.flight.estimated_time }}</span>
+                </div>
+                <div class="jl-ids">
+                  <span v-if="job.job_info?.movement_code" title="Movement number">{{ job.job_info.movement_code }}</span>
+                  <span title="Job number">{{ job.id }}</span>
+                </div>
+                <div class="jl-prog">
+                  <div class="jl-progress-bar">
+                    <div class="jl-progress-fill" :style="{
+                      width: `${jobProgress(job)}%`,
+                      background: job.status === 'delayed' ? 'var(--warn)' : job.status === 'completed' ? 'var(--ok)' : 'var(--accent)'
+                    }"/>
+                  </div>
+                  <span class="jl-steps">{{ jobStepsShort(job) }}</span>
+                </div>
+              </div>
+              <div class="jl-side">
+                <status-pill :tone="statusTone(job.status)" size="sm">{{ statusLabel(job.status) }}</status-pill>
+                <span v-if="job.delay" class="jl-eta-delay">+{{ job.delay }}m</span>
+                <span v-if="job.alerts" class="jl-alert-badge" :title="`${job.alerts} alert(s)`">
+                  <svg width="11" height="11" viewBox="0 0 16 16" fill="none" style="flex-shrink:0;">
+                    <path d="M8 2.5L13.5 12.5H2.5L8 2.5Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+                    <line x1="8" y1="7" x2="8" y2="10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                    <circle cx="8" cy="11.5" r="0.75" fill="currentColor"/>
+                  </svg>
+                  {{ job.alerts }}
+                </span>
               </div>
             </div>
-            <div class="jl-col-stage">
-              <status-pill :tone="statusTone(job.status)" :dot="true" size="sm">
-                {{ stagePillLabel(job.status) }}
-              </status-pill>
-            </div>
-            <div class="jl-col-route">
-              <div style="display: flex; align-items: center; gap: 4px; flex-wrap: wrap;">
-                <flag-icon :code="job.country_code" :fallback="job.flag" />
-                <span class="jl-team">{{ job.team }}</span>
-                <span
-                  v-if="job.kind"
-                  class="jl-job-phase"
-                  :class="`jl-job-phase--${job.kind}`"
-                >{{ job.kind }}<template v-if="job.match?.match_number"> {{ job.match.match_number }}</template></span>
-                <span v-if="job.functional_area" class="jl-fa-badge">{{ job.functional_area }}</span>
-                <span
-                  v-if="openIssueCount(job)"
-                  class="jl-issue-badge"
-                  :title="`${openIssueCount(job)} unresolved issue(s) reported from the field`"
-                >⚑ {{ openIssueCount(job) }}</span>
-              </div>
-              <span v-if="job.match?.lineup" class="jl-lineup" :title="job.match.lineup">{{ job.match.lineup }}</span>
-              <span
-                v-if="isFlightJob(job)"
-                class="jl-flight"
-                :title="flightTitle(job.flight)"
-              >
-                <span class="jl-flight-no">{{ job.flight.is_bus ? 'By road' : (job.flight.flight_number || 'Flight TBC') }}</span>
-                <template v-if="flightRoute(job.flight)"> · {{ flightRoute(job.flight) }}</template>
-                <template v-if="job.flight.scheduled_time"> · {{ job.flight.direction === 'arrival' ? 'Arr' : 'Dep' }} <strong>{{ job.flight.scheduled_time }}</strong></template>
-                <span v-if="job.flight.actual_time" class="jl-flight-ok"> · {{ job.flight.direction === 'arrival' ? 'Landed' : 'Took off' }} {{ job.flight.actual_time }}</span>
-                <span v-else-if="job.flight.estimated_time && job.flight.estimated_time !== job.flight.scheduled_time" class="jl-flight-warn"> · Est {{ job.flight.estimated_time }}</span>
-              </span>
-              <span class="jl-route" :title="`${formatJobFromLocation(job)} → ${formatJobToLocation(job)}`">{{ formatJobFromLocation(job) }} → {{ formatJobToLocation(job) }}</span>
-            </div>
-            <div class="jl-col-progress">
-              <div class="jl-progress-bar">
-                <div class="jl-progress-fill" :style="{
-                  width: `${jobProgress(job)}%`,
-                  background: job.status === 'delayed' ? 'var(--warn)' : job.status === 'completed' ? 'var(--ok)' : 'var(--accent)'
-                }"/>
-              </div>
-              <span class="jl-steps">{{ jobStepsText(job) }}</span>
-            </div>
-            <div class="jl-col-eta">
-              <span :class="['jl-eta-time', job.delay ? 'jl-eta-time--delayed' : '']">{{ job.arr }}</span>
-              <span v-if="job.delay" class="jl-eta-delay">+{{ job.delay }}m</span>
-            </div>
-            <div class="jl-col-alerts">
-              <span v-if="job.alerts" class="jl-alert-badge">
-                <svg width="11" height="11" viewBox="0 0 16 16" fill="none" style="flex-shrink:0;">
-                  <path d="M8 2.5L13.5 12.5H2.5L8 2.5Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
-                  <line x1="8" y1="7" x2="8" y2="10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-                  <circle cx="8" cy="11.5" r="0.75" fill="currentColor"/>
-                </svg>
-                {{ job.alerts }}
-              </span>
-              <span v-else class="jl-no-alert">—</span>
-            </div>
-          </div>
+          </template>
         </div>
       </div>
 
       <!-- Detail panel -->
       <div v-if="selectedJob" class="job-detail-panel">
         <!-- Header card -->
-        <div class="detail-card">
-          <div class="detail-header-top">
-            <span class="team-badge">{{ selectedJob.code }}</span>
-            <flag-icon :code="selectedJob.country_code" :fallback="selectedJob.flag" />
-            <div>
-              <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 2px;">
-                <div class="detail-id">{{ selectedJob.id }} · {{ selectedJob.team }}</div>
-                <span v-if="selectedJob.event_name" class="detail-event-badge">{{ selectedJob.event_code || selectedJob.event_name }}</span>
+        <div class="detail-card jh">
+          <div class="jh-top">
+            <flag-icon class="jh-flag" :code="selectedJob.country_code" :fallback="selectedJob.flag" />
+            <div class="jh-title">
+              <div class="jh-name-row">
+                <h2 class="jh-name">{{ selectedJob.team }}</h2>
+                <span class="jh-code">{{ selectedJob.code }}</span>
+                <status-pill :tone="statusTone(selectedJob.status)" size="sm">{{ statusLabel(selectedJob.status) }}</status-pill>
+                <span v-if="selectedJob.kind" class="detail-kind-badge" :class="`detail-kind-badge--${selectedJob.kind}`">{{ selectedJob.kind }}</span>
                 <span v-if="selectedJob.functional_area" class="detail-fa-badge">{{ formatFunctionalArea(selectedJob.functional_area) }}</span>
               </div>
+              <div class="jh-sub">
+                {{ selectedJob.id }}<template v-if="selectedJob.date"> · {{ longDate(selectedJob.date) }}</template><template v-if="selectedJob.event_name"> · {{ selectedJob.event_name }}</template>
+              </div>
             </div>
-            <status-pill :tone="statusTone(selectedJob.status)" :dot="true" size="sm">
-              {{ statusLabel(selectedJob.status) }}
-            </status-pill>
-            <div class="detail-actions">
-              <Button
-                v-if="canCancelJob(selectedJob)"
-                variant="secondary"
-                size="sm"
-                style="color: var(--danger);"
-                @click="promptCancelJob">Cancel Job</Button>
-              <Button
-                v-if="canReinstateJob(selectedJob)"
-                variant="primary"
-                size="sm"
-                @click="promptReinstateJob">Reinstate</Button>
-              <Button
-                v-if="selectedJob.status === 'in-progress'"
-                variant="secondary"
-                size="sm"
-                @click="promptRevertJob">Mark Scheduled</Button>
-              <Button
-                v-else-if="canStartJob(selectedJob)"
-                variant="primary"
-                size="sm"
-                @click="promptStartJob">Start Job</Button>
-              <Button v-if="canOverride && selectedJob.status !== 'cancelled'" variant="primary" size="sm" @click="openOverrideModal">Override</Button>
-              <Button
-                v-if="canDeleteJobs"
-                variant="secondary"
-                size="sm"
-                style="color: var(--danger);"
-                @click="promptDeleteJobs([selectedJob])"
-              >Delete</Button>
-            </div>
-          </div>
-          <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 14px; flex-wrap: wrap;">
-            <span v-if="selectedJob.kind" class="detail-kind-badge" :class="`detail-kind-badge--${selectedJob.kind}`">{{ selectedJob.kind }}</span>
-            <span v-if="selectedJob.date" class="detail-date">{{ formatDateLong(selectedJob.date) }}</span>
-            <div class="detail-subtitle" style="margin: 0;">
-              {{ formatJobFromLocation(selectedJob) }} → {{ formatJobToLocation(selectedJob) }}<template v-if="selectedJob.flight?.flight_number && !selectedJob.flight.is_bus"> · ✈ {{ selectedJob.flight.flight_number }}</template> · {{ selectedJob.vehicle }}<template v-if="selectedJob.units?.length"> +{{ selectedJob.units.length }}</template> · {{ selectedJob.pax }} pax
+            <div class="jh-actions">
+              <Button v-if="selectedJob.status !== 'in-progress' && canStartJob(selectedJob)" variant="primary" size="md" @click="promptStartJob">Start job</Button>
+              <Button v-else-if="canReinstateJob(selectedJob)" variant="primary" size="md" @click="promptReinstateJob">Reinstate</Button>
+              <div v-if="hasMoreActions" ref="moreRef" class="jh-more">
+                <Button variant="secondary" size="md" :aria-expanded="moreOpen" @click="moreOpen = !moreOpen">More <span class="jh-caret">▾</span></Button>
+                <div v-if="moreOpen" class="jh-menu" role="menu">
+                  <button v-if="selectedJob.status === 'in-progress'" type="button" role="menuitem" @click="runMore(promptRevertJob)">Mark scheduled</button>
+                  <button v-if="canOverride && selectedJob.status !== 'cancelled'" type="button" role="menuitem" @click="runMore(openOverrideModal)">Override</button>
+                  <button v-if="canCancelJob(selectedJob)" type="button" role="menuitem" class="jh-menu-danger" @click="runMore(promptCancelJob)">Cancel job</button>
+                  <button v-if="canDeleteJobs" type="button" role="menuitem" class="jh-menu-danger" @click="runMore(() => promptDeleteJobs([selectedJob]))">Delete</button>
+                </div>
+              </div>
             </div>
           </div>
 
-          <div :class="['detail-stats', (selectedJob.status === 'completed' && timeVariance) || selectedJob.updated_at ? 'detail-stats--five' : '']">
-            <mini-stat
-              label="Pickup"
-              :value="selectedJob.pickup || '--:--'"
-              :title="selectedJob.pickup_checkpoint ? `First checkpoint: ${selectedJob.pickup_checkpoint}` : 'Planned pickup time'"
-            />
-            <mini-stat label="Progress" :value="`${progressPercentage}%`"/>
-            <mini-stat label="Checks" :value="`${doneCount}/${totalChecks}`"/>
-            <mini-stat 
-              v-if="selectedJob.status === 'completed' && timeVariance" 
-              label="Time Variance" 
-              :value="timeVariance" 
-              :tone="timeVarianceTone"/>
-            <mini-stat 
-              v-else-if="selectedJob.updated_at" 
-              label="Last Update" 
-              :value="formatTimeAgo(selectedJob.updated_at)"/>
-            <mini-stat label="Status" :value="statusLabel(selectedJob.status)" :tone="statusTone(selectedJob.status)"/>
+          <div class="jh-route">
+            <div class="jh-end">
+              <span class="jh-label">From</span>
+              <span class="jh-place">{{ formatJobFromLocation(selectedJob) }}</span>
+              <span class="jh-note">Pickup {{ selectedJob.pickup || '--:--' }}</span>
+            </div>
+            <span class="jh-arrow" aria-hidden="true">
+              <svg width="34" height="12" viewBox="0 0 34 12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M1 6h31M27 1l5 5-5 5" /></svg>
+            </span>
+            <div class="jh-end">
+              <span class="jh-label">To</span>
+              <span class="jh-place">{{ formatJobToLocation(selectedJob) }}</span>
+              <span v-if="destinationNote(selectedJob)" class="jh-note">{{ destinationNote(selectedJob) }}</span>
+            </div>
+          </div>
+
+          <div class="jh-stats">
+            <div class="jh-stat" :title="selectedJob.pickup_checkpoint ? `First checkpoint: ${selectedJob.pickup_checkpoint}` : 'Planned pickup time'">
+              <span class="jh-stat-label">Pickup</span>
+              <span class="jh-stat-value">{{ selectedJob.pickup || '--:--' }}</span>
+            </div>
+            <div class="jh-stat" :title="`${doneCount} of ${totalChecks} checkpoints done`">
+              <span class="jh-stat-label">Progress</span>
+              <span class="jh-stat-value">{{ progressPercentage }}%</span>
+            </div>
+            <div class="jh-stat">
+              <span class="jh-stat-label">Passengers</span>
+              <span class="jh-stat-value">{{ selectedJob.pax ?? 0 }} pax</span>
+            </div>
+            <div v-if="selectedJob.status === 'completed' && timeVariance" class="jh-stat">
+              <span class="jh-stat-label">Time variance</span>
+              <span :class="['jh-stat-value', `jh-stat-value--${timeVarianceTone}`]">{{ timeVariance }}</span>
+            </div>
+            <div v-else-if="lastCompletedCheckpoint" class="jh-stat" :title="lastCompletedCheckpoint.name">
+              <span class="jh-stat-label">Last checkpoint</span>
+              <span class="jh-stat-value">{{ lastCompletedCheckpoint.completed_at }}</span>
+            </div>
           </div>
         </div>
 
@@ -357,8 +331,25 @@
         <div class="detail-grid">
           <!-- Checkpoint timeline -->
           <div v-if="selectedJob.checkpoints && selectedJob.checkpoints.length" class="checkpoint-section">
+            <div class="checkpoint-header">
+              <h3 class="section-title">Checkpoints</h3>
+              <span class="section-kicker info-mono">{{ doneCount }}/{{ totalChecks }}</span>
+            </div>
             <div class="checkpoint-content">
-              <CheckpointTimeline :checkpoints="selectedJob.checkpoints" />
+              <div v-if="nextCheckpoint" class="next-step">
+                <div class="next-step-text">
+                  <span class="next-step-label">Next step</span>
+                  <span class="next-step-name">{{ nextCheckpoint.name }}</span>
+                  <span v-if="nextStepNeedsEvidence" class="next-step-hint">Needs a photo, signature or count — complete it in the mobile app.</span>
+                </div>
+                <Button
+                  v-if="canCompleteNextStep"
+                  variant="primary"
+                  size="md"
+                  @click="openCompleteModal"
+                >Mark complete</Button>
+              </div>
+              <CheckpointTimeline :checkpoints="selectedJob.checkpoints" hide-title />
             </div>
           </div>
 
@@ -392,7 +383,7 @@
 
           <div class="detail-card">
             <div class="info-head">
-              <h3 class="section-title">Job</h3>
+              <h3 class="section-title">Details</h3>
               <span class="section-kicker">{{ selectedJob.id }}</span>
             </div>
             <dl class="info-list">
@@ -405,6 +396,10 @@
               </dd>
               <dt>Sequence</dt>
               <dd>{{ selectedJob.job_info?.sequence || '—' }}</dd>
+              <template v-if="detailFlight(selectedJob)">
+                <dt>Flight</dt>
+                <dd>{{ detailFlight(selectedJob) }}</dd>
+              </template>
               <dt>Generated</dt>
               <dd>{{ formatStamp(selectedJob.job_info?.generated_at) }}</dd>
               <template v-if="selectedJob.job_info?.dispatched_at">
@@ -445,43 +440,6 @@
               <dd>{{ selectedJob.match.venue?.name || '—' }}</dd>
               <dt>Stage</dt>
               <dd>{{ selectedJob.match.stage || '—' }}</dd>
-            </dl>
-          </div>
-
-          <div v-if="isFlightJob(selectedJob)" class="detail-card">
-            <div class="info-head">
-              <h3 class="section-title">{{ selectedJob.flight.direction === 'arrival' ? 'Arrival flight' : 'Departure flight' }}</h3>
-              <span class="section-kicker info-mono">{{ selectedJob.flight.is_bus ? 'By road' : (selectedJob.flight.flight_number || 'TBC') }}</span>
-            </div>
-            <div v-if="flightRoute(selectedJob.flight)" class="info-lineup">{{ flightRoute(selectedJob.flight) }}</div>
-            <dl class="info-list">
-              <dt>{{ selectedJob.flight.direction === 'arrival' ? 'Scheduled arrival' : 'Scheduled departure' }}</dt>
-              <dd>
-                <template v-if="selectedJob.flight.scheduled_time">
-                  <strong>{{ selectedJob.flight.scheduled_time }}</strong> · {{ selectedJob.flight.scheduled_date }}
-                </template>
-                <template v-else>—</template>
-              </dd>
-              <template v-if="selectedJob.flight.estimated_time">
-                <dt>Estimated</dt>
-                <dd :class="{ 'info-warn': selectedJob.flight.estimated_time !== selectedJob.flight.scheduled_time }">{{ selectedJob.flight.estimated_time }}</dd>
-              </template>
-              <template v-if="selectedJob.flight.actual_time">
-                <dt>{{ selectedJob.flight.direction === 'arrival' ? 'Landed' : 'Took off' }}</dt>
-                <dd class="info-ok">{{ selectedJob.flight.actual_time }}</dd>
-              </template>
-              <template v-if="selectedJob.flight.delay_minutes">
-                <dt>Delay</dt>
-                <dd class="info-warn">+{{ selectedJob.flight.delay_minutes }} min</dd>
-              </template>
-              <template v-if="selectedJob.flight.terminal || selectedJob.flight.gate">
-                <dt>Terminal / gate</dt>
-                <dd>{{ [selectedJob.flight.terminal, selectedJob.flight.gate].filter(Boolean).join(' · ') }}</dd>
-              </template>
-              <template v-if="selectedJob.flight.flight_status">
-                <dt>Status</dt>
-                <dd style="text-transform: capitalize;">{{ selectedJob.flight.flight_status }}</dd>
-              </template>
             </dl>
           </div>
           </div>
@@ -595,6 +553,40 @@
       </template>
     </Modal>
 
+    <Modal :show="showCompleteModal" max-width="460px" @close="closeCompleteModal">
+      <template #title>Complete checkpoint</template>
+      <p class="complete-step-name">{{ nextCheckpoint?.name }}</p>
+      <div class="complete-grid">
+        <div class="complete-field">
+          <label class="complete-label" for="complete-time">ACTUAL TIME</label>
+          <input id="complete-time" v-model="completeTime" type="time" class="override-input" />
+          <div class="complete-hint">When it actually happened</div>
+        </div>
+        <div class="complete-field">
+          <label class="complete-label">VARIANCE VS. PLANNED ({{ nextCheckpoint?.scheduled_at || '—' }})</label>
+          <div class="override-variance" :class="completeVarianceMinutes > 0 ? 'is-late' : completeVarianceMinutes < 0 ? 'is-early' : ''">
+            {{ completeVarianceLabel }}
+          </div>
+          <label class="override-exclude-date">
+            <input v-model="completeExcludeDate" type="checkbox" />
+            <span>Exclude date from calculation (compare time of day only)</span>
+          </label>
+        </div>
+      </div>
+      <label class="complete-label" for="complete-reason" style="margin-top: 14px;">
+        REASON<span v-if="completeReasonRequired" class="complete-required"> (REQUIRED, COMPLETED LATE)</span><span v-else> (OPTIONAL)</span>
+      </label>
+      <select id="complete-reason" v-model="completeReason" class="override-select">
+        <option value="">Select a reason…</option>
+        <option v-for="r in COMPLETE_REASONS" :key="r.value" :value="r.value">{{ r.label }}</option>
+      </select>
+      <p v-if="completeError" style="margin: 8px 0 0; color: var(--danger); font-size: 12px;">{{ completeError }}</p>
+      <template #footer>
+        <Button variant="secondary" size="sm" :disabled="completingStep" @click="closeCompleteModal">Cancel</Button>
+        <Button variant="primary" size="sm" :processing="completingStep" :disabled="completingStep || !canSubmitComplete" @click="submitComplete">Mark complete</Button>
+      </template>
+    </Modal>
+
     <ConfirmModal
       :show="showStatusError"
       title="Cannot Change Job Status"
@@ -609,12 +601,11 @@
 
 <script setup>
 import { useStatusLabels } from '../Composables/useStatusLabels';
-import { ref, computed, nextTick, watch } from 'vue';
+import { ref, computed, nextTick, watch, onMounted, onUnmounted } from 'vue';
 import { router, usePage } from '@inertiajs/vue3';
 import AppLayout from '../Components/AppLayout.vue';
 import StatusPill from '../Components/StatusPill.vue';
 import SvgIcon from '../Components/SvgIcon.vue';
-import MiniStat from '../Components/MiniStat.vue';
 import RefreshButton from '../Components/RefreshButton.vue';
 import Modal from '../Components/Modal.vue';
 import Button from '../Components/Button.vue';
@@ -628,6 +619,7 @@ import JobStatsPanel from '../Components/JobStatsPanel.vue';
 import JobDayTimeline from '../Components/JobDayTimeline.vue';
 import ColumnFilter from '../Components/ColumnFilter.vue';
 import { useColumnFilters } from '../Composables/useColumnFilters';
+import { useToast } from '../Composables/useToast';
 
 const page = usePage();
 const hasActiveEvent = computed(() => !!page.props.activeEventId);
@@ -735,6 +727,95 @@ function jobStepsText(job) {
   return '';
 }
 
+function jobStepsShort(job) {
+  return job.checkpoints?.length
+    ? `${job.checkpoints.filter(c => c.state === 'done' || c.status === 'done').length}/${job.checkpoints.length}`
+    : '';
+}
+
+// The list is grouped by day only while it is in date order; any column sort flattens it.
+const showDays = computed(() => jobColumns.sort.value.length === 0);
+
+const dayCounts = computed(() => filtered.value.reduce((counts, j) => {
+  counts[j.date ?? ''] = (counts[j.date ?? ''] ?? 0) + 1;
+  return counts;
+}, {}));
+
+function dayHeading(date) {
+  const m = String(date ?? '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return 'No date';
+  return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]))
+    .toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })
+    .replace(',', '');
+}
+
+// The time that matters for the job: kick-off, the flight, else when it starts.
+function jobTime(job) {
+  if (job.kind === 'match' && job.match?.kick_off) return { time: job.match.kick_off.slice(11, 16), label: 'Kick-off' };
+  if (isFlightJob(job) && job.flight.scheduled_time) {
+    return { time: job.flight.scheduled_time, label: job.flight.direction === 'arrival' ? 'Arrives' : 'Departs' };
+  }
+  return { time: timeOf(job) ?? '--:--', label: 'Starts' };
+}
+
+function jobSubtitle(job) {
+  const route = `${formatJobFromLocation(job)} → ${formatJobToLocation(job)}`;
+  const lead = job.match?.lineup
+    || (isFlightJob(job) ? (job.flight.is_bus ? 'By road' : (job.flight.flight_number || 'Flight TBC')) : '');
+  return lead ? `${lead} · ${route}` : route;
+}
+
+// "Sat, 7 Nov 2026" from a 'YYYY-MM-DD' date, without a timezone shift.
+function longDate(date) {
+  const m = String(date ?? '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return '';
+  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  return `${d.toLocaleDateString('en-GB', { weekday: 'short' })}, ${d.getDate()} ${d.toLocaleDateString('en-GB', { month: 'short' })} ${d.getFullYear()}`;
+}
+
+// The line under the destination: the flight, the match, or the vehicle.
+function destinationNote(job) {
+  if (isFlightJob(job) && !job.flight.is_bus && job.flight.flight_number) {
+    const time = job.flight.scheduled_time ? ` · ${job.flight.direction === 'arrival' ? 'arr' : 'dep'} ${job.flight.scheduled_time}` : '';
+    return `Flight ${job.flight.flight_number}${time}`;
+  }
+  if (job.kind === 'match' && job.match?.lineup) {
+    return `${job.match.lineup}${job.match.kick_off ? ` · KO ${job.match.kick_off.slice(11, 16)}` : ''}`;
+  }
+  return job.vehicle && job.vehicle !== 'Unassigned' ? job.vehicle : '';
+}
+
+// "QR 1376 → HIA · 00:05" for the Details card.
+function detailFlight(job) {
+  if (!isFlightJob(job) || job.flight.is_bus || !job.flight.flight_number) return '';
+  const to = job.flight.destination_airport ? ` → ${job.flight.destination_airport}` : '';
+  const time = job.flight.scheduled_time ? ` · ${job.flight.scheduled_time}` : '';
+  return `${job.flight.flight_number}${to}${time}`;
+}
+
+// Secondary actions live behind the "More" menu.
+const moreOpen = ref(false);
+const moreRef = ref(null);
+const hasMoreActions = computed(() => {
+  const job = selectedJob.value;
+  return !!job && (job.status === 'in-progress'
+    || (canOverride.value && job.status !== 'cancelled')
+    || canCancelJob(job)
+    || canDeleteJobs.value);
+});
+
+function runMore(action) {
+  moreOpen.value = false;
+  action();
+}
+
+function closeMoreOnOutside(e) {
+  if (moreOpen.value && !moreRef.value?.contains(e.target)) moreOpen.value = false;
+}
+onMounted(() => document.addEventListener('mousedown', closeMoreOnOutside));
+onUnmounted(() => document.removeEventListener('mousedown', closeMoreOnOutside));
+watch(selectedJob, () => { moreOpen.value = false; });
+
 function selectJob(job) {
   // Toggle: clicking the already-selected row closes the detail panel
   selectedJob.value = selectedJob.value?.id === job.id ? null : job;
@@ -826,6 +907,11 @@ const timeVariance = computed(() => {
   return `${Math.abs(totalVarianceMinutes)} min early`;
 });
 
+// The most recently completed checkpoint, by completion time.
+const lastCompletedCheckpoint = computed(() => (selectedJob.value?.checkpoints ?? [])
+  .filter(c => (c.state ?? c.status) === 'done' && c.completed_ts && c.completed_at)
+  .reduce((latest, c) => (!latest || c.completed_ts > latest.completed_ts ? c : latest), null));
+
 const timeVarianceTone = computed(() => {
   if (!timeVariance.value || timeVariance.value === 'On time') return 'ok';
   if (timeVariance.value.endsWith('late')) return 'warn';
@@ -850,7 +936,7 @@ const crewMembers = computed(() => {
     },
   };
   (selectedJob.value.extra_supervisors ?? []).forEach((s, i) => {
-    crew[`Supervisor ${i + 2}`] = { name: s.name };
+    crew[`Supervisor ${i + 2}`] = { name: s.name, phone: s.phone };
   });
   (selectedJob.value.units ?? []).forEach((unit, i) => {
     crew[`Driver ${i + 2}`] = { name: unit.driver || 'Unassigned', phone: unit.driver_phone };
@@ -914,23 +1000,6 @@ function flightTitle(flight) {
     .join(' · ');
 }
 
-function formatTimeAgo(dateString) {
-  if (!dateString) return '—';
-  const date = new Date(dateString);
-  const now = new Date();
-  const diffMs = now - date;
-  const diffMins = Math.floor(diffMs / 60000);
-  
-  if (diffMins < 1) return 'Just now';
-  if (diffMins < 60) return `${diffMins}m ago`;
-  
-  const diffHours = Math.floor(diffMins / 60);
-  if (diffHours < 24) return `${diffHours}h ago`;
-  
-  const diffDays = Math.floor(diffHours / 24);
-  return `${diffDays}d ago`;
-}
-
 function formatFunctionalArea(code) {
   const areas = {
     'LOG': 'LOG - Logistics',
@@ -953,7 +1022,6 @@ const jobColumns = useColumnFilters({
   team: { value: (j) => j.team || '' },
   progress: { sort: (j) => jobProgress(j) },
   eta: { sort: etaOf },
-  alerts: { sort: (j) => j.alerts || 0 },
 });
 const jobColumnsActive = jobColumns.active;
 
@@ -1177,6 +1245,120 @@ function onOverrideSaved() {
   reloadSelectedJob();
 }
 
+// The first checkpoint that is neither done nor skipped.
+const nextCheckpoint = computed(() => (selectedJob.value?.checkpoints ?? [])
+  .find(c => !['done', 'skipped'].includes(c.state ?? c.status)) ?? null);
+
+const nextStepNeedsEvidence = computed(() => {
+  const cp = nextCheckpoint.value;
+  return !!cp && !!(cp.requires_photo || cp.requires_signature || cp.requires_baggage_count);
+});
+
+const canCompleteNextStep = computed(() => !!nextCheckpoint.value
+  && !nextStepNeedsEvidence.value
+  && !['cancelled', 'completed'].includes(selectedJob.value?.status));
+
+const toast = useToast();
+const completingStep = ref(false);
+const showCompleteModal = ref(false);
+const completeTime = ref('');
+// Same reasons as the Override modal.
+const COMPLETE_REASONS = [
+  { value: 'no_signal', label: 'No signal' },
+  { value: 'device_offline', label: 'Device offline' },
+  { value: 'supervisor_error', label: 'Supervisor error' },
+  { value: 'late_arrival', label: 'Late arrival' },
+  { value: 'operational_change', label: 'Operational change' },
+  { value: 'other', label: 'Other' },
+];
+const completeReason = ref('');
+const completeError = ref('');
+const completeExcludeDate = ref(false);
+
+function openCompleteModal() {
+  const now = new Date();
+  completeTime.value = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+  completeReason.value = '';
+  completeError.value = '';
+  completeExcludeDate.value = false;
+  showCompleteModal.value = true;
+}
+
+function closeCompleteModal() {
+  if (!completingStep.value) showCompleteModal.value = false;
+}
+
+// Same calculation as the Override modal.
+const completeVarianceMinutes = computed(() => {
+  const cp = nextCheckpoint.value;
+  if (!cp?.scheduled_ts || !completeTime.value) return null;
+  const [ah, am] = completeTime.value.split(':').map(Number);
+  if (isNaN(ah) || isNaN(am)) return null;
+
+  if (completeExcludeDate.value) {
+    // Time of day from the "HH:mm" label, not the timestamp, which would use the browser's timezone.
+    const sched = cp.scheduled_at?.match(/^(\d{1,2}):(\d{2})/);
+    if (!sched) return null;
+    let diff = ah * 60 + am - (Number(sched[1]) * 60 + Number(sched[2]));
+    if (diff > 720) diff -= 1440;
+    if (diff < -720) diff += 1440;
+    return diff;
+  }
+
+  const scheduledHour = new Date(cp.scheduled_ts * 1000).getHours();
+  const actual = new Date();
+  actual.setHours(ah, am, 0, 0);
+  // Scheduled late at night, done early morning: the next day.
+  if (scheduledHour >= 18 && ah < 6) actual.setDate(actual.getDate() + 1);
+  return Math.round((Math.floor(actual.getTime() / 1000) - cp.scheduled_ts) / 60);
+});
+
+const completeVarianceLabel = computed(() => {
+  const v = completeVarianceMinutes.value;
+  if (v === null) return '—';
+  if (v === 0) return 'On time';
+  return v > 0 ? `${Math.abs(v)} min late` : `${Math.abs(v)} min early`;
+});
+
+const completeReasonRequired = computed(() => (completeVarianceMinutes.value ?? 0) > 0);
+const canSubmitComplete = computed(() => /^\d{2}:\d{2}$/.test(completeTime.value)
+  && (!completeReasonRequired.value || completeReason.value !== ''));
+
+async function submitComplete() {
+  const cp = nextCheckpoint.value;
+  if (!cp || completingStep.value || !canSubmitComplete.value) return;
+  completingStep.value = true;
+  completeError.value = '';
+  try {
+    const response = await fetch(`/jobs/checkpoint/${cp.id}/complete`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || '',
+      },
+      // Same date handling as the Override modal's "exclude date" option.
+      body: JSON.stringify({
+        actual_time: completeTime.value,
+        exclude_date: completeExcludeDate.value,
+        notes: COMPLETE_REASONS.find(r => r.value === completeReason.value)?.label ?? null,
+      }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || !data.success) {
+      completeError.value = data.message || 'Could not complete the checkpoint.';
+      return;
+    }
+    showCompleteModal.value = false;
+    toast.success('Checkpoint completed');
+    reloadSelectedJob();
+  } catch {
+    completeError.value = 'Could not complete the checkpoint.';
+  } finally {
+    completingStep.value = false;
+  }
+}
+
 // Refresh the queue and keep the same job open.
 function reloadSelectedJob() {
   const currentJobId = selectedJob.value?.id;
@@ -1312,35 +1494,49 @@ function reloadSelectedJob() {
 }
 
 .job-list-header {
-  display: grid;
-  grid-template-columns: minmax(78px, 1fr) minmax(88px, 0.8fr) minmax(100px, 3fr) minmax(108px, 1.2fr) minmax(62px, 0.7fr) minmax(52px, 0.6fr);
-  gap: 0 8px;
-  padding: 8px 12px 8px 17px;
+  display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px;
+  padding: 8px 16px;
   border-bottom: 1px solid var(--border);
   background: var(--panel);
   position: sticky;
   top: 0;
-  z-index: 1;
+  z-index: 2;
   flex-shrink: 0;
 }
-.job-list-header > div {
+.jl-filter-label {
   font-size: 10px; font-weight: 700; letter-spacing: 0.6px;
-  text-transform: uppercase; color: var(--ink3);
+  text-transform: uppercase; color: var(--ink3); margin: 0 4px 0 2px;
 }
-.job-list-header .jl-col-eta { text-align: right; }
-.job-list-header .jl-col-alerts { text-align: center; }
+.job-list-header { gap: 4px 14px; padding: 8px 20px; }
+.job-list-header .jl-col-select { width: 16px; flex: 0 0 16px; }
+.job-list-header .cf {
+  width: auto; flex: 0 0 auto;
+  font-size: 12px; font-weight: 600; color: var(--ink2);
+}
+/* The trigger's negative margin makes it wider than its shrink-wrapped parent, so 100% would clip the label. */
+.job-list-header .cf :deep(.cf-trigger) { max-width: none; }
+
+.jl-day {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 8px 20px; background: var(--panel);
+  border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);
+  font-size: 12px; font-weight: 700; color: var(--ink2);
+}
+.jl-day:first-child { border-top: none; }
+.jl-day-count { font-weight: 600; color: var(--ink3); }
 
 .job-item {
   display: grid;
-  grid-template-columns: minmax(78px, 1fr) minmax(88px, 0.8fr) minmax(100px, 3fr) minmax(108px, 1.2fr) minmax(62px, 0.7fr) minmax(52px, 0.6fr);
-  gap: 0 8px;
-  padding: 10px 12px 10px 14px;
+  grid-template-columns: 72px minmax(0, 1fr) auto;
+  gap: 16px;
+  padding: 14px 20px 14px 17px;
   cursor: pointer;
   border-bottom: 1px solid var(--border);
   border-left: 3px solid transparent;
   transition: background 0.15s;
   align-items: center;
 }
+.jobs-list-card--selectable .job-item { grid-template-columns: 16px 72px minmax(0, 1fr) auto; }
 .job-item:hover { background: var(--panel); }
 .job-item--active {
   border-left-color: var(--accent);
@@ -1348,12 +1544,22 @@ function reloadSelectedJob() {
 }
 .job-item:last-child { border-bottom: none; }
 
-.jobs-list-card--selectable .job-list-header,
-.jobs-list-card--selectable .job-item {
-  grid-template-columns: 16px minmax(78px, 1fr) minmax(88px, 0.8fr) minmax(100px, 3fr) minmax(108px, 1.2fr) minmax(62px, 0.7fr) minmax(52px, 0.6fr);
-}
 .jl-col-select { display: flex; align-items: center; justify-content: center; }
 .jl-col-select input { margin: 0; cursor: pointer; }
+.jl-time { display: flex; flex-direction: column; align-items: center; gap: 3px; }
+.jl-time-main { font-family: var(--font-mono, monospace); font-size: 20px; font-weight: 600; color: var(--ink); line-height: 1; }
+.jl-time-label { font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink3); }
+.jl-body { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.jl-line1 { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.jl-sub { font-size: 12.5px; color: var(--ink2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.jl-ids {
+  display: flex; gap: 10px; flex-wrap: wrap;
+  font-size: 11px; font-family: var(--font-mono, monospace); color: var(--ink3);
+}
+.jl-prog { display: flex; align-items: center; gap: 10px; }
+.jl-prog .jl-progress-bar { flex: 1; }
+.jl-prog .jl-steps { min-width: 30px; text-align: right; font-family: var(--font-mono, monospace); }
+.jl-side { display: flex; align-items: center; gap: 8px; align-self: start; }
 .job-bulk-bar {
   display: flex; align-items: center; gap: 8px;
   padding: 8px 12px;
@@ -1362,28 +1568,12 @@ function reloadSelectedJob() {
 }
 .job-bulk-count { font-size: 12px; font-weight: 700; color: var(--ink); margin-right: auto; }
 
-.jl-col-job {
-  display: flex; flex-direction: column; gap: 2px; min-width: 0;
-}
-.jl-job-id {
-  font-size: 10px; font-weight: 700; color: var(--ink);
-  font-family: var(--font-mono, monospace);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  display: block;
-  max-width: 100%;
-}
-.jl-job-type {
-  font-size: 10px; color: var(--ink3); font-weight: 500;
-  white-space: nowrap;
-}
 .jl-job-phase {
-  font-size: 9px; color: var(--ink3); font-weight: 700;
+  font-size: 11px; color: var(--ink3); font-weight: 700;
   text-transform: capitalize;
   white-space: nowrap;
-  padding: 1px 6px;
-  border-radius: 4px;
+  padding: 2px 8px;
+  border-radius: 5px;
   background: var(--panel);
   flex-shrink: 0;
 }
@@ -1394,51 +1584,12 @@ function reloadSelectedJob() {
 .jl-job-phase--training { background: #ede9fe; color: #6d28d9; }
 .jl-job-phase--daily_ops { background: var(--panel); color: var(--ink3); }
 
-.jl-lineup {
-  font-size: 10.5px; font-weight: 600; color: var(--ink2);
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  display: block; max-width: 100%;
-}
-
-.jl-flight {
-  font-size: 10.5px; color: var(--ink3);
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  display: block; max-width: 100%;
-}
-.jl-flight strong { color: var(--ink); font-family: var(--font-mono, monospace); }
-.jl-flight-no { font-family: var(--font-mono, monospace); font-weight: 700; color: var(--ink2); }
 .jl-flight-ok { color: var(--ok); font-weight: 600; }
 .jl-flight-warn { color: var(--warn); font-weight: 600; }
 
-.jl-job-date {
-  font-size: 9px;
-  font-weight: 600;
-  color: var(--ink3);
-  background: var(--panel);
-  padding: 1px 4px;
-  border-radius: 3px;
-  font-family: var(--font-mono, monospace);
-  white-space: nowrap;
-}
-
-.jl-col-stage {
-  display: flex; align-items: center;
-}
-
-.jl-col-route {
-  display: flex; flex-direction: column; gap: 2px; min-width: 0;
-}
 .jl-team {
-  font-size: 12px; font-weight: 700; color: var(--ink);
+  font-size: 15px; font-weight: 700; color: var(--ink);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
-.jl-route {
-  font-size: 10px; color: var(--ink3);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  display: block;
-  max-width: 100%;
 }
 
 .jl-fa-badge {
@@ -1499,9 +1650,6 @@ function reloadSelectedJob() {
 .issue-notes { font-size: 12px; color: var(--ink2); margin-top: 2px; }
 .issue-meta { font-size: 11px; color: var(--ink3); margin-top: 3px; }
 
-.jl-col-progress {
-  display: flex; flex-direction: column; gap: 4px;
-}
 .jl-progress-bar {
   height: 4px; background: var(--border); border-radius: 2px; overflow: hidden;
 }
@@ -1509,32 +1657,18 @@ function reloadSelectedJob() {
   height: 100%; border-radius: 2px; transition: width 0.3s;
 }
 .jl-steps {
-  font-size: 10px; color: var(--ink3); font-weight: 500;
+  font-size: 11px; color: var(--ink3); font-weight: 500;
 }
 
-.jl-col-eta {
-  display: flex; flex-direction: column; align-items: flex-end; gap: 1px;
-}
-.jl-eta-time {
-  font-size: 13px; font-weight: 700; color: var(--ink);
-  font-family: var(--font-mono, monospace);
-}
-.jl-eta-time--delayed { color: var(--warn); }
 .jl-eta-delay {
-  font-size: 10px; font-weight: 600; color: var(--warn);
+  font-size: 11px; font-weight: 600; color: var(--warn);
   font-family: var(--font-mono, monospace);
 }
 
-.jl-col-alerts {
-  display: flex; align-items: center; justify-content: center;
-}
 .jl-alert-badge {
   display: inline-flex; align-items: center; gap: 3px;
   font-size: 11px; font-weight: 700; color: #b45309;
   background: #FEF3C7; padding: 2px 6px; border-radius: 4px;
-}
-.jl-no-alert {
-  font-size: 13px; color: var(--ink4);
 }
 
 /* Detail panel */
@@ -1664,51 +1798,55 @@ function reloadSelectedJob() {
   }
 }
 
-.detail-header-top {
-  display: flex; align-items: flex-start; gap: 10px;
-  padding-bottom: 14px; border-bottom: 1px solid var(--border);
-  margin-bottom: 6px;
+/* Header card */
+.jh { display: flex; flex-direction: column; gap: 16px; padding: 20px 22px; }
+.jh-top { display: flex; align-items: flex-start; gap: 14px; }
+.jh-flag { font-size: 34px; margin-top: 2px; }
+.jh-title { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.jh-name-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.jh-name { margin: 0; font-size: 22px; font-weight: 700; letter-spacing: -0.01em; color: var(--ink); }
+.jh-code {
+  font-family: var(--font-mono, monospace); font-size: 11px; font-weight: 600; color: var(--ink2);
+  background: var(--panel); border: 1px solid var(--border); padding: 2px 7px; border-radius: 5px;
 }
-@media (max-width: 640px) {
-  .detail-header-top {
-    flex-wrap: wrap;
-  }
-  .detail-actions {
-    width: 100%;
-    margin-left: 0;
-    justify-content: flex-start;
-  }
-  .detail-actions .btn {
-    flex: 1;
-  }
+.jh-sub { font-size: 12.5px; color: var(--ink3); }
+.jh-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.jh-caret { font-size: 10px; margin-left: 4px; }
+.jh-more { position: relative; }
+.jh-menu {
+  position: absolute; right: 0; top: calc(100% + 6px); z-index: 20; min-width: 170px; padding: 6px;
+  display: flex; flex-direction: column; background: var(--surface); border: 1px solid var(--border);
+  border-radius: 10px; box-shadow: 0 10px 28px rgba(0, 0, 0, 0.16);
 }
-/* Codes run longer than a trigram (EGY-17, BHR-V), so the badge grows
-   sideways from a square minimum rather than wrapping. */
-.team-badge {
-  min-width: 34px; height: 34px; padding: 0 6px; border-radius: 7px;
-  background: var(--accent-soft); color: var(--accent-fg);
-  font-size: 10px; font-weight: 700; flex-shrink: 0; white-space: nowrap;
-  display: inline-flex; align-items: center; justify-content: center;
+.jh-menu button {
+  border: 0; background: none; text-align: left; padding: 8px 10px; border-radius: 6px;
+  font-size: 13px; color: var(--ink); cursor: pointer;
 }
-.detail-id {
-  font-size: 15px; font-weight: 700; color: var(--ink); letter-spacing: -0.3px;
-  line-height: 1.3;
-}
-@media (max-width: 640px) {
-  .detail-id {
-    font-size: 14px;
-  }
-}
+.jh-menu button:hover { background: var(--panel); }
+.jh-menu .jh-menu-danger { color: var(--danger); }
 
-.detail-event-badge {
-  font-size: 10px;
-  font-weight: 700;
-  color: var(--accent);
-  background: var(--accent-soft, var(--accent-ring));
-  padding: 2px 8px;
-  border-radius: 4px;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
+.jh-route {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: 20px; align-items: center;
+  padding: 14px 18px; background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+}
+.jh-end { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.jh-label { font-size: 10.5px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink3); }
+.jh-place { font-size: 14px; font-weight: 700; color: var(--ink); }
+.jh-note { font-size: 12px; color: var(--ink3); }
+.jh-arrow { color: var(--ink3); display: flex; }
+
+.jh-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
+.jh-stat { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.jh-stat-label { font-size: 12px; color: var(--ink3); }
+.jh-stat-value { font-family: var(--font-mono, monospace); font-size: 19px; font-weight: 700; color: var(--ink); }
+.jh-stat-value--ok { color: var(--ok); }
+.jh-stat-value--warn { color: var(--warn); }
+@media (max-width: 640px) {
+  .jh-top { flex-wrap: wrap; }
+  .jh-actions { width: 100%; }
+  .jh-route { grid-template-columns: 1fr; gap: 10px; }
+  .jh-arrow { transform: rotate(90deg); }
+  .jh-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 .detail-fa-badge {
@@ -1737,38 +1875,6 @@ function reloadSelectedJob() {
 .detail-kind-badge--match { background: #fef3c7; color: #92400e; border: 1px solid #fbbf24; }
 .detail-kind-badge--training { background: #ede9fe; color: #6d28d9; }
 .detail-kind-badge--daily_ops { background: var(--panel); color: var(--ink3); }
-
-/* Sits inline beside the kind badge, so it reads as part of that row. */
-.detail-date {
-  font-size: 11px;
-  color: var(--ink3);
-  font-weight: 600;
-  white-space: nowrap;
-}
-.detail-subtitle {
-  font-size: 12px; color: var(--ink3);
-  margin-bottom: 14px;
-  min-width: 0;
-  flex: 1;
-}
-.detail-actions {
-  display: flex; gap: 6px; margin-left: auto;
-}
-
-.detail-stats {
-  display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px;
-}
-.detail-stats--five {
-  grid-template-columns: repeat(5, 1fr);
-}
-@media (max-width: 640px) {
-  .detail-stats {
-    grid-template-columns: repeat(2, 1fr);
-  }
-  .detail-stats--five {
-    grid-template-columns: repeat(2, 1fr);
-  }
-}
 
 .detail-grid {
   display: grid;
@@ -1815,6 +1921,21 @@ function reloadSelectedJob() {
 
 .checkpoint-content {
   padding: 16px;
+}
+
+.next-step {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 12px 14px; margin-bottom: 14px;
+  background: var(--accent-soft); border: 1px solid var(--accent); border-radius: 10px;
+}
+.next-step-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.next-step-label {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.6px; text-transform: uppercase; color: var(--accent);
+}
+.next-step-name { font-size: 14px; font-weight: 600; color: var(--ink); }
+.next-step-hint { font-size: 11px; color: var(--ink3); }
+@media (max-width: 640px) {
+  .next-step { flex-direction: column; align-items: stretch; }
 }
 @media (max-width: 640px) {
   .checkpoint-content {
@@ -1895,7 +2016,7 @@ function reloadSelectedJob() {
 .btn--dark:hover { background: #1f2937; }
 .btn--dark:disabled { opacity: 0.4; cursor: not-allowed; }
 
-.override-input {
+.override-select, .override-input {
   width: 100%; padding: 8px 10px; border-radius: 7px;
   border: 1px solid var(--border); background: var(--surface);
   font-size: 13px; color: var(--ink); font-family: inherit;
@@ -1903,6 +2024,31 @@ function reloadSelectedJob() {
 }
 .override-input:focus {
   border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-ring);
+}
+
+.complete-step-name { margin: 0 0 14px; font-size: 14px; font-weight: 600; color: var(--ink); }
+.complete-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.complete-field { display: flex; flex-direction: column; gap: 6px; }
+.complete-label { display: block; font-size: 11px; font-weight: 600; color: var(--ink3); margin-bottom: 6px; }
+.complete-field .complete-label { margin-bottom: 0; }
+.complete-hint { font-size: 11px; color: var(--ink3); }
+.override-variance {
+  padding: 8px 10px; border-radius: 7px;
+  border: 1px solid var(--border); background: var(--panel);
+  font-size: 13px; font-family: var(--font-mono, monospace);
+  font-weight: 600; color: var(--ink3);
+  min-height: 38px; display: flex; align-items: center;
+}
+.override-variance.is-late { color: #c2410c; }
+.override-variance.is-early { color: #166534; }
+.override-exclude-date {
+  display: flex; align-items: flex-start; gap: 6px;
+  font-size: 11px; color: var(--ink3); cursor: pointer;
+}
+.override-exclude-date input { margin-top: 2px; accent-color: var(--accent); flex-shrink: 0; }
+.complete-required { color: var(--danger); font-weight: 500; }
+@media (max-width: 480px) {
+  .complete-grid { grid-template-columns: 1fr; }
 }
 
 /* Quick Filters */

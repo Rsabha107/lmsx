@@ -58,8 +58,8 @@ class ResourceScheduleTest extends TestCase
                 ->where('items.1.code', $extra->code)
                 ->where('items.1.role', 'Extra vehicle')
                 ->where('items.1.job_code', null)
-                // The week picker marks every booked day, not just this week's.
-                ->where('bookedDates', ['2026-11-24', '2026-11-26', '2026-12-02']));
+                // The calendar counts every booked day, not just this week's.
+                ->where('bookedDates', ['2026-11-24' => 1, '2026-11-26' => 1, '2026-12-02' => 1]));
     }
 
     public function test_the_week_exports_to_excel(): void

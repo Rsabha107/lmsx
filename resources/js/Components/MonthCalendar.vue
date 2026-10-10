@@ -18,6 +18,7 @@
           :class="['mc-day', {
             'mc-day--out': !cell.inMonth,
             'mc-day--on': cell.key === modelValue,
+            'mc-day--range': cell.inRange,
             'mc-day--today': cell.today,
           }]"
           :style="cell.count ? { '--heat': cell.heat } : undefined"
@@ -44,8 +45,10 @@ import { todayKey } from '../Composables/useCrewRoster';
 const props = defineProps({
   modelValue: { type: String, required: true },
   // 'YYYY-MM-DD' => how many items fall on that day, for the shading
-  counts: { type: Object, default: () => ({}) },
+  counts: { type: [Object, Array], default: () => ({}) },
   unit: { type: String, default: 'movement' },
+  // Optional first and last day to outline, e.g. the week being viewed
+  range: { type: Array, default: null },
 });
 const emit = defineEmits(['update:modelValue']);
 
@@ -99,6 +102,7 @@ const cells = computed(() => {
       heat: `${Math.round(12 + (count / max) * 48)}%`,
       day: Number(key.slice(8)),
       inMonth: key.startsWith(month.value),
+      inRange: !!props.range && key >= props.range[0] && key <= props.range[1],
       today: key === todayKey(),
     };
   });
@@ -152,6 +156,7 @@ onUnmounted(() => {
 }
 .mc-day:hover { border-color: var(--accent); }
 .mc-day--out { opacity: 0.4; }
+.mc-day--range { border-radius: 0; box-shadow: inset 0 1px 0 var(--accent), inset 0 -1px 0 var(--accent); }
 .mc-day--today { font-weight: 700; box-shadow: inset 0 0 0 1px var(--accent); }
 .mc-day--on { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 35%, transparent); font-weight: 700; }
 .mc-count { font-size: 9px; font-weight: 700; line-height: 1; color: var(--ink2); }

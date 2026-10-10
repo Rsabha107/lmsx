@@ -159,7 +159,7 @@ class ResourceScheduleController extends Controller
                 ->when($type === 'supervisor', fn ($q) => $q->orWhereHas('extraSupervisors', fn ($u) => $u->whereKey($id))));
     }
 
-    /** @return list<string> every Y-m-d the resource has a movement starting on */
+    /** @return array<string, int> movements starting on each Y-m-d, for the calendar's shading */
     private function bookedDates(Request $request, string $type, int $id): array
     {
         if (! $request->session()->get('active_event_id')) {
@@ -169,8 +169,9 @@ class ResourceScheduleController extends Controller
         return $this->movementsFor($request, $type, $id)
             ->whereNotNull('window_start')
             ->pluck('window_start')
-            ->map(fn ($start) => $start->toDateString())
-            ->unique()->sort()->values()->all();
+            ->countBy(fn ($start) => $start->toDateString())
+            ->sortKeys()
+            ->all();
     }
 
     /**

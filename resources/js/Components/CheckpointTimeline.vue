@@ -1,14 +1,14 @@
 <template>
   <div>
     <!-- Header -->
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-      <div style="font-size: 10px; font-weight: 700; letter-spacing: 0.6px; text-transform: uppercase; color: var(--ink3);">
+    <div v-if="!hideTitle || hasMobileUpdates" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+      <div v-if="!hideTitle" style="font-size: 10px; font-weight: 700; letter-spacing: 0.6px; text-transform: uppercase; color: var(--ink3);">
         {{ title }}
         <span v-if="checkpoints?.length"> · {{ completedCount }}/{{ checkpoints.length }}</span>
         <span v-if="skippedCount" style="color: var(--ink3);"> · {{ skippedCount }} skipped</span>
       </div>
       <div v-if="hasMobileUpdates"
-           style="display: flex; align-items: center; gap: 4px; font-size: 10px; font-weight: 600; color: var(--accent);">
+           style="display: flex; align-items: center; gap: 4px; margin-left: auto; font-size: 10px; font-weight: 600; color: var(--accent);">
         <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><circle cx="12" cy="18" r="0.5" fill="currentColor"/></svg>
         Updated via mobile
       </div>
@@ -174,6 +174,7 @@ const props = defineProps({
   checkpoints: { type: Array, default: () => [] },
   title:        { type: String, default: 'Checkpoints' },
   emptyMessage: { type: String, default: 'No checkpoints defined' },
+  hideTitle:    { type: Boolean, default: false },
 });
 
 // Photo/Signature viewer state

@@ -18,6 +18,7 @@ use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -166,7 +167,7 @@ class MovementCrewController extends Controller
             'week' => ['start' => $weekStart->toDateString(), 'slots' => $week],
             'vehicles' => Vehicle::inEventPool($eventId)->select('id', 'code', 'plate_number', 'vehicle_type', 'capacity', 'provider_id')->orderBy('code')->get(),
             'drivers' => Driver::inEventPool($eventId)->select('id', 'name', 'phone', 'provider_id')->orderBy('name')->get(),
-            'supervisors' => $this->supervisors()->select('id', 'name', 'fleet_provider_id')->orderBy('name')->get(),
+            'supervisors' => $this->supervisors()->select('id', 'name', 'job_title', 'fleet_provider_id')->orderBy('name')->get(),
             // Only people who can re-home a movement are offered the provider switch.
             'providers' => $user->can('plans.manage') ? FleetProvider::orderBy('name')->get(['id', 'name']) : [],
         ]);
@@ -263,34 +264,7 @@ class MovementCrewController extends Controller
     {
         $this->authorize('view', $movement);
 
-        // All three are required keys so a partial payload can't silently clear a role.
-        $crewRule = fn (string $role) => function (string $attribute, mixed $value, Closure $fail) use ($movement, $role) {
-            if ($value !== null && ($why = CrewEligibility::violation($movement, $role, (int) $value))) {
-                $fail($why);
-            }
-        };
-
-        $validated = $request->validate([
-            'vehicle_id' => ['present', 'nullable', 'integer', 'exists:vehicles,id', $crewRule('vehicle')],
-            'driver_id' => ['present', 'nullable', 'integer', 'exists:drivers,id', $crewRule('driver')],
-            'field_supervisor_id' => ['present', 'nullable', 'integer', $crewRule('supervisor'), function (string $attribute, mixed $value, Closure $fail) use ($movement) {
-                // Keeping whoever planning already put there is always allowed.
-                if ($value !== null && (int) $value !== (int) $movement->field_supervisor_id && ! $this->supervisors()->whereKey($value)->exists()) {
-                    $fail('The selected supervisor cannot run jobs in the mobile app.');
-                }
-            }],
-            // Optional so older clients that only send the lead crew leave the extras alone.
-            'units' => ['sometimes', 'array', 'max:10'],
-            'units.*.vehicle_id' => ['nullable', 'integer', 'exists:vehicles,id', $crewRule('vehicle')],
-            'units.*.driver_id' => ['nullable', 'integer', 'exists:drivers,id', $crewRule('driver')],
-            'supervisors' => ['sometimes', 'array', 'max:10'],
-            'supervisors.*' => ['integer', $crewRule('supervisor'), function (string $attribute, mixed $value, Closure $fail) use ($movement) {
-                $kept = $movement->extraSupervisors()->whereKey($value)->exists();
-                if (! $kept && ! $this->supervisors()->whereKey($value)->exists()) {
-                    $fail('A selected supervisor cannot run jobs in the mobile app.');
-                }
-            }],
-        ]);
+        $validated = $request->validate($this->crewRules($movement));
 
         $changed = $lifecycle->assignMovementCrew(
             $movement,
@@ -310,6 +284,105 @@ class MovementCrewController extends Controller
         }
 
         return back()->with('success', $changed ? "Crew updated for {$movement->code}." : 'No changes to save.');
+    }
+
+    /** Saves several movements' crews in one request, with one summary message instead of one per movement. */
+    public function updateMany(Request $request, JobLifecycleService $lifecycle, ConflictDetectionService $conflicts): RedirectResponse
+    {
+        $request->validate([
+            'movements' => ['required', 'array', 'min:1', 'max:200'],
+            'movements.*.id' => ['required', 'integer'],
+        ]);
+
+        $saved = collect();
+        $failed = [];
+
+        foreach ($request->input('movements') as $item) {
+            $movement = Movement::find($item['id']);
+            if (! $movement || $request->user()->cannot('view', $movement)) {
+                $failed[] = "#{$item['id']}: not available to you";
+
+                continue;
+            }
+
+            $validator = Validator::make($item, $this->crewRules($movement));
+            if ($validator->fails()) {
+                $failed[] = "{$movement->code}: {$validator->errors()->first()}";
+
+                continue;
+            }
+
+            $data = $validator->validated();
+            $changed = $lifecycle->assignMovementCrew(
+                $movement,
+                $data['vehicle_id'] ?? null,
+                $data['driver_id'] ?? null,
+                $data['field_supervisor_id'] ?? null,
+                array_key_exists('units', $data) ? $data['units'] : null,
+                array_key_exists('supervisors', $data) ? $data['supervisors'] : null,
+            );
+
+            if ($changed) {
+                $saved->push($movement);
+            }
+        }
+
+        // Saved regardless: a clash is a warning for the planner, not a block.
+        $clashing = [];
+        foreach ($saved->groupBy('event_id') as $eventId => $movements) {
+            $schedule = $conflicts->crewSchedule((int) $eventId);
+            foreach ($movements as $m) {
+                $first = collect($schedule[$m->id]['clashes'] ?? [])->flatten()->first();
+                if ($first) {
+                    $clashing[$m->code] = $first;
+                }
+            }
+        }
+
+        $summary = $saved->count() === 1 ? "Crew updated for {$saved->first()->code}." : "Crew updated for {$saved->count()} movements.";
+        $redirect = back();
+
+        if ($clashing) {
+            $redirect->with('warning', "{$summary} " . count($clashing) . ' with a clash, e.g. ' . array_key_first($clashing) . ': ' . reset($clashing));
+        } elseif ($saved->isNotEmpty()) {
+            $redirect->with('success', $summary);
+        } elseif (! $failed) {
+            $redirect->with('success', 'No changes to save.');
+        }
+
+        return $failed ? $redirect->withErrors(['crew' => 'Not saved — ' . implode('; ', $failed)]) : $redirect;
+    }
+
+    /** All three lead fields are required keys so a partial payload can't silently clear a role. */
+    private function crewRules(Movement $movement): array
+    {
+        $crewRule = fn (string $role) => function (string $attribute, mixed $value, Closure $fail) use ($movement, $role) {
+            if ($value !== null && ($why = CrewEligibility::violation($movement, $role, (int) $value))) {
+                $fail($why);
+            }
+        };
+
+        return [
+            'vehicle_id' => ['present', 'nullable', 'integer', 'exists:vehicles,id', $crewRule('vehicle')],
+            'driver_id' => ['present', 'nullable', 'integer', 'exists:drivers,id', $crewRule('driver')],
+            'field_supervisor_id' => ['present', 'nullable', 'integer', $crewRule('supervisor'), function (string $attribute, mixed $value, Closure $fail) use ($movement) {
+                // Keeping whoever planning already put there is always allowed.
+                if ($value !== null && (int) $value !== (int) $movement->field_supervisor_id && ! $this->supervisors()->whereKey($value)->exists()) {
+                    $fail('The selected supervisor cannot run jobs in the mobile app.');
+                }
+            }],
+            // Optional so older clients that only send the lead crew leave the extras alone.
+            'units' => ['sometimes', 'array', 'max:10'],
+            'units.*.vehicle_id' => ['nullable', 'integer', 'exists:vehicles,id', $crewRule('vehicle')],
+            'units.*.driver_id' => ['nullable', 'integer', 'exists:drivers,id', $crewRule('driver')],
+            'supervisors' => ['sometimes', 'array', 'max:10'],
+            'supervisors.*' => ['integer', $crewRule('supervisor'), function (string $attribute, mixed $value, Closure $fail) use ($movement) {
+                $kept = $movement->extraSupervisors()->whereKey($value)->exists();
+                if (! $kept && ! $this->supervisors()->whereKey($value)->exists()) {
+                    $fail('A selected supervisor cannot run jobs in the mobile app.');
+                }
+            }],
+        ];
     }
 
     /** Hands a movement to another provider; its crew stays until that provider reassigns it. */
@@ -340,11 +413,6 @@ class MovementCrewController extends Controller
     /** A supervisor has to be able to work the job in the mobile app, and belong to the movement's provider. */
     private function supervisors()
     {
-        $query = User::permission('jobs.view');
-        $user = Auth::user();
-
-        return $user?->isProviderRestricted()
-            ? $query->where('users.fleet_provider_id', $user->fleet_provider_id ?? 0)
-            : $query;
+        return User::fieldSupervisors();
     }
 }

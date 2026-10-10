@@ -252,7 +252,7 @@ class LmsController extends Controller
         'movement.checkpointTemplate:id,name',
         'movement.units.vehicle:id,code,plate_number,vehicle_type,capacity',
         'movement.units.driver:id,name,phone',
-        'movement.extraSupervisors:id,name',
+        'movement.extraSupervisors:id,name,phone',
         'plan:id,code,name',
         'vehicle',
         'driver',
@@ -270,7 +270,7 @@ class LmsController extends Controller
 
         return [
             'drivers' => Driver::inEventPool($eventId)->select('id', 'name')->orderBy('name')->get(),
-            'supervisors' => User::select('id', 'name')->orderBy('name')->get(),
+            'supervisors' => User::fieldSupervisors()->select('id', 'name', 'job_title', 'fleet_provider_id')->orderBy('name')->get(),
             'vehicles' => Vehicle::inEventPool($eventId)->select('id', 'code', 'plate_number', 'vehicle_type', 'capacity')->orderBy('code')->get(),
         ];
     }
@@ -288,6 +288,8 @@ class LmsController extends Controller
                 return [
                     'id' => $job->job_id ?? 'J-' . $job->id,
                     'db_id' => $job->id,
+                    'movement_id' => $movement?->id,
+                    'fleet_provider_id' => $movement?->fleet_provider_id,
                     'team' => $team?->team_name ?? 'Unknown Team',
                     'code' => $team?->code ?? 'UNK',
                     'country_code' => $team?->country_id,
@@ -336,7 +338,7 @@ class LmsController extends Controller
                         'driver_phone' => $u->driver?->phone,
                     ])->values()->all(),
                     'extra_supervisors' => ($movement?->extraSupervisors ?? collect())
-                        ->map(fn ($u) => ['name' => $u->name])->values()->all(),
+                        ->map(fn ($u) => ['name' => $u->name, 'phone' => $u->phone])->values()->all(),
                     'updated_at' => $job->updated_at?->format('Y-m-d H:i') ?? null,
                     'flight' => \App\Support\FlightSummary::from($movement?->flight),
                     'accommodation' => $movement?->accommodation ? [
@@ -842,11 +844,25 @@ class LmsController extends Controller
         $drivers = Driver::with('provider:id,name')->get();
         $today = $driverStatus->forDrivers($drivers);
         $eventId = $request->session()->get('active_event_id');
+        $user = $request->user();
+        $canManage = $user->canAny(['fleet.manage', 'fleet.manage-resources']);
 
         return Inertia::render('Fleet', [
             'vehicles' => Vehicle::with('provider:id,name')->get(),
             'providers' => FleetProvider::withCount(['vehicles', 'drivers'])->get(),
             'drivers' => $drivers->map(fn (Driver $d) => $d->toArray() + ['today' => $today[$d->id]])->values(),
+            'canAddSupervisors' => $canManage,
+            // Logins with e-mail addresses: only for those who can add them, and a provider's own only.
+            'supervisors' => $canManage
+                ? User::whereHas('roles', fn ($q) => $q->where('name', 'ground_control'))->with('fleetProvider:id,name')
+                    ->when($user->isProviderRestricted(), fn ($q) => $q->where('users.fleet_provider_id', $user->fleet_provider_id ?? 0))
+                    ->orderBy('name')->get(['id', 'name', 'email', 'phone', 'job_title', 'fleet_provider_id'])
+                    ->map(fn (User $u) => ['id' => $u->id, 'name' => $u->name, 'email' => $u->email, 'phone' => $u->phone, 'job_title' => $u->job_title, 'provider' => $u->fleetProvider?->name])
+                    ->values()
+                : [],
+            // Directory entries not yet tied to a login, to start a supervisor from.
+            'contacts' => $canManage ? Contact::active()->whereNull('user_id')->orderBy('name')->get(['id', 'name', 'role', 'phone']) : [],
+            'roles' => \App\Support\ContactRoles::ALL,
             'eventPool' => [
                 'name' => $eventId ? Event::whereKey($eventId)->value('name') : null,
                 'vehicles' => $eventId ? Vehicle::inEventPool($eventId)->pluck('vehicles.id')->all() : [],
@@ -859,6 +875,7 @@ class LmsController extends Controller
     {
         return Inertia::render('Contacts', [
             'contacts' => Contact::active()->get(),
+            'roles' => \App\Support\ContactRoles::ALL,
         ]);
     }
 
@@ -866,7 +883,7 @@ class LmsController extends Controller
     {
         $validated = $request->validate([
             'name' => 'required|string|max:255',
-            'role' => 'required|string|max:255',
+            'role' => ['required', 'string', 'max:255', \App\Support\ContactRoles::rule()],
             'org' => 'nullable|string|max:255',
             'phone' => 'nullable|string|max:255',
             'on_shift' => 'boolean',
@@ -879,15 +896,16 @@ class LmsController extends Controller
 
     public function updateContact(Request $request, $id)
     {
+        $contact = Contact::findOrFail($id);
+
         $validated = $request->validate([
             'name' => 'required|string|max:255',
-            'role' => 'required|string|max:255',
+            'role' => ['required', 'string', 'max:255', \App\Support\ContactRoles::rule($contact->role)],
             'org' => 'nullable|string|max:255',
             'phone' => 'nullable|string|max:255',
             'on_shift' => 'boolean',
         ]);
 
-        $contact = Contact::findOrFail($id);
         $contact->update($validated);
 
         return redirect()->route('contacts');
@@ -982,7 +1000,7 @@ class LmsController extends Controller
     {
         try {
             $validated = $request->validate([
-                'state' => 'nullable|in:done,skipped',
+                'state' => 'nullable|in:done,skipped,pending',
                 'actual_time' => 'nullable|date_format:H:i',
                 'exclude_date' => 'nullable|boolean',
                 'reason' => 'required_with:state|nullable|string|max:255',
@@ -1007,6 +1025,16 @@ class LmsController extends Controller
 
             $this->authorize('override', $checkpoint->job);
 
+            if (($validated['state'] ?? null) === 'pending') {
+                if (! in_array($checkpoint->state, ['done', 'skipped'], true)) {
+                    throw \Illuminate\Validation\ValidationException::withMessages(['state' => 'This checkpoint has not been processed, so there is nothing to reset.']);
+                }
+
+                if (in_array($checkpoint->job->status, ['completed', 'cancelled'], true)) {
+                    throw \Illuminate\Validation\ValidationException::withMessages(['state' => "A {$checkpoint->job->status} job's checkpoints cannot be reset."]);
+                }
+            }
+
             $driverId = isset($validated['driver_id']) ? (int) $validated['driver_id'] : null;
             $supervisorId = isset($validated['supervisor_id']) ? (int) $validated['supervisor_id'] : null;
             $vehicleId = isset($validated['vehicle_id']) ? (int) $validated['vehicle_id'] : null;
@@ -1016,6 +1044,11 @@ class LmsController extends Controller
                     if ($id && ($why = \App\Support\CrewEligibility::violation($movement, $role, $id))) {
                         throw \Illuminate\Validation\ValidationException::withMessages(["{$role}_id" => $why]);
                     }
+                }
+
+                // Same rule as Crew Assignment; whoever is already on the job stays allowed.
+                if ($supervisorId && $supervisorId !== (int) $checkpoint->job->supervisor_id && ! User::fieldSupervisors()->whereKey($supervisorId)->exists()) {
+                    throw \Illuminate\Validation\ValidationException::withMessages(['supervisor_id' => 'The selected supervisor cannot run jobs in the mobile app.']);
                 }
             }
 
@@ -1142,6 +1175,7 @@ class LmsController extends Controller
     {
         $validated = $request->validate([
             'actual_time' => 'nullable|date_format:H:i',
+            'exclude_date' => 'nullable|boolean',
             'notes' => 'nullable|string|max:500',
             'signature' => 'nullable|string',
             'photo' => 'nullable|string',
@@ -1161,6 +1195,7 @@ class LmsController extends Controller
                 $request->user(),
                 [
                     'actual_time' => $validated['actual_time'] ?? null,
+                    'exclude_date' => (bool) ($validated['exclude_date'] ?? false),
                     'notes' => $validated['notes'] ?? null,
                     'photo' => $validated['photo'] ?? null,
                     'signature' => $validated['signature'] ?? null,

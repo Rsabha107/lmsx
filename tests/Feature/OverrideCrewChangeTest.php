@@ -8,6 +8,7 @@ use App\Models\User;
 use App\Models\Vehicle;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Spatie\Permission\Models\Permission;
+use Spatie\Permission\Models\Role;
 use Tests\Concerns\CreatesOperationsFixtures;
 use Tests\TestCase;
 
@@ -34,8 +35,8 @@ class OverrideCrewChangeTest extends TestCase
 
         $oldDriver = $this->createDriver($event, ['name' => 'Old Driver']);
         $newDriver = $this->createDriver($event, ['name' => 'New Driver']);
-        $newSupervisor = $this->createUserWithRole('admin');
-        $newSupervisor->update(['fleet_provider_id' => $this->fixtureProvider()->id]);
+        Role::findOrCreate('ground_control', 'web');
+        $newSupervisor = $this->createProviderUser('ground_control');
 
         $movement = $this->createMovement($event, $plan, $team, ['driver_id' => $oldDriver->id]);
         $job = $this->createJob($event, $movement, $team, ['driver_id' => $oldDriver->id]);
@@ -64,6 +65,28 @@ class OverrideCrewChangeTest extends TestCase
             'action' => 'Job crew changed',
             'target' => $job->job_id,
         ]);
+    }
+
+    public function test_an_override_refuses_a_supervisor_who_cannot_work_jobs(): void
+    {
+        $event = $this->createEvent();
+        $team = $this->createTeam($event);
+        $movement = $this->createMovement($event, $this->createPlan($event), $team);
+        $job = $this->createJob($event, $movement, $team);
+        $movement->update(['job_id' => $job->job_id]);
+        $checkpoint = $this->createCheckpoint($event, $job);
+        $notASupervisor = User::factory()->create(['fleet_provider_id' => $this->fixtureProvider()->id]);
+
+        $this->actingAsOverrider($event)
+            ->postJson("/jobs/checkpoint/{$checkpoint->id}/override", [
+                'state' => 'skipped',
+                'reason' => 'operational_change',
+                'supervisor_id' => $notASupervisor->id,
+            ])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('supervisor_id');
+
+        $this->assertNull($job->refresh()->supervisor_id);
     }
 
     public function test_a_vehicle_can_be_swapped_on_the_job_and_its_movement(): void

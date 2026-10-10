@@ -3,9 +3,12 @@
 namespace App\Http\Controllers;
 
 use App\Models\AuditLog;
+use App\Models\Contact;
 use App\Models\Driver;
 use App\Models\FleetProvider;
+use App\Models\User;
 use App\Models\Vehicle;
+use App\Support\ContactRoles;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -54,6 +57,70 @@ class FleetController extends Controller
 
         AuditLog::change('Vehicle deleted', $vehicle->code, ['provider_id' => $vehicle->provider_id]);
         return back()->with('success', 'Vehicle deleted');
+    }
+
+    /* ----------------------------- Supervisors -------------------------- */
+
+    /** A field supervisor is a mobile-app login (ground_control) already tied to a provider and the active event. */
+    public function storeSupervisor(Request $request): RedirectResponse
+    {
+        $data = $request->validate([
+            'name' => ['required', 'string', 'max:255'],
+            'email' => ['required', 'email', 'max:255', 'unique:users,email'],
+            'password' => ['required', 'string', 'min:8'],
+            'phone' => ['nullable', 'string', 'max:50'],
+            'job_title' => ['nullable', 'string', 'max:100', ContactRoles::rule($request->filled('contact_id') ? Contact::whereKey($request->input('contact_id'))->value('role') : null)],
+            // An entry of the contacts directory this supervisor is, so it is not picked twice.
+            'contact_id' => ['nullable', 'integer', Rule::exists('pma_contacts', 'id')->whereNull('user_id')],
+            'provider_id' => [Rule::requiredIf(! $request->user()->isProviderRestricted()), 'nullable', 'exists:fleet_providers,id'],
+        ]);
+        $data = $this->pinProvider($request, $data);
+
+        $user = User::create([
+            'name' => $data['name'],
+            'email' => $data['email'],
+            'password' => $data['password'],
+            'phone' => $data['phone'] ?? null,
+            'job_title' => $data['job_title'] ?? null,
+            'fleet_provider_id' => $data['provider_id'],
+        ]);
+        $user->assignRole('ground_control');
+        $this->addToActiveEvent($request, $user->events());
+
+        if (! empty($data['contact_id'])) {
+            Contact::whereKey($data['contact_id'])->update(['user_id' => $user->id]);
+        }
+
+        AuditLog::change('Supervisor created', $user->email, ['provider_id' => $user->fleet_provider_id, 'roles' => ['ground_control']], $user);
+
+        return back()->with('success', 'Supervisor added');
+    }
+
+    public function updateSupervisor(Request $request, User $user): RedirectResponse
+    {
+        $viewer = $request->user();
+        abort_unless($user->hasRole('ground_control'), 404);
+        abort_if($viewer->isProviderRestricted() && (int) $user->fleet_provider_id !== (int) $viewer->fleet_provider_id, 404);
+
+        $data = $request->validate([
+            'name' => ['required', 'string', 'max:255'],
+            'phone' => ['nullable', 'string', 'max:50'],
+            'job_title' => ['nullable', 'string', 'max:100', ContactRoles::rule($user->job_title)],
+        ]);
+
+        $original = $user->getOriginal();
+        $user->update($data);
+
+        // The directory entry this login came from follows along.
+        Contact::where('user_id', $user->id)->update(array_filter([
+            'name' => $user->name,
+            'phone' => $user->phone,
+            'role' => $user->job_title,
+        ], fn ($v) => $v !== null));
+
+        AuditLog::change('Supervisor updated', $user->email, AuditLog::changes($user, $original), $user);
+
+        return back()->with('success', 'Supervisor updated');
     }
 
     /* ------------------------------ Drivers ----------------------------- */

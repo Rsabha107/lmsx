@@ -20,29 +20,14 @@ use Illuminate\Support\Facades\Auth;
  */
 class ConflictDetectionService
 {
-    /** Minimum gap between two consecutive jobs for the same vehicle or driver. */
-    private const TURNAROUND_MINUTES = 30;
-
-    /** How long after landing a team may reasonably still be waiting airside. */
-    private const PICKUP_GRACE_MINUTES = 90;
-
-    /** How far a window may drift from its configured offset before it is worth reporting. */
-    private const OFFSET_TOLERANCE_MINUTES = 60;
-
-    /** Team must be at the stadium at least this long before kick-off. */
-    private const KICKOFF_LEAD_MINUTES = 90;
-
-    /** A driver's working day should not span longer than this. */
-    private const DRIVER_SPAN_HOURS = 14;
-
-    /** Minimum rest between a driver's working days. */
-    private const DRIVER_REST_HOURS = 11;
-
-    /** A gap this long between timed checkpoints is waiting (e.g. the match), not work. */
-    private const STANDBY_GAP_MINUTES = 60;
-
     public function __construct(private SettingsService $settings, private JobGenerationService $jobs)
     {
+    }
+
+    /** A configurable threshold, editable in Setups > Settings (see SettingsService::CONFLICT_THRESHOLDS). */
+    private function t(string $name): int
+    {
+        return $this->settings->getThreshold($name);
     }
 
     /**
@@ -149,12 +134,12 @@ class ConflictDetectionService
                     return "With {$label}";
                 }
 
-                $near = $otherSpan[0]->lt($span[1]->copy()->addMinutes(self::TURNAROUND_MINUTES))
-                    && $span[0]->lt($otherSpan[1]->copy()->addMinutes(self::TURNAROUND_MINUTES));
+                $near = $otherSpan[0]->lt($span[1]->copy()->addMinutes($this->t('turnaround_minutes')))
+                    && $span[0]->lt($otherSpan[1]->copy()->addMinutes($this->t('turnaround_minutes')));
                 $gap = $role === 'vehicle'
                     ? $this->smallestGap([$span], [$otherSpan])
                     : $this->smallestGap($active, $otherActive);
-                if ($near && $gap !== null && $gap < self::TURNAROUND_MINUTES) {
+                if ($near && $gap !== null && $gap < $this->t('turnaround_minutes')) {
                     return "Only {$gap} min from {$label}";
                 }
 
@@ -163,7 +148,7 @@ class ConflictDetectionService
                         abs($otherSpan[1]->diffInMinutes($span[0], false)),
                         abs($span[1]->diffInMinutes($otherSpan[0], false)),
                     ) / 60;
-                    if ($rest < self::DRIVER_REST_HOURS) {
+                    if ($rest < $this->t('driver_rest_hours')) {
                         return sprintf('Only %.1fh rest around %s', $rest, $label);
                     }
                 }
@@ -192,7 +177,7 @@ class ConflictDetectionService
                 $d->id, $d->name,
                 in_array($d->status, ['off', 'rest'], true) ? 'Marked ' . ($d->status === 'off' ? 'off' : 'rest day') : $clash('driver_id', $d->id, 'driver'),
             ))),
-            'supervisors' => $freeFirst(User::permission('jobs.view')->when($providerId, fn ($q) => $q->where('users.fleet_provider_id', $providerId))->orderBy('name')->get(['id', 'name'])
+            'supervisors' => $freeFirst(User::fieldSupervisors()->when($providerId, fn ($q) => $q->where('users.fleet_provider_id', $providerId))->orderBy('name')->get(['id', 'name'])
                 ->when($target->fieldSupervisor, fn ($list) => $list->push($target->fieldSupervisor)->unique('id'))
                 ->map(fn (User $u) => $option(
                     $u->id, $u->name, $clash('field_supervisor_id', $u->id, 'supervisor'),
@@ -410,12 +395,12 @@ class ConflictDetectionService
                     continue; // already reported as a double-booking
                 }
                 $gap = (int) $aEnd->diffInMinutes($bStart, true);
-                if ($gap < self::TURNAROUND_MINUTES) {
+                if ($gap < $this->t('turnaround_minutes')) {
                     $out[] = $this->make('TRN', $this->pairKey($a, $b, 'vehicle_id', $id), 'medium', 'Tight Turnaround',
                         sprintf('%s has only %d minute%s between %s and %s — no margin for traffic or loading.',
                             $this->resourceName($a, 'vehicle_id', $id) ?? 'Vehicle', $gap, $gap === 1 ? '' : 's', $this->label($a), $this->label($b)),
                         [$a, $b], $aEnd,
-                        sprintf('Allow at least %d minutes, or split across two resources.', self::TURNAROUND_MINUTES));
+                        sprintf('Allow at least %d minutes, or split across two resources.', $this->t('turnaround_minutes')));
                 }
             }
         }
@@ -444,7 +429,7 @@ class ConflictDetectionService
                     for ($j = $i + 1; $j < count($list); $j++) {
                         [$a, [$aStart, $aEnd]] = $list[$i];
                         [$b, [$bStart]] = $list[$j];
-                        if ($bStart->gte($aEnd->copy()->addMinutes(self::TURNAROUND_MINUTES))) {
+                        if ($bStart->gte($aEnd->copy()->addMinutes($this->t('turnaround_minutes')))) {
                             break;
                         }
 
@@ -474,12 +459,12 @@ class ConflictDetectionService
                             continue;
                         }
 
-                        if ($gap !== null && $gap < self::TURNAROUND_MINUTES) {
+                        if ($gap !== null && $gap < $this->t('turnaround_minutes')) {
                             $out[] = $this->make('TRN', $prefix . $pairKey, 'medium', 'Tight Turnaround',
                                 sprintf('%s has only %d minute%s between %s and %s — no margin for traffic or getting between locations.',
                                     $who, $gap, $gap === 1 ? '' : 's', $this->label($a), $this->label($b)),
                                 [$a, $b], $aStart,
-                                sprintf('Allow at least %d minutes, or reassign one side.', self::TURNAROUND_MINUTES));
+                                sprintf('Allow at least %d minutes, or reassign one side.', $this->t('turnaround_minutes')));
                             continue;
                         }
 
@@ -553,7 +538,7 @@ class ConflictDetectionService
             $expected = $reference->copy()->addMinutes($offset);
             $drift = $expected->diffInMinutes($m->window_start, false); // positive = starts later than policy
 
-            if (abs($drift) <= self::OFFSET_TOLERANCE_MINUTES) {
+            if (abs($drift) <= $this->t('offset_tolerance_minutes')) {
                 continue;
             }
 
@@ -640,7 +625,7 @@ class ConflictDetectionService
             }
 
             $matchLabel = $m->match->match_number ?: 'the match';
-            $deadline = $kickOff->copy()->subMinutes(self::KICKOFF_LEAD_MINUTES);
+            $deadline = $kickOff->copy()->subMinutes($this->t('kickoff_lead_minutes'));
 
             if ($m->window_start->gte($kickOff)) {
                 $out[] = $this->make('MCH', $m->id, 'high', 'Sets Off After Kick-Off',
@@ -655,7 +640,7 @@ class ConflictDetectionService
                         $this->label($m), $m->match->venue?->name ?? 'the venue',
                         $m->window_start->format('D H:i'), $m->window_start->diffInMinutes($kickOff), $matchLabel),
                     [$m], $m->window_start,
-                    sprintf('Teams are normally on site %d minutes before kick-off.', self::KICKOFF_LEAD_MINUTES));
+                    sprintf('Teams are normally on site %d minutes before kick-off.', $this->t('kickoff_lead_minutes')));
             }
         }
 
@@ -723,27 +708,36 @@ class ConflictDetectionService
             $driverMovements = collect($driverMovements);
             $name = $this->resourceName($driverMovements->first(), 'driver_id', $driverId) ?? 'A driver';
 
-            // One duty day per date, waiting time included: first start to last finish.
-            $days = $driverMovements
-                ->groupBy(fn ($m) => $this->wholeSpan($m, $spans)[0]->toDateString())
-                ->sortKeys()
-                ->map(fn ($group) => [
-                    'movements' => $group->sortBy(fn ($m) => $this->wholeSpan($m, $spans)[0]->timestamp)->values(),
-                    'start' => $group->map(fn ($m) => $this->wholeSpan($m, $spans)[0])->min(),
-                    'end' => $group->map(fn ($m) => $this->wholeSpan($m, $spans)[1])->max(),
-                ])
-                ->values();
+            // A duty day runs from its first start to its last finish, waiting included. It takes in every
+            // job that starts within the allowed span of that first start, or straight after the previous
+            // one (so work through midnight is one shift, not two days with a short "rest" between).
+            $days = [];
+            foreach ($driverMovements->sortBy(fn ($m) => $this->wholeSpan($m, $spans)[0]->timestamp)->values() as $m) {
+                [$start, $end] = $this->wholeSpan($m, $spans);
+                $last = count($days) - 1;
+
+                if ($last >= 0
+                    && ($start->timestamp - $days[$last]['start']->timestamp < $this->t('driver_span_hours') * 3600
+                        || $start->timestamp - $days[$last]['end']->timestamp < $this->t('standby_gap_minutes') * 60)
+                ) {
+                    $days[$last]['movements']->push($m);
+                    $days[$last]['end'] = $days[$last]['end']->max($end);
+                } else {
+                    $days[] = ['movements' => collect([$m]), 'start' => $start, 'end' => $end];
+                }
+            }
+            $days = collect($days);
 
             foreach ($days as $i => $day) {
                 $hours = $day['start']->diffInMinutes($day['end'], true) / 60;
 
-                if ($day['movements']->count() > 1 && $hours > self::DRIVER_SPAN_HOURS) {
+                if ($day['movements']->count() > 1 && $hours > $this->t('driver_span_hours')) {
                     $out[] = $this->make('DTY', $driverId . '-' . $day['start']->toDateString(), 'medium', 'Driver Shift Too Long',
                         sprintf('%s is on duty from %s to %s on %s — a %.1f hour span across %d movements.',
                             $name, $day['start']->format('H:i'), $day['end']->format('H:i'),
                             $day['start']->format('D j M'), $hours, $day['movements']->count()),
                         $day['movements']->all(), $day['start'],
-                        sprintf('Split the day across two drivers — the limit is %d hours.', self::DRIVER_SPAN_HOURS));
+                        sprintf('Split the day across two drivers — the limit is %d hours.', $this->t('driver_span_hours')));
                 }
 
                 $next = $days[$i + 1] ?? null;
@@ -752,13 +746,13 @@ class ConflictDetectionService
                 }
 
                 $rest = $day['end']->diffInMinutes($next['start'], true) / 60;
-                if ($rest < self::DRIVER_REST_HOURS) {
+                if ($rest < $this->t('driver_rest_hours')) {
                     $out[] = $this->make('RST', $driverId . '-' . $next['start']->toDateString(), 'medium', 'Insufficient Rest',
                         sprintf('%s finishes at %s on %s and starts again at %s on %s — only %.1f hours of rest.',
                             $name, $day['end']->format('H:i'), $day['end']->format('D j M'),
                             $next['start']->format('H:i'), $next['start']->format('D j M'), $rest),
                         [$day['movements']->last(), $next['movements']->first()], $next['start'],
-                        sprintf('Drivers need at least %d hours between shifts — reassign the early job.', self::DRIVER_REST_HOURS));
+                        sprintf('Drivers need at least %d hours between shifts — reassign the early job.', $this->t('driver_rest_hours')));
                 }
             }
         }
@@ -822,7 +816,7 @@ class ConflictDetectionService
 
             $run = null;
             foreach ($times->sort()->values() as $t) {
-                if ($run && $run[1]->diffInMinutes($t, true) < self::STANDBY_GAP_MINUTES) {
+                if ($run && $run[1]->diffInMinutes($t, true) < $this->t('standby_gap_minutes')) {
                     $run[1] = $t->copy();
                     continue;
                 }

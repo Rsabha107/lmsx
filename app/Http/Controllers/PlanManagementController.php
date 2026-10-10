@@ -216,7 +216,7 @@ class PlanManagementController extends Controller
             ->orderBy('name')
             ->get();
 
-        $supervisors = \App\Models\User::select('id', 'name', 'email')
+        $supervisors = \App\Models\User::fieldSupervisors()->select('id', 'name', 'job_title', 'fleet_provider_id')
             ->orderBy('name')
             ->get();
 
@@ -1266,6 +1266,13 @@ class PlanManagementController extends Controller
         foreach ($crewToCheck as [$role, $id]) {
             if ($id && ($why = \App\Support\CrewEligibility::violation($movement, $role, (int) $id))) {
                 throw \Illuminate\Validation\ValidationException::withMessages(["{$role}_id" => $why]);
+            }
+
+            // Same rule as Crew Assignment; whoever is already on the movement stays allowed.
+            if ($id && $role === 'supervisor'
+                && ! in_array((int) $id, $movement->resourceIds('field_supervisor_id'), true)
+                && ! \App\Models\User::fieldSupervisors()->whereKey($id)->exists()) {
+                throw \Illuminate\Validation\ValidationException::withMessages(['supervisor_id' => 'The selected supervisor cannot run jobs in the mobile app.']);
             }
         }
 

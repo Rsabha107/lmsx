@@ -25,10 +25,10 @@
           </span>
           <div class="ovs-heading">
             <h4 class="ovs-title">Checkpoint</h4>
-            <p class="ovs-sub">{{ state ? (checkpoint?.label || checkpoint?.name || 'Pick the checkpoint to override') : 'Optional — pick Done or Skipped to override it' }}</p>
+            <p class="ovs-sub">{{ state ? (checkpoint?.label || checkpoint?.name || 'Pick the checkpoint to override') : 'Optional — pick Done, Skipped or Not processed to override it' }}</p>
           </div>
           <span v-if="state" :class="['ovs-chip', state === 'done' ? 'ovs-chip--ok' : 'ovs-chip--muted']">
-            {{ state === 'done' ? 'Mark done' : 'Skip' }}
+            {{ state === 'done' ? 'Mark done' : state === 'skipped' ? 'Skip' : 'Reset' }}
           </span>
         </header>
 
@@ -56,7 +56,7 @@
             <label class="override-label">CHECKPOINT (REQUIRED)</label>
             <select v-model="checkpoint" class="override-select override-select--checkpoints">
               <option :value="null" disabled>Select a checkpoint…</option>
-              <option v-for="cp in job?.checkpoints" :key="cp.id" :value="cp" :class="cp.state === 'done' ? 'checkpoint-option--done' : ''">
+              <option v-for="cp in job?.checkpoints" :key="cp.id" :value="cp" :disabled="state === 'pending' && !['done', 'skipped'].includes(cp.state)" :class="cp.state === 'done' ? 'checkpoint-option--done' : ''">
                 {{ cp.label || cp.name }} — {{ cp.status || cp.state }} {{ cp.state === 'done' && cp.scheduled_at && cp.completed_at ? `(${cp.scheduled_at} → ${cp.completed_at} ✓)` : `(scheduled ${cp.scheduled_at || cp.at})` }}{{ (needsPhotoOf(cp) || needsSignatureOf(cp)) ? ' 📋' : '' }}
               </option>
             </select>
@@ -176,7 +176,7 @@
             <label class="override-label">VEHICLE</label>
             <select v-model="vehicleId" class="override-select">
               <option :value="null" disabled>Unassigned — pick a vehicle</option>
-              <option v-for="v in vehicles" :key="v.id" :value="v.id">{{ vehicleOptionLabel(v) }}</option>
+              <option v-for="v in vehicles" :key="v.id" :value="v.id">{{ vehicleOptionLabel(v) }}{{ crewNote('vehicles', v.id) }}</option>
             </select>
             <div v-if="vehicleId !== (job?.vehicle_id ?? null)" class="override-field-hint override-field-hint--change">
               Changes from {{ job?.vehicle || 'Unassigned' }}
@@ -187,7 +187,7 @@
               <label class="override-label">DRIVER</label>
               <select v-model="driverId" class="override-select">
                 <option :value="null" disabled>Unassigned — pick a driver</option>
-                <option v-for="d in drivers" :key="d.id" :value="d.id">{{ d.name }}</option>
+                <option v-for="d in drivers" :key="d.id" :value="d.id">{{ d.name }}{{ crewNote('drivers', d.id) }}</option>
               </select>
               <div v-if="driverId !== (job?.driver_id ?? null)" class="override-field-hint override-field-hint--change">
                 Changes from {{ job?.driver || 'Unassigned' }}
@@ -197,7 +197,7 @@
               <label class="override-label">SUPERVISOR</label>
               <select v-model="supervisorId" class="override-select">
                 <option :value="null" disabled>Unassigned — pick a supervisor</option>
-                <option v-for="s in supervisors" :key="s.id" :value="s.id">{{ s.name }}</option>
+                <option v-for="s in supervisorOptions" :key="s.id" :value="s.id">{{ personLabel(s) }}{{ crewNote('supervisors', s.id) }}</option>
               </select>
               <div v-if="supervisorId !== (job?.supervisor_id ?? null)" class="override-field-hint override-field-hint--change">
                 Changes from {{ job?.supervisor || 'Unassigned' }}
@@ -291,6 +291,8 @@ import { ref, computed, watch } from 'vue';
 import { usePage } from '@inertiajs/vue3';
 import Modal from './Modal.vue';
 import Button from './Button.vue';
+import { useCrewBusy } from '../Composables/useCrewBusy';
+import { supervisorsFor, personLabel } from '../Composables/crewPeople';
 
 /**
  * The Jobs Queue override: complete or skip a checkpoint (with time, evidence
@@ -307,9 +309,13 @@ const props = defineProps({
 const emit = defineEmits(['close', 'saved']);
 const page = usePage();
 
+const { note: crewNote } = useCrewBusy(() => (props.show ? props.job?.movement_id ?? null : null));
+const supervisorOptions = computed(() => supervisorsFor(props.supervisors, props.job?.fleet_provider_id, [props.job?.supervisor_id]));
+
 const STATES = [
   { value: 'done', label: 'Done', icon: '✓', desc: 'Confirm completion manually' },
   { value: 'skipped', label: 'Skipped', icon: '↷', desc: 'No longer applies to this job' },
+  { value: 'pending', label: 'Not processed', icon: '↺', desc: 'Undo it and clear what was recorded' },
 ];
 
 const processing = ref(false);
@@ -378,6 +384,10 @@ watch(checkpoint, syncBaggage);
 // A hidden reason must not be sent with a crew-only change.
 watch(state, (s) => {
   if (!s) reason.value = '';
+  // Only a done or skipped checkpoint can be reset.
+  if (s === 'pending' && !['done', 'skipped'].includes(checkpoint.value?.state)) {
+    checkpoint.value = props.job?.checkpoints?.find(c => ['done', 'skipped'].includes(c.state)) ?? checkpoint.value;
+  }
 });
 
 // The canvas mounts and unmounts with the state and checkpoint picked.
@@ -496,6 +506,7 @@ const canSubmit = computed(() => {
   // Without a new state there is only a crew or flight change to save.
   if (!state.value) return crewChanged.value || flightChanged.value;
   if (!checkpoint.value || !reason.value) return false;
+  if (state.value === 'pending' && !['done', 'skipped'].includes(checkpoint.value.state)) return false;
   if (state.value === 'done') {
     if (needsPhoto.value && !photo.value) return false;
     if (needsSignature.value && !signature.value) return false;
@@ -728,6 +739,10 @@ async function submit() {
 .override-state-btn--done.override-state-btn--active .override-state-icon,
 .override-state-btn--done.override-state-btn--active strong { color: #166534; }
 .override-state-btn--skipped.override-state-btn--active { border-color: var(--ink3); background: var(--panel); }
+.override-state-btn--pending.override-state-btn--active { border-color: #b45309; background: #fffbeb; }
+.override-state-btn--pending.override-state-btn--active .override-state-check { background: #b45309; border-color: #b45309; }
+.override-state-btn--pending.override-state-btn--active .override-state-icon,
+.override-state-btn--pending.override-state-btn--active strong { color: #b45309; }
 
 .override-two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .override-four-col { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 12px; }

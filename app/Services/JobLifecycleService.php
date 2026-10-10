@@ -305,8 +305,12 @@ class JobLifecycleService
     {
         $state = $data['state'];
 
-        if (! in_array($state, ['done', 'skipped', 'missed'], true)) {
+        if (! in_array($state, ['done', 'skipped', 'missed', 'pending'], true)) {
             throw new RuntimeException("Cannot override a checkpoint to '{$state}'.");
+        }
+
+        if ($state === 'pending') {
+            return $this->resetCheckpoint($checkpoint, $data);
         }
 
         $stored = [];
@@ -386,6 +390,72 @@ class JobLifecycleService
 
             throw $e;
         }
+    }
+
+    /**
+     * Put a done or skipped checkpoint back to not processed, clearing what the
+     * completion or skip recorded (including its photo and signature). The reason
+     * and who did it stay in the audit trail only.
+     *
+     * @param  array{reason: string, driver_id?: ?int, supervisor_id?: ?int, vehicle_id?: ?int}  $data
+     *
+     * @throws RuntimeException when the checkpoint is not resolved or the job is finished
+     */
+    private function resetCheckpoint(JobCheckpoint $checkpoint, array $data): JobCheckpoint
+    {
+        $files = [];
+
+        $result = DB::transaction(function () use (&$files, $checkpoint, $data) {
+            $this->lockCheckpoint($checkpoint);
+            $job = $checkpoint->job;
+
+            if (! in_array($checkpoint->state, self::RESOLVED_STATES, true)) {
+                throw new RuntimeException('Checkpoint has not been processed, so there is nothing to reset.');
+            }
+
+            if ($job && in_array($job->status, ['completed', 'cancelled'], true)) {
+                throw new RuntimeException("Job {$job->job_id} is {$job->status}; its checkpoints can no longer be reset.");
+            }
+
+            $was = $checkpoint->state;
+            $files = array_filter([$checkpoint->photo_path, $checkpoint->signature_path]);
+
+            $checkpoint->update([
+                'state' => 'pending',
+                'completed_at' => null, 'completed_by' => null, 'completion_method' => null,
+                'actual_duration_seconds' => null, 'is_on_time' => null, 'delay_minutes' => null,
+                'skip_reason' => null, 'skipped_by' => null, 'skipped_at' => null, 'exception_type' => null,
+                'photo_path' => null, 'signature_path' => null, 'photo_data' => null, 'signature_data' => null, 'notes' => null,
+                'planned_bags' => null, 'bags_loaded' => 0, 'food_bags' => null, 'oversized_pieces' => 0,
+                'gps_latitude' => null, 'gps_longitude' => null,
+                'event_at' => null, 'received_at' => null, 'clock_skew_seconds' => null, 'time_source' => null,
+                'was_overridden' => false, 'override_reason' => null, 'override_notes' => null,
+                'overridden_by' => null, 'overridden_at' => null, 'override_actual_time' => null,
+            ]);
+
+            if ($job) {
+                $this->recountProgress($job);
+            }
+
+            AuditLog::record(
+                action: 'Checkpoint reset',
+                target: ($job?->job_id ?? 'JOB').' · '.$checkpoint->name,
+                meta: $was.' → pending · '.$data['reason'],
+                subject: $job,
+                eventId: $job?->event_id,
+            );
+
+            if ($job) {
+                $this->reassignCrew($job, $data['driver_id'] ?? null, $data['supervisor_id'] ?? null, $data['reason'], $data['vehicle_id'] ?? null);
+            }
+
+            return $checkpoint->fresh();
+        });
+
+        // Only once the reset is committed, so a rollback keeps the files.
+        $this->discardEvidence($files);
+
+        return $result;
     }
 
     /**

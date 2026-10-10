@@ -221,13 +221,13 @@ function confirmDelete() {
   });
 }
 
+// Not deep: a partial reload keeps the old flash object, and a deep watcher would toast it again.
 watch(
   () => page.props.flash,
   (flash) => {
     if (flash?.success) showSuccessToast(flash.success);
     if (flash?.error) showErrorToast(flash.error);
-  },
-  { deep: true }
+  }
 );
 </script>
 

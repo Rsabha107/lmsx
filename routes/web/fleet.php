@@ -42,6 +42,9 @@ Route::middleware('auth')->group(function () {
             Route::put('/drivers/{driver}', [FleetController::class, 'updateDriver'])->name('drivers.update');
             Route::delete('/drivers/{driver}', [FleetController::class, 'destroyDriver'])->name('drivers.destroy');
 
+            Route::post('/supervisors', [FleetController::class, 'storeSupervisor'])->name('supervisors.store');
+            Route::put('/supervisors/{user}', [FleetController::class, 'updateSupervisor'])->name('supervisors.update');
+
             Route::post('/providers', [FleetController::class, 'storeProvider'])->name('providers.store');
             Route::post('/pool', [FleetController::class, 'setPool'])->name('pool');
             Route::put('/providers/{provider}', [FleetController::class, 'updateProvider'])->name('providers.update');

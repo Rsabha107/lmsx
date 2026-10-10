@@ -95,7 +95,37 @@ class SettingsController extends Controller
                 'utilities' => $this->settingsService->getGlobalFlag(SettingsService::FLAG_UTILITIES),
             ],
             'mobileOnlyUsers' => $this->mobileOnlyUserCount(),
+            'conflictThresholds' => collect(SettingsService::CONFLICT_THRESHOLDS)
+                ->map(fn (array $t, string $key) => $t + ['key' => $key, 'value' => $this->settingsService->getThreshold($key)])
+                ->values(),
         ]);
+    }
+
+    /** Saves the limits the conflict checks judge against. */
+    public function updateThresholds(Request $request)
+    {
+        $rules = [];
+        foreach (SettingsService::CONFLICT_THRESHOLDS as $key => $t) {
+            $rules[$key] = "required|integer|min:{$t['min']}|max:{$t['max']}";
+        }
+        $validated = $request->validate($rules);
+
+        $changes = [];
+        foreach ($validated as $key => $value) {
+            $before = $this->settingsService->getThreshold($key);
+            if ($before === (int) $value) {
+                continue;
+            }
+
+            $this->settingsService->setSetting("conflict.{$key}", (int) $value, Setting::SCOPE_GLOBAL, null, SettingsService::CONFLICT_THRESHOLDS[$key]['label']);
+            $changes[$key] = ['from' => $before, 'to' => (int) $value];
+        }
+
+        if ($changes) {
+            AuditLog::change('Conflict thresholds changed', null, $changes);
+        }
+
+        return back()->with('success', $changes ? 'Conflict rules updated.' : 'No changes to save.');
     }
 
     /**

@@ -12,10 +12,11 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Illuminate\Support\Facades\Auth;
 use Laravel\Sanctum\HasApiTokens;
 use Spatie\Permission\Traits\HasRoles;
 
-#[Fillable(['name', 'email', 'password', 'provider', 'provider_id', 'fleet_provider_id'])]
+#[Fillable(['name', 'email', 'phone', 'job_title', 'password', 'provider', 'provider_id', 'fleet_provider_id'])]
 #[Hidden(['password', 'remember_token'])]
 class User extends Authenticatable
 {
@@ -105,6 +106,18 @@ class User extends Authenticatable
         }
 
         return in_array($area, $this->functionalAreaCodes(), true);
+    }
+
+    /**
+     * Who can be put on a movement as a supervisor: the field supervisors (ground_control), and only
+     * the viewer's own provider's people when the viewer is provider-restricted.
+     */
+    public function scopeFieldSupervisors($query, ?self $viewer = null)
+    {
+        $viewer ??= Auth::user();
+
+        return $query->whereHas('roles', fn ($q) => $q->where('name', 'ground_control'))
+            ->when($viewer?->isProviderRestricted(), fn ($q) => $q->where('users.fleet_provider_id', $viewer->fleet_provider_id ?? 0));
     }
 
     /**

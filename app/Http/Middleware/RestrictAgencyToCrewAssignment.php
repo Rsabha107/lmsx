@@ -16,12 +16,15 @@ class RestrictAgencyToCrewAssignment
 {
     private const ALLOWED_WRITES = [
         'movements.assign-crew',
+        'movements.assign-crew-many',
         'fleet.vehicles.store',
         'fleet.vehicles.update',
         'fleet.vehicles.destroy',
         'fleet.drivers.store',
         'fleet.drivers.update',
         'fleet.drivers.destroy',
+        'fleet.supervisors.store',
+        'fleet.supervisors.update',
         'fleet.providers.store',
         'fleet.providers.update',
         'fleet.providers.destroy',

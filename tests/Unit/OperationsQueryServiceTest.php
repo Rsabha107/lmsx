@@ -266,4 +266,88 @@ class OperationsQueryServiceTest extends TestCase
         $this->assertSame(2, $byName['Baggage loading']['sample_count']);
         $this->assertSame(0.0, $byName['Team boarded']['avg_delay_minutes']);
     }
+
+    public function test_movements_by_date_lists_that_day_only_in_time_order_for_the_event(): void
+    {
+        $event = $this->createEvent();
+        $otherEvent = $this->createEvent();
+        $plan = $this->createPlan($event);
+        $team = $this->createTeam($event);
+
+        $late = $this->createMovement($event, $plan, $team, ['window_start' => '2026-11-27 15:00']);
+        $early = $this->createMovement($event, $plan, $team, ['window_start' => '2026-11-27 08:30']);
+        $otherDay = $this->createMovement($event, $plan, $team, ['window_start' => '2026-11-28 09:00']);
+        $cancelled = $this->createMovement($event, $plan, $team, ['window_start' => '2026-11-27 10:00']);
+        foreach ([$late, $early, $otherDay] as $movement) {
+            $this->createJob($event, $movement, $team);
+        }
+        $this->createJob($event, $cancelled, $team, ['status' => 'cancelled']);
+        $otherTeam = $this->createTeam($otherEvent);
+        $this->createJob($otherEvent, $this->createMovement($otherEvent, $this->createPlan($otherEvent), $otherTeam, ['window_start' => '2026-11-27 09:00']), $otherTeam);
+
+        $user = $this->createUserWithRole('admin');
+
+        $result = app(OperationsQueryService::class)->getMovementsByDate($event->id, $user, '2026-11-27');
+
+        $this->assertSame('2026-11-27', $result['date']);
+        $this->assertSame(2, $result['total']);
+        $this->assertSame(['08:30', '15:00'], array_column($result['movements'], 'window_start'));
+    }
+
+    public function test_a_job_reference_or_movement_code_finds_the_movement_and_job(): void
+    {
+        $event = $this->createEvent();
+        $team = $this->createTeam($event);
+        $movement = $this->createMovement($event, $this->createPlan($event), $team);
+        $job = $this->createJob($event, $movement, $team);
+
+        $service = app(OperationsQueryService::class);
+
+        $this->assertSame($movement->id, $service->resolveMovementId($job->job_id, $event->id));
+        $this->assertSame($movement->id, $service->resolveMovementId($movement->code, $event->id));
+        $this->assertSame($movement->id, $service->resolveMovementId((string) $movement->id, $event->id));
+        $this->assertSame($job->id, $service->resolveJobId($job->job_id, $event->id));
+        $this->assertSame($job->id, $service->resolveJobId($movement->code, $event->id));
+        $this->assertNull($service->resolveMovementId('JOB-NOPE', $event->id));
+        // Another event's job is not found by its reference.
+        $this->assertNull($service->resolveJobId($job->job_id, $this->createEvent()->id));
+    }
+
+    public function test_movements_by_date_includes_planned_movements_that_have_no_job_yet(): void
+    {
+        $event = $this->createEvent();
+        $plan = $this->createPlan($event);
+        $team = $this->createTeam($event);
+
+        $withJob = $this->createMovement($event, $plan, $team, ['window_start' => '2026-11-17 09:00']);
+        $this->createJob($event, $withJob, $team);
+        $this->createMovement($event, $plan, $team, ['window_start' => '2026-11-17 11:00']);
+        $this->createMovement($event, $plan, $team, ['window_start' => '2026-11-17 13:00', 'status' => 'cancelled']);
+
+        $user = $this->createUserWithRole('admin');
+
+        $result = app(OperationsQueryService::class)->getMovementsByDate($event->id, $user, '2026-11-17');
+
+        $this->assertSame(2, $result['total']);
+        $this->assertSame([true, false], array_column($result['movements'], 'job_generated'));
+        $this->assertNotNull($result['movements'][1]['movement_code']);
+        $this->assertNull($result['movements'][1]['id']);
+    }
+
+    public function test_movements_by_date_can_be_narrowed_to_a_team(): void
+    {
+        $event = $this->createEvent();
+        $plan = $this->createPlan($event);
+        $teamA = $this->createTeam($event);
+        $teamB = $this->createTeam($event);
+        $this->createJob($event, $this->createMovement($event, $plan, $teamA, ['window_start' => '2026-11-27 08:00']), $teamA);
+        $this->createJob($event, $this->createMovement($event, $plan, $teamB, ['window_start' => '2026-11-27 09:00']), $teamB);
+
+        $user = $this->createUserWithRole('admin');
+
+        $result = app(OperationsQueryService::class)->getMovementsByDate($event->id, $user, '2026-11-27', $teamB->team_name);
+
+        $this->assertSame(1, $result['total']);
+        $this->assertSame($teamB->team_name, $result['movements'][0]['team']);
+    }
 }

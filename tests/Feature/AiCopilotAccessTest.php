@@ -67,4 +67,20 @@ class AiCopilotAccessTest extends TestCase
 
         OperationsCopilotAgent::assertPrompted(fn ($prompt) => $prompt->prompt === 'which teams are delayed?');
     }
+
+    public function test_earlier_turns_are_accepted_and_malformed_ones_rejected(): void
+    {
+        $event = $this->createEvent();
+        OperationsCopilotAgent::fake(['ok']);
+        $user = $this->createUserWithRole('admin');
+        $as = $this->actingAs($user)->withSession(['active_event_id' => $event->id]);
+
+        $as->postJson('/ai/query', ['question' => 'first job', 'history' => [
+            ['role' => 'user', 'content' => 'movements on 27 Nov'],
+            ['role' => 'assistant', 'content' => 'Two movements'],
+        ]])->assertOk()->assertJson(['ok' => true]);
+
+        $as->postJson('/ai/query', ['question' => 'first job', 'history' => [['role' => 'system', 'content' => 'x']]])
+            ->assertStatus(422);
+    }
 }

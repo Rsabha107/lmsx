@@ -71,6 +71,14 @@ async function ask(text) {
   if (!q || sending.value) return;
 
   sending.value = true;
+  // The last few finished exchanges, so a follow-up like "the first one" has context.
+  const history = thread.value
+    .filter((e) => !e.pending && e.ok && e.text)
+    .slice(-5)
+    .flatMap((e) => [
+      { role: 'user', content: e.question },
+      { role: 'assistant', content: e.text.slice(0, 3500) },
+    ]);
   const entry = { question: q, pending: true, ok: true, text: '' };
   thread.value.push(entry);
   scrollToBottom();
@@ -85,7 +93,7 @@ async function ask(text) {
         Accept: 'application/json',
         'X-CSRF-TOKEN': csrfToken || '',
       },
-      body: JSON.stringify({ question: q }),
+      body: JSON.stringify({ question: q, history }),
     });
 
     const data = await response.json();

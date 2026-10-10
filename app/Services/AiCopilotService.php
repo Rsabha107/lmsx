@@ -11,14 +11,15 @@ use Throwable;
 class AiCopilotService
 {
     /**
+     * @param  array<int, array{role?: mixed, content?: mixed}>  $history  earlier turns of this chat, oldest first
      * @return array{ok: bool, answer?: string, message?: string}
      */
-    public function ask(string $question, User $user, int $eventId): array
+    public function ask(string $question, User $user, int $eventId, array $history = []): array
     {
         $startedAt = microtime(true);
 
         try {
-            $response = app(OperationsCopilotAgent::class)->prompt($question);
+            $response = app()->make(OperationsCopilotAgent::class, ['history' => $history])->prompt($question);
 
             $this->logInteraction(
                 user: $user,

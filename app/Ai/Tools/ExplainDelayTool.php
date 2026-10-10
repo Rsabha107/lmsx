@@ -16,27 +16,31 @@ class ExplainDelayTool implements Tool
 
     public function description(): string
     {
-        return 'Get a checkpoint-by-checkpoint delay breakdown for one specific job by its numeric ID — which checkpoint contributed the most delay, and how much time (if any) was recovered afterward.';
+        return 'Get a checkpoint-by-checkpoint delay breakdown for one job — which checkpoint contributed the most delay, and how much time (if any) was recovered afterward. Pass a job id like JOB-20260927-0001, a movement code like TRP-00003, or a numeric id; no need to ask the user for a numeric id.';
     }
 
     public function handle(Request $request): string
     {
         $user = $this->currentUser();
+        $eventId = $this->currentEventId();
 
-        if (! $user || ! $request['job_id']) {
-            return json_encode(['error' => 'job_id is required.']);
+        $reference = trim((string) ($request['reference'] ?? $request['job_id'] ?? ''));
+
+        if (! $user || ! $eventId || $reference === '') {
+            return json_encode(['error' => 'A job id, movement code or id is required.']);
         }
 
-        $result = $this->movements->explainDelay((int) $request['job_id'], $user);
+        $jobId = $this->movements->resolveJobId($reference, $eventId);
+        $result = $jobId ? $this->movements->explainDelay($jobId, $user) : null;
 
-        return json_encode($result ?? ['error' => 'Job not found, or not visible to you.']);
+        return json_encode($result ?? ['error' => "No job matching \"{$reference}\" was found, or it is not visible to you."]);
     }
 
     public function schema(JsonSchema $schema): array
     {
         return [
-            'job_id' => $schema->integer()
-                ->description('The numeric ID of the job to explain (jobs_operations.id, not the JOB-xxxx string).')
+            'reference' => $schema->string()
+                ->description('Job id (JOB-...), movement code (TRP-...) or numeric job id.')
                 ->required(),
         ];
     }

@@ -16,27 +16,31 @@ class GetMovementDetailsTool implements Tool
 
     public function description(): string
     {
-        return 'Get full details (route, timing, delay, checkpoints) for one specific movement by its numeric ID.';
+        return 'Get full details (route, timing, delay, checkpoints) for one movement or job. Pass whatever identifier you have: a job id like JOB-20260927-0001, a movement code like TRP-00003, or a numeric id. No need to ask the user for a numeric id.';
     }
 
     public function handle(Request $request): string
     {
         $user = $this->currentUser();
+        $eventId = $this->currentEventId();
 
-        if (! $user || ! $request['movement_id']) {
-            return json_encode(['error' => 'movement_id is required.']);
+        $reference = trim((string) ($request['reference'] ?? $request['movement_id'] ?? ''));
+
+        if (! $user || ! $eventId || $reference === '') {
+            return json_encode(['error' => 'A job id, movement code or id is required.']);
         }
 
-        $details = $this->movements->getMovementDetails((int) $request['movement_id'], $user);
+        $movementId = $this->movements->resolveMovementId($reference, $eventId);
+        $details = $movementId ? $this->movements->getMovementDetails($movementId, $user) : null;
 
-        return json_encode($details ?? ['error' => 'Movement not found, or not visible to you.']);
+        return json_encode($details ?? ['error' => "No movement or job matching \"{$reference}\" was found, or it is not visible to you."]);
     }
 
     public function schema(JsonSchema $schema): array
     {
         return [
-            'movement_id' => $schema->integer()
-                ->description('The numeric ID of the movement to look up.')
+            'reference' => $schema->string()
+                ->description('Job id (JOB-...), movement code (TRP-...) or numeric movement id.')
                 ->required(),
         ];
     }

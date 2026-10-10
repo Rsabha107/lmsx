@@ -70,59 +70,6 @@ class LmsController extends Controller
         ]);
     }
 
-    public function schedule(Request $request): Response
-    {
-        // Accept an optional ?date=YYYY-MM-DD so the page can browse other
-        // days' movements; malformed input silently falls back to today
-        // rather than erroring out.
-        $date = $request->query('date');
-        try {
-            $date = $date ? \Carbon\Carbon::parse($date)->toDateString() : now()->toDateString();
-        } catch (\Exception) {
-            $date = now()->toDateString();
-        }
-
-        $movements = JobOperation::with(['movement.team', 'movement.flight', 'vehicle'])
-            ->join('movements', 'jobs_operations.movement_id', '=', 'movements.id')
-            ->whereDate('movements.window_start', $date)
-            ->orderBy('movements.window_start', 'asc')
-            ->select('jobs_operations.*')
-            ->get()
-            ->map(function ($job) {
-                $movement = $job->movement;
-                $team = $movement?->team;
-                $delay = $movement?->delay_minutes;
-
-                $status = 'scheduled';
-                if ($delay > 0) {
-                    $status = 'delayed';
-                } elseif ($job->status === 'completed') {
-                    $status = 'done';
-                } elseif ($job->status === 'in-progress') {
-                    $status = 'in-progress';
-                }
-
-                return [
-                    'id' => $job->job_id ?? 'J-' . $job->id,
-                    'code' => $team?->code ?? 'UNK',
-                    'team' => $team?->team_name ?? 'Unknown Team',
-                    'from' => $movement?->from_location ?? 'Unknown',
-                    'to' => $movement?->to_location ?? 'Unknown',
-                    'dep' => $movement?->window_start?->format('H:i') ?? '--:--',
-                    'arr' => $movement?->window_end?->format('H:i') ?? '--:--',
-                    'pax' => $movement?->passengers ?? $movement?->flight?->party_size_total ?? $team?->party_size_total ?? 0,
-                    'vehicle' => $job->vehicle ? ($job->vehicle->code ?? $job->vehicle->plate_number ?? $job->vehicle->vehicle_type ?? 'Unassigned') : 'Unassigned',
-                    'status' => $status,
-                    'delay' => $delay > 0 ? $delay : null,
-                ];
-            });
-
-        return Inertia::render('Schedule', [
-            'schedule' => $movements,
-            'scheduleDate' => $date,
-        ]);
-    }
-
     public function plans(Request $request): Response
     {
         $activeEventId = $request->session()->get('active_event_id');

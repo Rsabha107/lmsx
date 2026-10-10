@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\JobCheckpoint;
 use App\Models\JobOperation;
+use App\Support\ScheduleRows;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
@@ -27,6 +28,7 @@ class DayBoardController extends Controller
             $day = now()->startOfDay();
         }
 
+        $view = $request->query('view') === 'schedule' ? 'schedule' : 'board';
         $eventId = $request->session()->get('active_event_id');
 
         $jobs = $eventId
@@ -50,9 +52,26 @@ class DayBoardController extends Controller
 
         return Inertia::render('DayBoard', [
             'date' => $day->toDateString(),
+            'view' => $view,
             'jobs' => $jobs,
+            'schedule' => $view === 'schedule' && $eventId ? $this->scheduleRows($request, $eventId, $day) : [],
             'dayCounts' => $eventId ? $this->dayCounts($request, $eventId) : [],
         ]);
+    }
+
+    /** The Movement Schedule rows for the day, limited to what this user may see. */
+    private function scheduleRows(Request $request, int $eventId, Carbon $day): array
+    {
+        return $this->scoped($request, $eventId, 'jobs_operations.')
+            ->with(ScheduleRows::RELATIONS)
+            ->join('movements', 'jobs_operations.movement_id', '=', 'movements.id')
+            ->where('movements.window_start', '>=', $day)
+            ->where('movements.window_start', '<', $day->copy()->addDay())
+            ->orderBy('movements.window_start')
+            ->select('jobs_operations.*')
+            ->get()
+            ->map(fn (JobOperation $job) => ScheduleRows::present($job))
+            ->all();
     }
 
     /** Jobs the user may see: active event, their functional areas, and only their own unless they may see others'. */

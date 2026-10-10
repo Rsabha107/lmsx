@@ -19,6 +19,10 @@ class AiCopilotController extends Controller
     {
         $validated = $request->validate([
             'question' => ['required', 'string', 'max:500'],
+            // Earlier turns of this chat, so follow-ups like "the first one" make sense.
+            'history' => ['sometimes', 'array', 'max:12'],
+            'history.*.role' => ['required', 'in:user,assistant'],
+            'history.*.content' => ['required', 'string', 'max:4000'],
         ]);
 
         $eventId = $request->session()->get('active_event_id');
@@ -30,7 +34,7 @@ class AiCopilotController extends Controller
             ]);
         }
 
-        $result = $copilot->ask($validated['question'], $request->user(), (int) $eventId);
+        $result = $copilot->ask($validated['question'], $request->user(), (int) $eventId, $validated['history'] ?? []);
 
         return response()->json($result);
     }

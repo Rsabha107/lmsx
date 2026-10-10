@@ -1,34 +1,5 @@
 <template>
-  <app-layout>
-    <!-- No Active Event State -->
-    <div v-if="!hasActiveEvent" class="empty-state-full">
-      <div class="empty-state-icon">📅</div>
-      <h2 class="empty-state-title">No Active Event</h2>
-      <p class="empty-state-text">
-        Please select an event from the dropdown above to view the schedule.
-      </p>
-    </div>
-
-    <!-- Active Event Content -->
-    <div v-else>
-    <div class="page-header">
-      <div>
-        <h1 class="page-title">Movement Schedule</h1>
-        <p class="page-sub">{{ schedule.length }} movement{{ schedule.length === 1 ? '' : 's' }} {{ isToday ? 'today' : '' }} · {{ dateLabel }}</p>
-      </div>
-      <div class="page-header-actions">
-        <DatePicker :model-value="selectedDate" @update:model-value="onDateChange" />
-        <RefreshButton :only="['schedule', 'scheduleDate']" />
-        <div class="filter-tabs">
-          <button v-for="f in filters" :key="f.value"
-            :class="['filter-tab', activeFilter === f.value ? 'filter-tab--active' : '']"
-            @click="activeFilter = f.value">
-            {{ f.label }}
-          </button>
-        </div>
-      </div>
-    </div>
-
+  <div>
     <!-- Gantt-style timeline header -->
     <div class="schedule-card">
       <div class="gantt-header">
@@ -39,7 +10,7 @@
       </div>
 
       <div class="gantt-rows">
-        <div v-for="mv in filtered" :key="mv.id" class="gantt-row">
+        <div v-for="mv in schedule" :key="mv.id" class="gantt-row">
           <div class="gantt-info">
             <span class="team-badge">{{ mv.code }}</span>
             <div class="gantt-meta">
@@ -75,7 +46,7 @@
           </tr>
         </thead>
         <tbody>
-          <tr v-for="mv in filtered" :key="mv.id">
+          <tr v-for="mv in schedule" :key="mv.id">
             <td class="mono">{{ mv.id }}</td>
             <td>
               <div class="flex-cell">
@@ -97,69 +68,18 @@
         </tbody>
       </table>
     </div>
-    </div>
-  </app-layout>
+  </div>
 </template>
 
 <script setup>
-import { useStatusLabels } from '../Composables/useStatusLabels';
-import { ref, computed, watch } from 'vue';
-import { router, usePage } from '@inertiajs/vue3';
-import AppLayout from '../Components/AppLayout.vue';
-import StatusPill from '../Components/StatusPill.vue';
-import RefreshButton from '../Components/RefreshButton.vue';
-import DatePicker from '../Components/DatePicker.vue';
+import StatusPill from './StatusPill.vue';
+import { useScheduleStatus } from '../Composables/useScheduleFilter';
 
-const page = usePage();
-const hasActiveEvent = computed(() => !!page.props.activeEventId);
-
-const props = defineProps({
+defineProps({
   schedule: { type: Array, default: () => [] },
-  scheduleDate: { type: String, default: null },
 });
 
-function todayIso() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
-
-const selectedDate = ref(props.scheduleDate || todayIso());
-
-// Keep the date picker in sync when navigation happens elsewhere (browser
-// back/forward, or another component reloading the page with a new date).
-watch(() => props.scheduleDate, (v) => {
-  if (v) selectedDate.value = v;
-});
-
-const isToday = computed(() => selectedDate.value === todayIso());
-
-const dateLabel = computed(() => {
-  const d = new Date(`${selectedDate.value}T00:00:00`);
-  return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
-});
-
-function onDateChange(dateStr) {
-  selectedDate.value = dateStr;
-  router.get('/schedule', { date: dateStr }, {
-    preserveState: true,
-    preserveScroll: true,
-    only: ['schedule', 'scheduleDate'],
-  });
-}
-
-const { statusLabel: sharedStatusLabel } = useStatusLabels();
-
-const filters = computed(() => [
-  { value: 'all', label: 'All' },
-  ...['in-progress', 'scheduled', 'delayed'].map((value) => ({ value, label: statusLabel(value) })),
-]);
-const activeFilter = ref('all');
-
-const filtered = computed(() =>
-  activeFilter.value === 'all'
-    ? props.schedule
-    : props.schedule.filter(m => m.status === activeFilter.value)
-);
+const { statusTone, statusLabel } = useScheduleStatus();
 
 const timeSlots = ['13:00','14:00','15:00','16:00','17:00','18:00','22:00','23:00'];
 
@@ -177,59 +97,9 @@ function barStyle(mv) {
   const width = ((toMin(mv.arr) - toMin(mv.dep)) / SPAN_MIN) * 100;
   return { left: `${Math.max(0, left).toFixed(2)}%`, width: `${Math.max(1, width).toFixed(2)}%` };
 }
-
-const statusMap = {
-  'in-progress': { tone: 'live',    label: 'In Progress' },
-  'scheduled':   { tone: 'primary', label: 'Scheduled' },
-  'delayed':     { tone: 'warn',    label: 'Delayed' },
-  'done':        { tone: 'ok',      label: 'Done' },
-};
-function statusTone(s) { return statusMap[s]?.tone ?? 'neutral'; }
-function statusLabel(s) { return sharedStatusLabel(s, statusMap[s]?.label); }
 </script>
 
 <style scoped>
-.empty-state-full {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  min-height: 60vh;
-  text-align: center;
-}
-.empty-state-icon {
-  font-size: 64px;
-  margin-bottom: 16px;
-}
-.empty-state-title {
-  font-size: 24px;
-  font-weight: 700;
-  color: var(--ink);
-  margin-bottom: 8px;
-}
-.empty-state-text {
-  font-size: 14px;
-  color: var(--ink3);
-  max-width: 400px;
-}
-
-.page-header {
-  display: flex; align-items: flex-start; justify-content: space-between;
-  gap: 12px; margin-bottom: 20px; flex-wrap: wrap;
-}
-.page-title { font-size: 20px; font-weight: 700; color: var(--ink); margin: 0 0 2px; }
-.page-sub { font-size: 13px; color: var(--ink3); margin: 0; }
-.page-header-actions { display: flex; gap: 8px; flex-shrink: 0; flex-wrap: wrap; }
-
-.filter-tabs { display: flex; gap: 4px; }
-.filter-tab {
-  padding: 5px 12px; border-radius: 20px; border: 1px solid var(--border);
-  background: none; font-size: 12.5px; cursor: pointer; color: var(--ink3);
-  font-weight: 500;
-}
-.filter-tab:hover { background: var(--panel); color: var(--ink); }
-.filter-tab--active { background: var(--accent); color: #fff; border-color: var(--accent); }
-
 /* Gantt */
 .schedule-card {
   background: var(--surface); border: 1px solid var(--border);
@@ -253,7 +123,6 @@ function statusLabel(s) { return sharedStatusLabel(s, statusMap[s]?.label); }
 }
 .gantt-hour { font-size: 11px; color: var(--ink4); }
 
-.gantt-rows {}
 .gantt-row {
   display: flex; border-bottom: 1px solid var(--border);
   min-height: 52px;
@@ -323,6 +192,4 @@ function statusLabel(s) { return sharedStatusLabel(s, statusMap[s]?.label); }
   .sched-table { display: none; }
   .schedule-table-card::before { content: none; }
 }
-
-.mobile-card-list { display: flex; flex-direction: column; }
 </style>

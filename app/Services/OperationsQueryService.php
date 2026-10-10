@@ -6,6 +6,7 @@ use App\Models\JobCheckpoint;
 use App\Models\JobOperation;
 use App\Models\Movement;
 use App\Models\User;
+use Carbon\Carbon;
 use Illuminate\Support\Facades\Gate;
 
 /**
@@ -63,6 +64,79 @@ class OperationsQueryService
             ->all();
     }
 
+    /**
+     * Movements starting on one calendar day (cancelled ones left out). Planned
+     * movements count even before their job is generated; "job_generated" says
+     * which have one. A user who can view movements sees them like the Planning
+     * page; one who can only view jobs gets the jobs they may see, like the Day
+     * Board (without "view unassigned" only the jobs they supervise).
+     *
+     * @return array{date: string, total: int, movements: array<int, array<string, mixed>>}
+     */
+    public function getMovementsByDate(int $eventId, User $user, string $date, ?string $team = null, int $limit = 100): array
+    {
+        $day = Carbon::parse($date)->toDateString();
+        $teamFilter = fn ($q) => $q->whereHas('team', fn ($t) => $t->where('team_name', 'like', '%'.$team.'%'));
+
+        if ($user->can('movements.view')) {
+            $query = Movement::query()
+                ->where('event_id', $eventId)
+                ->where('status', '!=', 'cancelled')
+                ->whereDoesntHave('job', fn ($q) => $q->where('status', 'cancelled'))
+                ->whereDate('window_start', $day)
+                ->when(! $user->can('movements.view-all-functional-areas'), fn ($q) => $q->whereIn('functional_area', $user->functionalAreaCodes()))
+                ->when($team, $teamFilter)
+                ->with(['team', 'job'])
+                ->orderBy('window_start');
+
+            return [
+                'date' => $day,
+                'total' => (clone $query)->count(),
+                'movements' => $query->limit($limit)->get()->map(fn (Movement $m) => $this->summarizeMovement($m))->all(),
+            ];
+        }
+
+        if (! $user->can('jobs.view')) {
+            return ['date' => $day, 'total' => 0, 'movements' => []];
+        }
+
+        $query = $this->scopedJobsQuery($eventId, $user)
+            ->where('jobs_operations.status', '!=', 'cancelled')
+            ->whereDate('movements.window_start', $day)
+            ->when(! $user->can('jobs.view-unassigned'), fn ($q) => $q->supervisedBy($user->id, 'jobs_operations.'))
+            ->when($team, $teamFilter)
+            ->orderBy('movements.window_start');
+
+        return [
+            'date' => $day,
+            'total' => (clone $query)->count(),
+            'movements' => $query->limit($limit)->get()->map(fn (JobOperation $job) => $this->summarizeJob($job))->all(),
+        ];
+    }
+
+    private function summarizeMovement(Movement $movement): array
+    {
+        $job = $movement->job;
+
+        return [
+            'id' => $job?->job_id,
+            'movement_id' => $movement->id,
+            'movement_code' => $movement->code,
+            'team' => $movement->team?->team_name,
+            'functional_area' => $movement->functional_area,
+            'kind' => $movement->kind,
+            'from' => $movement->from_location,
+            'to' => $movement->to_location,
+            'window_start' => $movement->window_start?->format('H:i'),
+            'window_end' => $movement->window_end?->format('H:i'),
+            'delay_minutes' => $movement->delay_minutes,
+            'job_generated' => $job !== null,
+            'status' => $job?->status ?? 'no job yet ('.$movement->status.')',
+            'checkpoints_completed' => $job?->checkpoints_completed,
+            'checkpoints_total' => $job?->checkpoints_total,
+        ];
+    }
+
     public function getJobStatusSummary(int $eventId, User $user): array
     {
         if (! $user->can('jobs.view')) {
@@ -74,6 +148,34 @@ class OperationsQueryService
             ->groupBy('status')
             ->map->count()
             ->all();
+    }
+
+    /** Movement id from a numeric id, a movement code (TRP-00003) or a job reference (JOB-...). */
+    public function resolveMovementId(string $reference, int $eventId): ?int
+    {
+        $reference = trim($reference);
+
+        if (ctype_digit($reference)) {
+            return (int) $reference;
+        }
+
+        return Movement::where('event_id', $eventId)->where('code', $reference)->value('id')
+            ?? JobOperation::where('event_id', $eventId)->where('job_id', $reference)->value('movement_id');
+    }
+
+    /** Job id from a numeric id, a job reference (JOB-...) or the code of its movement (TRP-...). */
+    public function resolveJobId(string $reference, int $eventId): ?int
+    {
+        $reference = trim($reference);
+
+        if (ctype_digit($reference)) {
+            return (int) $reference;
+        }
+
+        return JobOperation::where('event_id', $eventId)->where('job_id', $reference)->value('id')
+            ?? JobOperation::where('event_id', $eventId)
+                ->whereHas('movement', fn ($q) => $q->where('code', $reference))
+                ->value('id');
     }
 
     public function getMovementDetails(int $movementId, User $user): ?array
@@ -88,6 +190,8 @@ class OperationsQueryService
 
         return [
             'id' => $movement->id,
+            'movement_code' => $movement->code,
+            'job_id' => $job?->job_id,
             'team' => $movement->team?->team_name,
             'kind' => $movement->kind,
             'functional_area' => $movement->functional_area,
@@ -246,6 +350,7 @@ class OperationsQueryService
         return [
             'id' => $job->job_id ?? 'J-'.$job->id,
             'movement_id' => $movement?->id,
+            'movement_code' => $movement?->code,
             'team' => $team?->team_name,
             'functional_area' => $job->functional_area,
             'kind' => $movement?->kind,

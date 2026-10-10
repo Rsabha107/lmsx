@@ -23,7 +23,8 @@ Route::middleware('auth')->group(function () {
 
     // Core Views
     Route::middleware('permission:console.view')->group(function () {
-        Route::get('/schedule', [LmsController::class, 'schedule'])->name('schedule');
+        // The old Schedule page now lives in the Day Board.
+        Route::redirect('/schedule', '/day-board?view=schedule');
         // Route::get('/plans', [LmsController::class, 'plans'])->name('plans'); // Handled by EXAMPLE_ROUTES.php -> PlanManagementController
         Route::get('/library', [LmsController::class, 'library'])->name('library');
 

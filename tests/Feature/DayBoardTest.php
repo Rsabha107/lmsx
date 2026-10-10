@@ -78,4 +78,44 @@ class DayBoardTest extends TestCase
                 ->where('jobs.1.id', $asExtra->id)
                 ->where('dayCounts', ['2026-11-24' => 2]));
     }
+
+    public function test_the_old_schedule_page_redirects_to_the_day_boards_schedule_view(): void
+    {
+        $admin = User::factory()->create();
+        $admin->assignRole('admin');
+
+        $this->actingAs($admin)->get('/schedule')->assertRedirect('/day-board?view=schedule');
+    }
+
+    public function test_the_schedule_view_lists_that_days_movements_for_what_the_user_may_see(): void
+    {
+        $event = $this->createEvent();
+        $plan = $this->createPlan($event);
+        $team = $this->createTeam($event);
+
+        $supervisor = User::factory()->create();
+        $supervisor->assignRole('ground_control');
+        $supervisor->functionalAreas()->create(['functional_area' => 'LOG']);
+
+        $this->createJob($event, $this->createMovement($event, $plan, $team, ['window_start' => '2026-11-24 11:00']), $team, ['supervisor_id' => $supervisor->id]);
+        $this->createJob($event, $this->createMovement($event, $plan, $team, ['window_start' => '2026-11-24 09:00']), $team, ['supervisor_id' => $supervisor->id]);
+        $this->createJob($event, $this->createMovement($event, $plan, $team, ['window_start' => '2026-11-24 10:00']), $team);
+        $this->createJob($event, $this->createMovement($event, $plan, $team, ['window_start' => '2026-11-25 10:00']), $team, ['supervisor_id' => $supervisor->id]);
+
+        $as = $this->actingAs($supervisor)->withSession(['active_event_id' => $event->id]);
+
+        // The board view does not send the schedule rows.
+        $as->get('/day-board?date=2026-11-24')
+            ->assertInertia(fn (AssertableInertia $page) => $page->where('view', 'board')->has('schedule', 0));
+
+        $as->get('/day-board?date=2026-11-24&view=schedule')
+            ->assertOk()
+            ->assertInertia(fn (AssertableInertia $page) => $page
+                ->where('view', 'schedule')
+                ->has('schedule', 2)
+                ->where('schedule.0.dep', '09:00')
+                ->where('schedule.1.dep', '11:00')
+                ->has('schedule.0', fn (AssertableInertia $row) => $row
+                    ->hasAll(['id', 'code', 'team', 'from', 'to', 'dep', 'arr', 'pax', 'vehicle', 'status', 'delay'])));
+    }
 }

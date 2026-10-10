@@ -50,6 +50,6 @@ class AiCopilotDegradationTest extends TestCase
 
         // Any other authenticated route should be completely unaffected by
         // the AI provider being down — the app must keep working without AI.
-        $this->actingAs($user)->get('/schedule')->assertOk();
+        $this->actingAs($user)->get('/library')->assertOk();
     }
 }

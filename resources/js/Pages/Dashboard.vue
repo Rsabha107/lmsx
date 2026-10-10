@@ -23,7 +23,7 @@
       <section class="dash-card">
         <div class="card-header">
           <span class="card-title">Today's Movements</span>
-          <inertia-link href="/schedule" class="card-link">View all</inertia-link>
+          <inertia-link href="/day-board?view=schedule" class="card-link">View all</inertia-link>
         </div>
         <div class="movements-list">
           <movement-row v-for="mv in schedule" :key="mv.id" :mv="mv" />

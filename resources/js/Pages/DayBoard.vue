@@ -15,9 +15,15 @@
             <template v-if="isToday"> · updated {{ clock }}</template>
           </p>
         </div>
-        <div class="db-search">
-          <svg-icon name="search" :size="14" />
-          <input v-model="search" type="search" placeholder="Team, job, vehicle, driver…" aria-label="Search jobs" />
+        <div class="db-head-actions">
+          <div class="db-views" role="tablist" aria-label="View">
+            <button type="button" role="tab" :aria-selected="view === 'board'" :class="['db-view', { 'db-view--on': view === 'board' }]" @click="setView('board')">Day Board</button>
+            <button type="button" role="tab" :aria-selected="view === 'schedule'" :class="['db-view', { 'db-view--on': view === 'schedule' }]" @click="setView('schedule')">Schedule</button>
+          </div>
+          <div v-if="view === 'board'" class="db-search">
+            <svg-icon name="search" :size="14" />
+            <input v-model="search" type="search" placeholder="Team, job, vehicle, driver…" aria-label="Search jobs" />
+          </div>
         </div>
       </header>
 
@@ -78,7 +84,7 @@
 
       <div v-if="!hasActiveEvent" class="db-empty">Select an event to see its day board.</div>
 
-      <template v-else>
+      <template v-else-if="view === 'board'">
         <!-- Summary tiles double as filters -->
         <div class="db-tiles" role="tablist">
           <button
@@ -214,6 +220,21 @@
           </div>
         </section>
       </template>
+
+      <!-- The same view as the Schedule menu, for this day -->
+      <template v-else>
+        <div class="filter-tabs">
+          <button
+            v-for="f in scheduleFilters"
+            :key="f.value"
+            type="button"
+            :class="['filter-tab', { 'filter-tab--active': activeScheduleFilter === f.value }]"
+            @click="activeScheduleFilter = f.value"
+          >{{ f.label }}</button>
+        </div>
+        <div v-if="!schedule.length" class="db-empty">No movements on this day.</div>
+        <MovementScheduleView v-else :schedule="scheduleRows" />
+      </template>
     </div>
   </app-layout>
 </template>
@@ -225,13 +246,19 @@ import AppLayout from '../Components/AppLayout.vue';
 import StatusPill from '../Components/StatusPill.vue';
 import SvgIcon from '../Components/SvgIcon.vue';
 import FlagIcon from '../Components/FlagIcon.vue';
+import MovementScheduleView from '../Components/MovementScheduleView.vue';
+import { useScheduleFilter } from '../Composables/useScheduleFilter';
 import { minutesFrom, duration, todayKey } from '../Composables/useCrewRoster';
 
 const props = defineProps({
   date: { type: String, required: true },
+  view: { type: String, default: 'board' },
   jobs: { type: Array, default: () => [] },
+  schedule: { type: Array, default: () => [] },
   dayCounts: { type: Object, default: () => ({}) },
 });
+
+const { filters: scheduleFilters, activeFilter: activeScheduleFilter, filtered: scheduleRows } = useScheduleFilter(() => props.schedule);
 
 const page = usePage();
 const hasActiveEvent = computed(() => !!page.props.activeEventId);
@@ -247,7 +274,7 @@ let poll;
 onMounted(() => {
   tick = setInterval(() => { now.value = new Date(); }, 30000);
   poll = setInterval(() => {
-    if (!document.hidden) router.reload({ only: ['jobs', 'dayCounts'], preserveScroll: true });
+    if (!document.hidden) router.reload({ only: ['jobs', 'schedule', 'dayCounts'], preserveScroll: true });
   }, 60000);
 });
 onUnmounted(() => { clearInterval(tick); clearInterval(poll); });
@@ -269,8 +296,17 @@ function addDays(key, n) {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
+// Kept in the URL so a day change or reload stays on the same view.
+function visit(date, view) {
+  router.get('/day-board', { date, view: view === 'schedule' ? 'schedule' : undefined }, { preserveState: true, preserveScroll: true });
+}
+
 function goDay(key) {
-  router.get('/day-board', { date: key }, { preserveState: true, preserveScroll: true });
+  visit(key, props.view);
+}
+
+function setView(next) {
+  if (next !== props.view) visit(props.date, next);
 }
 
 const fmt = (key, opts) => new Date(`${key}T00:00:00`).toLocaleDateString('en-GB', opts);
@@ -465,6 +501,19 @@ const groups = computed(() => {
 .db-sub-alert { color: var(--danger); font-weight: 600; }
 .db-search { display: flex; align-items: center; gap: 6px; padding: 0 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--ink3); min-width: 260px; }
 .db-search input { border: 0; outline: none; background: none; padding: 8px 0; font-size: 13px; color: var(--ink); flex: 1; }
+.db-head-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.db-views { display: inline-flex; padding: 3px; gap: 2px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel); }
+.db-view { border: 0; background: none; padding: 6px 14px; border-radius: 6px; font-size: 13px; font-weight: 600; color: var(--ink3); cursor: pointer; }
+.db-view:hover { color: var(--ink); }
+.db-view--on { background: var(--surface); color: var(--ink); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08); }
+
+.filter-tabs { display: flex; gap: 4px; }
+.filter-tab {
+  padding: 5px 12px; border-radius: 20px; border: 1px solid var(--border);
+  background: none; font-size: 12.5px; cursor: pointer; color: var(--ink3); font-weight: 500;
+}
+.filter-tab:hover { background: var(--panel); color: var(--ink); }
+.filter-tab--active { background: var(--accent); color: #fff; border-color: var(--accent); }
 
 /* Day strip */
 .db-strip { display: flex; align-items: stretch; gap: 6px; overflow-x: auto; padding-bottom: 2px; }

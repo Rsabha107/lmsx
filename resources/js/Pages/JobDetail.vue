@@ -1,7 +1,10 @@
 <template>
   <app-layout>
     <div class="page-header">
-      <inertia-link href="/jobs" class="back-link">
+      <inertia-link v-if="job.read_only" href="/day-board" class="back-link">
+        <svg-icon name="chevron" style="transform:rotate(180deg)" :size="16" /> Day Board
+      </inertia-link>
+      <inertia-link v-else href="/jobs" class="back-link">
         <svg-icon name="chevron" style="transform:rotate(180deg)" :size="16" /> Jobs
       </inertia-link>
     </div>
@@ -25,7 +28,7 @@
           </span>
         </div>
       </div>
-      <div style="display: flex; gap: 8px;">
+      <div v-if="!job.read_only" style="display: flex; gap: 8px;">
         <Button variant="secondary" size="sm" :processing="explaining" @click="explainDelay">
           <template #icon><svg-icon name="ai" :size="14" /></template>
           Explain delay

@@ -295,7 +295,7 @@ const allNavItems = [
     label: 'Live Ops',
     expandable: true,
     items: [
-      { label: 'Day Board',         route: 'day-board',         icon: 'clock',    can: 'jobs.view' },
+      { label: 'Day Board',         route: 'day-board',         icon: 'clock',    can: 'dayBoard.view' },
       { label: 'Resource Schedule', route: 'resource-schedule', icon: 'schedule', can: 'movements.view' },
       { label: 'Movement Tracking', route: 'kit-truck',         icon: 'fleet',    can: 'fleet.view' },
       { label: 'Analytics',         route: 'analytics',         icon: 'chart',    can: 'analytics.view' },
@@ -349,7 +349,7 @@ if (homeSection) {
 const allMobileNavItems = [
   { label: 'Dashboard', route: 'dashboard',  icon: 'dashboard', can: 'console.view' },
   { label: 'Jobs',      route: 'jobs/mobile', icon: 'jobs',     can: 'jobs.view', flag: 'jobsMobileMenu' },
-  { label: 'Day',       route: 'day-board',  icon: 'clock',     can: 'jobs.view' },
+  { label: 'Day',       route: 'day-board',  icon: 'clock',     can: 'dayBoard.view' },
   { label: 'Tracker',  route: 'tracker',    icon: 'tracker',   can: 'console.view' },
 ];
 

@@ -34,6 +34,7 @@ User-facing documentation lives in one file: `docs/NAQLA_LMS_GUIDE.md` (source f
 
 ## Mobile app download
 - `GET /downloads/mobile-app` (`MobileAppDownloadController`, ability `mobileApp.download`) streams the APK from the `local` disk at `config('app.mobile_apk')` (`MOBILE_APK_PATH`, default `downloads/NAQLA LMS - V(1.0.0).apk`). Linked from the sidebar and Settings.
+- `GET /get-app` (`GetApp.vue`, standalone, ground_control|transport): download-only page. The dashboard sends those roles there when the Jobs (Mobile) flag is off; logins of non-console users go via the dashboard.
 
 ## Mobile sync contract (`/api/mobile`)
 - Writes (`POST jobs/{job}/checkpoints/{cp}/complete`, `POST jobs/{job}/issues`) are replay-safe: send one `Idempotency-Key` (or `client_op_id`, 8-64 of `A-Za-z0-9._:-`) per queued action. A retry after the first committed returns 200 with `Idempotent-Replayed: true`; without or with a different key it is still 409. Stored in `job_checkpoints.client_op_id` / `job_issues.client_op_id`; replay only for the same user.
@@ -72,7 +73,7 @@ User-facing documentation lives in one file: `docs/NAQLA_LMS_GUIDE.md` (source f
 
 ## Key pages
 - Planning `Plans.vue` (very large), Jobs Queue `Jobs.vue`, Crew Assignment `CrewAssignment.vue` (table / day timeline / week matrix), Resource Schedule `ResourceSchedule.vue` (one resource's week as a Gantt; Excel via `/resource-schedule/export`, PDF via the browser print dialog).
-- Day Board `DayBoard.vue` (`/day-board`, `jobs.view`): a day's jobs by hour with current + previous checkpoint; attention flags computed client-side against the live clock. Supervisors without `jobs.view-unassigned` see only jobs they supervise.
+- Day Board `DayBoard.vue` (`/day-board`, `jobs.view`): a day's jobs by hour with current + previous checkpoint; attention flags computed client-side against the live clock. Supervisors without `jobs.view-unassigned` see only jobs they supervise. Agency also gets it (route `role_or_permission:jobs.view|agency`, ability `dayBoard.view`), seeing all crews' jobs within `ProviderScope`. Their job links open `JobDetail` read-only (`JobOperationPolicy::read`, `job.read_only`; no buttons, no `jobs.view`).
 
 ## Style
 - Keep changes minimal; comments only for what the code can't show, one short line.

@@ -18,8 +18,12 @@ Route::middleware('auth')->group(function () {
     Route::get('/', [LmsController::class, 'dashboard'])->name('dashboard');
 
     Route::get('/downloads/mobile-app', MobileAppDownloadController::class)
-        ->middleware('role:admin|agency|ground_control')
+        ->middleware('role:admin|agency|ground_control|transport')
         ->name('downloads.mobile-app');
+
+    Route::inertia('/get-app', 'GetApp')
+        ->middleware('role:ground_control|transport')
+        ->name('get-app');
 
     // Core Views
     Route::middleware('permission:console.view')->group(function () {

@@ -79,6 +79,54 @@ class DayBoardTest extends TestCase
                 ->where('dayCounts', ['2026-11-24' => 2]));
     }
 
+    public function test_the_agency_sees_every_crews_jobs(): void
+    {
+        $event = $this->createEvent();
+        $plan = $this->createPlan($event);
+        $team = $this->createTeam($event);
+        $job = $this->createJob($event, $this->createMovement($event, $plan, $team, ['window_start' => '2026-11-24 08:00']), $team);
+        $this->createJob($event, $this->createMovement($event, $plan, $team, ['window_start' => '2026-11-24 09:00', 'functional_area' => 'MOB']), $team);
+
+        $this->actingAs($this->createProviderUser('agency'))->withSession(['active_event_id' => $event->id])
+            ->get('/day-board?date=2026-11-24')
+            ->assertOk()
+            ->assertInertia(fn (AssertableInertia $page) => $page
+                ->has('jobs', 2)
+                ->where('jobs.0.url', "/job/{$job->id}")
+                ->where('auth.can', fn ($can) => $can['dayBoard.view'] === true));
+    }
+
+    public function test_the_agency_reads_a_job_but_cannot_act_on_it(): void
+    {
+        $event = $this->createEvent();
+        $team = $this->createTeam($event);
+        $job = $this->createJob($event, $this->createMovement($event, $this->createPlan($event), $team), $team);
+
+        $as = $this->actingAs($this->createProviderUser('agency'))->withSession(['active_event_id' => $event->id]);
+
+        $as->get("/job/{$job->id}")
+            ->assertOk()
+            ->assertInertia(fn (AssertableInertia $page) => $page
+                ->component('JobDetail')
+                ->where('job.read_only', true)
+                ->where('job.can_override', false)
+                ->where('job.can_change_status', false));
+
+        $as->postJson("/jobs/{$job->job_id}/status", ['status' => 'in-progress'])->assertForbidden();
+        $this->assertSame('pending', $job->refresh()->status);
+    }
+
+    public function test_the_agency_cannot_read_a_job_outside_its_active_event(): void
+    {
+        $event = $this->createEvent();
+        $team = $this->createTeam($event);
+        $job = $this->createJob($event, $this->createMovement($event, $this->createPlan($event), $team), $team);
+
+        $this->actingAs($this->createProviderUser('agency'))->withSession(['active_event_id' => $this->createEvent()->id])
+            ->get("/job/{$job->id}")
+            ->assertForbidden();
+    }
+
     public function test_the_old_schedule_page_redirects_to_the_day_boards_schedule_view(): void
     {
         $admin = User::factory()->create();

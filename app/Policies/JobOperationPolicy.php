@@ -19,6 +19,13 @@ class JobOperationPolicy
             && ($user->can('jobs.view-unassigned') || $job->isSupervisedBy((int) $user->id));
     }
 
+    /** Reading only: anyone who may view it, plus the agency for jobs in its active event (ProviderScope limits the rest). */
+    public function read(User $user, JobOperation $job): bool
+    {
+        return $this->view($user, $job)
+            || ($user->hasRole('agency') && (int) $job->event_id === (int) session('active_event_id'));
+    }
+
     /** Same active event, jobs.view and functional area. */
     private function inScope(User $user, JobOperation $job): bool
     {

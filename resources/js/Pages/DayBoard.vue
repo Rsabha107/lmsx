@@ -214,7 +214,8 @@
                   <template v-else>{{ job.driver || 'No driver' }}</template>
                 </span>
                 <span :class="{ 'db-missing': !job.supervisor }"><svg-icon name="shield" :size="13" />{{ job.supervisor || 'No supervisor' }}</span>
-                <a :href="job.url" class="db-open" @click.prevent="router.visit(job.url)">{{ job.job_id }} ›</a>
+                <a v-if="job.url" :href="job.url" class="db-open" @click.prevent="router.visit(job.url)">{{ job.job_id }} ›</a>
+                <span v-else class="db-open">{{ job.job_id }}</span>
               </footer>
             </article>
           </div>

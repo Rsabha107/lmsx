@@ -31,12 +31,18 @@ Route::middleware('auth')->group(function () {
 
     // A supervisor's day: each job's current and previous checkpoint.
     Route::get('/day-board', DayBoardController::class)
-        ->middleware('permission:jobs.view')
+        ->middleware('role_or_permission:jobs.view|agency')
         ->name('day-board');
 
     // Job Status Management
     Route::post('/jobs/{jobId}/status', [LmsController::class, 'updateJobStatus'])->name('job.updateStatus');
     Route::post('/jobs/{jobId}/reinstate', [LmsController::class, 'reinstateJob'])->name('job.reinstate');
+    Route::get('/jobs/{jobId}/sync-offsets', [LmsController::class, 'previewJobOffsets'])
+        ->middleware('permission:jobs.override')
+        ->name('job.syncOffsets.preview');
+    Route::post('/jobs/{jobId}/sync-offsets', [LmsController::class, 'syncJobOffsets'])
+        ->middleware('permission:jobs.override')
+        ->name('job.syncOffsets');
 
     Route::delete('/jobs', [LmsController::class, 'destroyJobs'])
         ->middleware('permission:plans.manage')

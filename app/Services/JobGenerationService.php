@@ -209,30 +209,11 @@ class JobGenerationService
 
     private function applyWindowFromReference(Movement $movement): bool
     {
-        if (!in_array($movement->kind, ['arrival', 'departure', 'transfer', 'match', 'training'], true)) {
+        [$newWindowStart, $newWindowEnd] = $this->windowFromReference($movement) ?? [null, null];
+
+        if (!$newWindowStart) {
             return false;
         }
-
-        if ($movement->isBusMovement()) {
-            return false;
-        }
-
-        $referenceTime = $this->resolveReferenceTime($movement);
-
-        if (!$referenceTime) {
-            return false;
-        }
-
-        $firstCheckpoint = $movement->checkpointTemplate?->checkpoints->first();
-        $offsetMinutes = $this->resolveOffsetMinutes($firstCheckpoint, $movement->kind, $movement->event_id);
-
-        $durationMinutes = $this->templateLeg($movement)?->estimated_duration_minutes
-            ?? (($movement->window_start && $movement->window_end)
-                ? $movement->window_start->diffInMinutes($movement->window_end)
-                : 30);
-
-        $newWindowStart = $referenceTime->copy()->addMinutes($offsetMinutes);
-        $newWindowEnd = $newWindowStart->copy()->addMinutes($durationMinutes);
 
         $unchanged = $movement->window_start?->equalTo($newWindowStart) && $movement->window_end?->equalTo($newWindowEnd);
         if ($unchanged) {
@@ -245,6 +226,74 @@ class JobGenerationService
         ]);
 
         return true;
+    }
+
+    /**
+     * What rescheduleJob would change, without saving: the movement window and each outstanding checkpoint.
+     *
+     * @return array{window: ?array{from: ?string, to: ?string}, checkpoints: list<array{id: int, name: string, from: ?string, to: string}>}
+     */
+    public function previewReschedule(JobOperation $job): array
+    {
+        $movement = $job->movement;
+        if (!$movement || $movement->isBusMovement()) {
+            return ['window' => null, 'checkpoints' => []];
+        }
+
+        $movement->loadMissing(['checkpointTemplate.checkpoints', 'plan.movementTemplate.legs']);
+        $fmt = fn ($t) => $t?->format('Y-m-d H:i');
+
+        $window = null;
+        if ($new = $this->windowFromReference($movement)) {
+            $from = $fmt($movement->window_start).' – '.$fmt($movement->window_end);
+            $to = $fmt($new[0]).' – '.$fmt($new[1]);
+            $window = $from === $to ? null : ['from' => $from, 'to' => $to];
+        }
+
+        $referenceTime = $this->resolveReferenceTime($movement);
+        $templates = $movement->checkpointTemplate?->checkpoints->keyBy('id') ?? collect();
+        $checkpoints = [];
+
+        foreach ($job->checkpoints()->whereNotIn('state', ['done', 'skipped'])->orderBy('order')->get() as $cp) {
+            $template = $templates->get($cp->checkpoint_id) ?? Checkpoint::find($cp->checkpoint_id);
+            $time = $template ? $this->computeCheckpointTimeFromReference($movement, $template, $referenceTime) : null;
+
+            if ($time && !$cp->scheduled_at?->equalTo($time)) {
+                $checkpoints[] = ['id' => $cp->id, 'name' => $cp->name, 'from' => $fmt($cp->scheduled_at), 'to' => $fmt($time)];
+            }
+        }
+
+        return ['window' => $window, 'checkpoints' => $checkpoints];
+    }
+
+    /** @return array{0: \Carbon\Carbon, 1: \Carbon\Carbon}|null */
+    private function windowFromReference(Movement $movement): ?array
+    {
+        if (!in_array($movement->kind, ['arrival', 'departure', 'transfer', 'match', 'training'], true)) {
+            return null;
+        }
+
+        if ($movement->isBusMovement()) {
+            return null;
+        }
+
+        $referenceTime = $this->resolveReferenceTime($movement);
+
+        if (!$referenceTime) {
+            return null;
+        }
+
+        $firstCheckpoint = $movement->checkpointTemplate?->checkpoints->first();
+        $offsetMinutes = $this->resolveOffsetMinutes($firstCheckpoint, $movement->kind, $movement->event_id);
+
+        $durationMinutes = $this->templateLeg($movement)?->estimated_duration_minutes
+            ?? (($movement->window_start && $movement->window_end)
+                ? $movement->window_start->diffInMinutes($movement->window_end)
+                : 30);
+
+        $start = $referenceTime->copy()->addMinutes($offsetMinutes);
+
+        return [$start, $start->copy()->addMinutes($durationMinutes)];
     }
 
     /**

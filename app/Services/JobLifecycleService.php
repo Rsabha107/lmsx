@@ -469,6 +469,40 @@ class JobLifecycleService
     }
 
     /**
+     * Re-time a job's outstanding checkpoints and movement window from the current offsets.
+     *
+     * @return int how many checkpoints were re-timed
+     */
+    public function syncOffsets(JobOperation $job): int
+    {
+        if (in_array($job->status, ['completed', 'cancelled'], true)) {
+            throw new \RuntimeException("A {$job->status} job cannot be re-timed.");
+        }
+
+        if ($job->checkpoints()->whereIn('state', ['done', 'skipped'])->exists()) {
+            throw new \RuntimeException('Only a job with no checkpoint started can be synced with the offsets.');
+        }
+
+        if (! $job->movement || $job->movement->isBusMovement()) {
+            throw new \RuntimeException("This job's times do not come from the offsets.");
+        }
+
+        return DB::transaction(function () use ($job) {
+            $moved = app(JobGenerationService::class)->rescheduleJob($job);
+
+            AuditLog::record(
+                action: 'Job synced with offsets',
+                target: $job->job_id ?? 'JOB',
+                meta: sprintf('%d checkpoint%s re-timed from settings', $moved, $moved === 1 ? '' : 's'),
+                subject: $job,
+                eventId: $job->event_id,
+            );
+
+            return $moved;
+        });
+    }
+
+    /**
      * Correct the flight behind a job. Only the keys present in $changes are touched.
      *
      * @param  array{flight_number?: ?string, scheduled_at?: ?string, terminal?: ?string, gate?: ?string}  $changes

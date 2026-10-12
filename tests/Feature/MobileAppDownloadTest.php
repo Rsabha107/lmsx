@@ -31,7 +31,7 @@ class MobileAppDownloadTest extends TestCase
     {
         Storage::disk('local')->put(config('app.mobile_apk'), 'apk-bytes');
 
-        foreach (['admin', 'agency', 'ground_control'] as $role) {
+        foreach (['admin', 'agency', 'ground_control', 'transport'] as $role) {
             $this->actingAs($this->userWithRole($role))
                 ->get('/downloads/mobile-app')
                 ->assertOk()
@@ -44,9 +44,21 @@ class MobileAppDownloadTest extends TestCase
     {
         Storage::disk('local')->put(config('app.mobile_apk'), 'apk-bytes');
 
-        $this->actingAs($this->userWithRole('transport'))
+        $this->actingAs($this->userWithRole('team_services'))
             ->get('/downloads/mobile-app')
             ->assertForbidden();
+    }
+
+    public function test_the_get_app_page_is_only_for_field_roles(): void
+    {
+        foreach (['ground_control', 'transport'] as $role) {
+            $this->actingAs($this->userWithRole($role))
+                ->get('/get-app')
+                ->assertOk()
+                ->assertInertia(fn ($page) => $page->component('GetApp'));
+        }
+
+        $this->actingAs($this->userWithRole('admin'))->get('/get-app')->assertForbidden();
     }
 
     public function test_a_missing_file_is_a_404(): void

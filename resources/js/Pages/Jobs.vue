@@ -250,6 +250,7 @@
                 <div v-if="moreOpen" class="jh-menu" role="menu">
                   <button v-if="selectedJob.status === 'in-progress'" type="button" role="menuitem" @click="runMore(promptRevertJob)">Mark scheduled</button>
                   <button v-if="canOverride && selectedJob.status !== 'cancelled'" type="button" role="menuitem" @click="runMore(openOverrideModal)">Override</button>
+                  <button v-if="canSyncOffsets(selectedJob)" type="button" role="menuitem" @click="runMore(promptSyncOffsets)">Sync with offsets</button>
                   <button v-if="canCancelJob(selectedJob)" type="button" role="menuitem" class="jh-menu-danger" @click="runMore(promptCancelJob)">Cancel job</button>
                   <button v-if="canDeleteJobs" type="button" role="menuitem" class="jh-menu-danger" @click="runMore(() => promptDeleteJobs([selectedJob]))">Delete</button>
                 </div>
@@ -641,8 +642,12 @@ const {
   promptRevert: promptRevertJob,
   promptCancel: promptCancelJob,
   promptReinstate: promptReinstateJob,
+  promptSyncOffsets,
   confirm: confirmStatusChange,
-} = useJobStatusActions(() => selectedJob.value, reloadSelectedJob);
+} = useJobStatusActions(() => selectedJob.value, (data) => {
+  if (data?.moved !== undefined) toast.success(data.message);
+  reloadSelectedJob();
+});
 const resolvingIssueId = ref(null);
 
 const jobIssues = computed(() => selectedJob.value?.issues ?? []);
@@ -807,6 +812,12 @@ const hasMoreActions = computed(() => {
 function runMore(action) {
   moreOpen.value = false;
   action();
+}
+
+function canSyncOffsets(job) {
+  return canOverride.value
+    && !['completed', 'cancelled'].includes(job?.status)
+    && !(job?.checkpoints ?? []).some(c => ['done', 'skipped'].includes(c.state ?? c.status));
 }
 
 function closeMoreOnOutside(e) {

@@ -51,10 +51,16 @@ class LmsController extends Controller
     public function dashboard(Request $request, NotificationFeedService $notifications): Response|RedirectResponse
     {
         if (! $request->user()->can('console.view')) {
+            $mobileViewOn = app(SettingsService::class)->getGlobalFlag(SettingsService::FLAG_JOBS_MOBILE_MENU);
+
+            if (! $mobileViewOn && $request->user()->hasAnyRole(['ground_control', 'transport'])) {
+                return redirect()->route('get-app');
+            }
+
             // Their only screen; say so plainly rather than redirecting them
             // into a 403 they can't act on.
             abort_unless(
-                app(SettingsService::class)->getGlobalFlag(SettingsService::FLAG_JOBS_MOBILE_MENU),
+                $mobileViewOn,
                 403,
                 'The mobile jobs view has been turned off by an administrator. Ask them to re-enable it in Setups > Settings.',
             );
@@ -657,7 +663,7 @@ class LmsController extends Controller
             return redirect()->route('jobs')->with('error', 'Job not found');
         }
 
-        $this->authorize('view', $jobOperation);
+        $this->authorize('read', $jobOperation);
 
         $movement = $jobOperation->movement;
         $team = $movement?->team;
@@ -693,6 +699,7 @@ class LmsController extends Controller
             'issues' => $jobOperation->issues->map(fn ($i) => ['label' => $i->label(), 'severity' => $i->severity, 'notes' => $i->notes])->values(),
             'can_override' => $request->user()->can('override', $jobOperation),
             'can_change_status' => $request->user()->can('update', $jobOperation),
+            'read_only' => ! $request->user()->can('view', $jobOperation),
         ];
 
         $settledCount = $checkpoints->whereIn('state', ['done', 'skipped'])->count();
@@ -1174,7 +1181,7 @@ class LmsController extends Controller
     {
         $checkpoint = JobCheckpoint::with('job')->findOrFail($checkpointId);
 
-        $this->authorize('view', $checkpoint->job);
+        $this->authorize('read', $checkpoint->job);
 
         if (!$checkpoint->photo_path) {
             abort(404, 'Photo not found');
@@ -1207,7 +1214,7 @@ class LmsController extends Controller
     {
         $checkpoint = JobCheckpoint::with('job')->findOrFail($checkpointId);
 
-        $this->authorize('view', $checkpoint->job);
+        $this->authorize('read', $checkpoint->job);
 
         if (!$checkpoint->signature_path) {
             abort(404, 'Signature not found');
@@ -1335,6 +1342,40 @@ class LmsController extends Controller
         }
 
         return response()->json(['success' => true, 'message' => 'Job reinstated', 'status' => $job->status]);
+    }
+
+    public function previewJobOffsets(string $jobId): JsonResponse
+    {
+        $job = JobOperation::where('job_id', $jobId)->first()
+            ?? (str_starts_with($jobId, 'J-') ? JobOperation::find(substr($jobId, 2)) : null)
+            ?? JobOperation::find($jobId)
+            ?? abort(404, 'Job not found');
+
+        $this->authorize('override', $job);
+
+        return response()->json(app(\App\Services\JobGenerationService::class)->previewReschedule($job));
+    }
+
+    public function syncJobOffsets(string $jobId): JsonResponse
+    {
+        $job = JobOperation::where('job_id', $jobId)->first()
+            ?? (str_starts_with($jobId, 'J-') ? JobOperation::find(substr($jobId, 2)) : null)
+            ?? JobOperation::find($jobId)
+            ?? abort(404, 'Job not found');
+
+        $this->authorize('override', $job);
+
+        try {
+            $moved = app(JobLifecycleService::class)->syncOffsets($job);
+        } catch (\RuntimeException $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 422);
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => $moved ? sprintf('%d checkpoint%s re-timed', $moved, $moved === 1 ? '' : 's') : 'Already in line with the offsets',
+            'moved' => $moved,
+        ]);
     }
 
     /**

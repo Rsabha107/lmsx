@@ -36,7 +36,7 @@ class AuthController extends Controller
             if (! $request->user()->can('console.view')) {
                 $request->session()->forget('url.intended');
 
-                return redirect()->route('jobs.mobile');
+                return redirect()->route('dashboard');
             }
 
             return redirect()->intended('/');

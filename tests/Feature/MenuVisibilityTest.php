@@ -52,7 +52,7 @@ class MenuVisibilityTest extends TestCase
         $this->actingAs($admin)->get('/jobs/mobile/1')->assertForbidden();
     }
 
-    public function test_a_mobile_only_user_is_told_why_rather_than_bounced_into_a_redirect(): void
+    public function test_a_field_user_is_sent_to_the_app_download_page_when_the_view_is_off(): void
     {
         $admin = $this->createUserWithRole('admin');
         $this->actingAs($admin)
@@ -62,7 +62,14 @@ class MenuVisibilityTest extends TestCase
         // would normally redirect them straight to the mobile view.
         $fieldUser = $this->createUserWithRole('transport');
 
-        $this->actingAs($fieldUser)->get('/')->assertForbidden();
+        $this->actingAs($fieldUser)->get('/')->assertRedirect(route('get-app'));
+    }
+
+    public function test_field_users_go_to_jobs_mobile_while_it_is_on(): void
+    {
+        $this->actingAs($this->createUserWithRole('ground_control'))
+            ->get('/')
+            ->assertRedirect(route('jobs.mobile'));
     }
 
     public function test_the_settings_page_reports_who_would_be_locked_out(): void

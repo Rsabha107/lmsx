@@ -137,6 +137,70 @@ class OverrideFlightChangeTest extends TestCase
         $this->assertSame('skipped', $checkpoint->refresh()->state);
     }
 
+    public function test_sync_with_offsets_re_times_a_job_after_the_offsets_change(): void
+    {
+        [$event, , , $checkpoint] = $this->flightJob();
+        app(SettingsService::class)->setSetting('movement_offset.arrival', -90, Setting::SCOPE_GLOBAL, null, null, $checkpoint->checkpoint_id);
+
+        $this->overrider($event)
+            ->postJson("/jobs/{$checkpoint->job->job_id}/sync-offsets")
+            ->assertOk()
+            ->assertJson(['success' => true, 'moved' => 1]);
+
+        $this->assertSame('2026-11-08 02:30', $checkpoint->refresh()->scheduled_at->format('Y-m-d H:i'));
+        $this->assertDatabaseHas('audit_logs', ['action' => 'Job synced with offsets']);
+    }
+
+    public function test_sync_with_offsets_previews_the_change_without_saving(): void
+    {
+        [$event, , , $checkpoint] = $this->flightJob();
+        app(SettingsService::class)->setSetting('movement_offset.arrival', -90, Setting::SCOPE_GLOBAL, null, null, $checkpoint->checkpoint_id);
+
+        $this->overrider($event)
+            ->getJson("/jobs/{$checkpoint->job->job_id}/sync-offsets")
+            ->assertOk()
+            ->assertJsonPath('checkpoints.0.from', '2026-11-08 03:00')
+            ->assertJsonPath('checkpoints.0.to', '2026-11-08 02:30');
+
+        $this->assertSame('2026-11-08 03:00', $checkpoint->refresh()->scheduled_at->format('Y-m-d H:i'));
+    }
+
+    public function test_sync_with_offsets_needs_the_override_permission(): void
+    {
+        [$event, , , $checkpoint] = $this->flightJob();
+
+        $this->actingAs($this->createUserWithRole('transport'))
+            ->withSession(['active_event_id' => $event->id])
+            ->postJson("/jobs/{$checkpoint->job->job_id}/sync-offsets")
+            ->assertForbidden();
+    }
+
+    public function test_a_job_with_a_started_checkpoint_is_not_re_timed(): void
+    {
+        [$event, , , $checkpoint] = $this->flightJob();
+        $this->createCheckpoint($event, $checkpoint->job, [
+            'order' => 0, 'state' => 'done', 'scheduled_at' => '2026-11-08 02:40:00', 'completed_at' => '2026-11-08 02:45:00',
+        ]);
+
+        $this->overrider($event)
+            ->postJson("/jobs/{$checkpoint->job->job_id}/sync-offsets")
+            ->assertStatus(422);
+
+        $this->assertSame('2026-11-08 03:00', $checkpoint->refresh()->scheduled_at->format('Y-m-d H:i'));
+    }
+
+    public function test_a_completed_job_is_not_re_timed(): void
+    {
+        [$event, , , $checkpoint] = $this->flightJob();
+        $checkpoint->job->forceFill(['status' => 'completed'])->saveQuietly();
+
+        $this->overrider($event)
+            ->postJson("/jobs/{$checkpoint->job->job_id}/sync-offsets")
+            ->assertStatus(422);
+
+        $this->assertSame('2026-11-08 03:00', $checkpoint->refresh()->scheduled_at->format('Y-m-d H:i'));
+    }
+
     public function test_sending_the_same_flight_values_is_not_a_change(): void
     {
         [$event, , , $checkpoint] = $this->flightJob();

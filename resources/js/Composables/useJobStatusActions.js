@@ -87,6 +87,43 @@ export function useJobStatusActions(getJob, onChanged) {
     };
   }
 
+  async function promptSyncOffsets() {
+    const job = getJob();
+    if (!job) return;
+
+    let preview;
+    try {
+      const response = await fetch(`/jobs/${job.id}/sync-offsets`, { headers: { Accept: 'application/json' } });
+      if (!response.ok) throw new Error();
+      preview = await response.json();
+    } catch {
+      errorMessage.value = 'Could not work out the new times. Please try again.';
+      showError.value = true;
+      return;
+    }
+
+    const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+    // Show the date only when the change crosses into another day.
+    const change = (from, to) => {
+      const sameDay = from && from.slice(0, 10) === to.slice(0, 10);
+      return `${esc(sameDay ? from.slice(11) : from || '—')} &rarr; <strong>${esc(sameDay ? to.slice(11) : to)}</strong>`;
+    };
+    const rows = preview.checkpoints.map((cp) => `&bull; ${esc(cp.name)}: ${change(cp.from, cp.to)}`);
+    if (preview.window) {
+      rows.unshift(`&bull; Movement window: ${esc(preview.window.from)} &rarr; <strong>${esc(preview.window.to)}</strong>`);
+    }
+
+    pending.value = {
+      url: `/jobs/${job.id}/sync-offsets`,
+      title: 'Sync Job with Offsets?',
+      confirmLabel: 'Sync',
+      message: header(job) + (rows.length
+        ? 'From the current offsets and reference time (flight / kick-off):<br>' + rows.join('<br>')
+        : 'Nothing to change: this job already matches the current offsets.'),
+      note: 'The change is written to the audit trail.',
+    };
+  }
+
   async function confirm() {
     const change = pending.value;
     const job = getJob();
@@ -110,7 +147,7 @@ export function useJobStatusActions(getJob, onChanged) {
         showError.value = true;
         return;
       }
-      onChanged?.();
+      onChanged?.(data);
     } catch {
       errorMessage.value = 'Failed to update job status. Please try again.';
       showError.value = true;
@@ -120,5 +157,5 @@ export function useJobStatusActions(getJob, onChanged) {
     }
   }
 
-  return { pending, changing, showError, errorMessage, promptStart, promptRevert, promptCancel, promptReinstate, confirm };
+  return { pending, changing, showError, errorMessage, promptStart, promptRevert, promptCancel, promptReinstate, promptSyncOffsets, confirm };
 }

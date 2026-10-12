@@ -78,13 +78,15 @@ class DayBoardController extends Controller
     private function scoped(Request $request, int $eventId, string $prefix = ''): Builder
     {
         $user = $request->user();
+        // The agency reads every crew's jobs without holding job permissions; ProviderScope still applies.
+        $agency = $user->hasRole('agency');
 
         return JobOperation::query()
             ->where($prefix.'event_id', $eventId)
             ->where($prefix.'status', '!=', 'cancelled')
-            ->when(! $user->can('jobs.view-all-functional-areas'),
+            ->when(! $agency && ! $user->can('jobs.view-all-functional-areas'),
                 fn ($q) => $q->whereIn($prefix.'functional_area', $user->functionalAreaCodes()))
-            ->when(! $user->can('jobs.view-unassigned'), fn ($q) => $q->supervisedBy($user->id, $prefix));
+            ->when(! $agency && ! $user->can('jobs.view-unassigned'), fn ($q) => $q->supervisedBy($user->id, $prefix));
     }
 
     /** @return array<string, int> jobs per day across the event, for the week strip and calendar */
@@ -116,7 +118,11 @@ class DayBoardController extends Controller
         return [
             'id' => $job->id,
             'job_id' => $job->job_id ?? 'J-'.$job->id,
-            'url' => $request->user()->can('console.view') ? "/job/{$job->id}" : '/jobs/mobile/'.($job->job_id ?? $job->id),
+            'url' => match (true) {
+                $request->user()->can('console.view') => "/job/{$job->id}",
+                $request->user()->can('jobs.view') => '/jobs/mobile/'.($job->job_id ?? $job->id),
+                default => null,
+            },
             'status' => $job->status,
             'status_label' => JobOperation::statusLabel($job->status),
             'kind' => $movement?->kind,

@@ -56,6 +56,7 @@ require __DIR__.'/web/admin.php';
 require __DIR__.'/web/plans.php';
 require __DIR__.'/web/ai.php';
 require __DIR__.'/web/utilities.php';
+require __DIR__.'/web/roster.php';
 
 // Legacy routes (templates and admin - to be refactored)
 require __DIR__.'/EXAMPLE_ROUTES.php';

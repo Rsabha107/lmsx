@@ -94,4 +94,29 @@ class OverrideExcludeDateTest extends TestCase
 
         $this->assertSame(now()->setTime(10, 20)->format('Y-m-d H:i'), $checkpoint->refresh()->completed_at->format('Y-m-d H:i'));
     }
+
+    public function test_punctuality_is_judged_against_the_checkpoints_own_time(): void
+    {
+        // Early for its own 19:05 slot, though after the movement window ended at 18:35.
+        $scheduled = now()->subDays(3)->setTime(19, 5);
+        [$event, $checkpoint] = $this->checkpointAt($scheduled, $scheduled->copy()->setTime(18, 35));
+
+        $this->override($event, $checkpoint->id, '18:59', '1')->assertOk();
+
+        $checkpoint->refresh();
+        $this->assertTrue($checkpoint->is_on_time);
+        $this->assertSame(0, $checkpoint->getRawOriginal('delay_minutes'));
+    }
+
+    public function test_a_checkpoint_without_a_scheduled_time_is_neither_on_time_nor_late(): void
+    {
+        [$event, $checkpoint] = $this->checkpointAt(now()->subDays(3)->setTime(10, 0));
+        $checkpoint->update(['scheduled_at' => null]);
+
+        $this->override($event, $checkpoint->id, '23:00', '0')->assertOk();
+
+        $checkpoint->refresh();
+        $this->assertNull($checkpoint->is_on_time);
+        $this->assertNull($checkpoint->getRawOriginal('delay_minutes'));
+    }
 }

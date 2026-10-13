@@ -207,6 +207,11 @@ class OperationsQueryService
                 'scheduled_at' => $cp->scheduled_at?->format('H:i'),
                 'completed_at' => $cp->completed_at?->format('H:i'),
                 'is_on_time' => $cp->is_on_time,
+                'punctuality' => $cp->state !== 'done' ? null : match ($cp->is_on_time) {
+                    true => 'on time',
+                    false => 'late',
+                    null => 'not judged (no scheduled time)',
+                },
             ])->all() ?? [],
         ];
     }

@@ -1020,32 +1020,40 @@ class JobLifecycleService
     }
 
     /**
-     * Punctuality is judged against the movement's window, not the checkpoint's
-     * own scheduled time, so a whole job is late or not as a unit.
+     * Punctuality of an already completed checkpoint under the current rule.
      *
-     * @return array{is_on_time?: bool, delay_minutes?: int}
+     * @return array{is_on_time: ?bool, delay_minutes: ?int}
+     */
+    public function punctualityOf(JobCheckpoint $checkpoint): array
+    {
+        return $this->resolvePunctuality($checkpoint, Carbon::parse($checkpoint->completed_at), false);
+    }
+
+    /**
+     * Each checkpoint is judged against its own scheduled time. One without a
+     * scheduled time is neither on time nor late.
+     *
+     * @return array{is_on_time: ?bool, delay_minutes: ?int}
      */
     private function resolvePunctuality(JobCheckpoint $checkpoint, Carbon $completedAt, bool $excludeDate): array
     {
-        $windowEnd = $checkpoint->job?->movement?->window_end;
-
-        if (! $windowEnd) {
-            return [];
+        if (! $checkpoint->scheduled_at) {
+            return ['is_on_time' => null, 'delay_minutes' => null];
         }
 
-        $windowEnd = Carbon::parse($windowEnd);
+        $scheduledAt = Carbon::parse($checkpoint->scheduled_at);
 
         if ($excludeDate) {
-            $windowEnd = $this->alignTimeOfDayTo($windowEnd, $completedAt);
+            $scheduledAt = $this->alignTimeOfDayTo($scheduledAt, $completedAt);
         }
 
         // diffInMinutes() is signed relative to its argument, so direction is
         // taken from greaterThan() and magnitude from an explicit absolute diff.
-        $isLate = $completedAt->greaterThan($windowEnd);
+        $isLate = $completedAt->greaterThan($scheduledAt);
 
         return [
             'is_on_time' => ! $isLate,
-            'delay_minutes' => $isLate ? (int) $completedAt->diffInMinutes($windowEnd, true) : 0,
+            'delay_minutes' => $isLate ? (int) $completedAt->diffInMinutes($scheduledAt, true) : 0,
         ];
     }
 

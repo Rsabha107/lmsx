@@ -72,30 +72,54 @@
 </template>
 
 <script setup>
+import { computed } from 'vue';
 import StatusPill from './StatusPill.vue';
 import { useScheduleStatus } from '../Composables/useScheduleFilter';
 
-defineProps({
+const props = defineProps({
   schedule: { type: Array, default: () => [] },
 });
 
 const { statusTone, statusLabel } = useScheduleStatus();
 
-const timeSlots = ['13:00','14:00','15:00','16:00','17:00','18:00','22:00','23:00'];
-
-// Timeline span 13:00 – 23:30
-const START_MIN = 13 * 60;
-const SPAN_MIN  = 10.5 * 60;
-
 function toMin(t) {
-  const [h, m] = t.split(':').map(Number);
-  return h * 60 + m;
+  if (!t) return null;
+  const [h, m] = String(t).split(':').map(Number);
+  return Number.isNaN(h) ? null : h * 60 + (m || 0);
 }
 
+// Arrivals past midnight run on into the next day.
+function span(mv) {
+  const dep = toMin(mv.dep);
+  if (dep === null) return null;
+  let arr = toMin(mv.arr) ?? dep + 30;
+  if (arr < dep) arr += 24 * 60;
+  return [dep, arr];
+}
+
+const range = computed(() => {
+  const spans = props.schedule.map(span).filter(Boolean);
+  if (!spans.length) return { start: 0, end: 24 * 60 };
+  const start = Math.floor(Math.min(...spans.map(s => s[0])) / 60) * 60;
+  const end = Math.max(start + 60, Math.ceil(Math.max(...spans.map(s => s[1])) / 60) * 60);
+  return { start, end };
+});
+
+const timeSlots = computed(() => {
+  const slots = [];
+  for (let m = range.value.start; m <= range.value.end; m += 60) {
+    slots.push(`${String((m / 60) % 24).padStart(2, '0')}:00`);
+  }
+  return slots;
+});
+
 function barStyle(mv) {
-  const left = ((toMin(mv.dep) - START_MIN) / SPAN_MIN) * 100;
-  const width = ((toMin(mv.arr) - toMin(mv.dep)) / SPAN_MIN) * 100;
-  return { left: `${Math.max(0, left).toFixed(2)}%`, width: `${Math.max(1, width).toFixed(2)}%` };
+  const s = span(mv);
+  if (!s) return { display: 'none' };
+  const total = range.value.end - range.value.start;
+  const left = ((s[0] - range.value.start) / total) * 100;
+  const width = ((s[1] - s[0]) / total) * 100;
+  return { left: `${left.toFixed(2)}%`, width: `${Math.max(1, width).toFixed(2)}%` };
 }
 </script>
 

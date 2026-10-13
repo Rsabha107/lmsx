@@ -191,7 +191,9 @@ class MovementCrewController extends Controller
                 fn ($q) => $q->whereIn('functional_area', $user->functionalAreaCodes()),
             )
             ->with([
-                'team:id,code,team_name', 'job:id,movement_id,job_id,status', 'flight:id,scheduled_at', 'match:id,kick_off',
+                'team:id,code,team_name', 'job:id,movement_id,job_id,status', 'match:id,kick_off',
+                'flight:id,direction,scheduled_at,origin_airport_id,destination_airport_id',
+                'flight.originAirport:id,name', 'flight.destinationAirport:id,name', 'accommodation:id,hotel_name',
                 'vehicle:id,code,plate_number', 'driver:id,name', 'fieldSupervisor:id,name',
                 'units.vehicle:id,code,plate_number', 'units.driver:id,name', 'extraSupervisors:id,name',
             ])
@@ -202,6 +204,17 @@ class MovementCrewController extends Controller
             ->get();
 
         $names = fn (array $values) => implode(', ', array_values(array_unique(array_filter($values))));
+        $venue = function (?string $location, Movement $m) {
+            $place = match (true) {
+                $location === null => null,
+                stripos($location, 'airport') !== false => ($m->flight?->direction === 'departure'
+                    ? $m->flight?->originAirport : $m->flight?->destinationAirport)?->name,
+                stripos($location, 'hotel') !== false => $m->accommodation?->hotel_name,
+                default => null,
+            };
+
+            return $place ? "{$location} - {$place}" : $location;
+        };
 
         $spreadsheet = new Spreadsheet();
         $sheet = $spreadsheet->getActiveSheet();
@@ -229,8 +242,8 @@ class MovementCrewController extends Controller
                 $onFlight ? $m->flight?->scheduled_at?->format('H:i') : null,
                 $m->kind === 'match' ? $m->match?->kick_off?->format('H:i') : null,
                 null,
-                $m->from_location,
-                $m->to_location,
+                $venue($m->from_location, $m),
+                $venue($m->to_location, $m),
                 $names([$m->driver?->name, ...$m->units->map(fn ($u) => $u->driver?->name)->all()]),
                 $names([$m->fieldSupervisor?->name, ...$m->extraSupervisors->pluck('name')->all()]),
                 null,

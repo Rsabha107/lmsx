@@ -137,6 +137,28 @@ class AgencyCrewAssignmentTest extends TestCase
         $this->assertNull($sheet->getCell('A5')->getValue());
     }
 
+    public function test_the_allocation_sheet_names_the_airport_and_hotel(): void
+    {
+        $event = $this->createEvent();
+        $team = $this->createTeam($event);
+        $doh = \App\Models\Airport::create(['code' => 'DOH', 'name' => 'Hamad International']);
+        $flight = \App\Models\TeamFlight::create([
+            'event_id' => $event->id, 'team_id' => $team->id, 'direction' => 'arrival',
+            'flight_number' => 'QR100', 'scheduled_at' => '2026-10-14 09:00:00', 'destination_airport_id' => $doh->id,
+        ]);
+        $stay = \App\Models\TeamStay::create(['event_id' => $event->id, 'team_id' => $team->id, 'hotel_name' => 'Sheraton Doha']);
+        $this->createMovement($event, $this->createPlan($event), $team, [
+            'kind' => 'arrival', 'flight_id' => $flight->id, 'accommodation_id' => $stay->id,
+            'from_location' => 'Airport', 'to_location' => 'Hotel', 'window_start' => '2026-10-14 10:00:00',
+        ]);
+
+        $response = $this->agency($event)->get('/crew-assignment/export?date=2026-10-14')->assertOk();
+
+        $sheet = \PhpOffice\PhpSpreadsheet\IOFactory::load($this->capture($response))->getActiveSheet();
+        $this->assertSame('Airport - Hamad International', $sheet->getCell('H4')->getValue());
+        $this->assertSame('Hotel - Sheraton Doha', $sheet->getCell('I4')->getValue());
+    }
+
     private function capture($response): string
     {
         $path = tempnam(sys_get_temp_dir(), 'xlsx');

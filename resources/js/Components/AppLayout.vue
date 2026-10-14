@@ -284,7 +284,7 @@ const allNavItems = [
   { label: 'Planning',      route: 'plans',             icon: 'plans',     can: 'plans.view' },
   { label: 'Jobs Queue',    route: 'jobs',              icon: 'jobs',      can: 'console.view' },
   { label: 'Crew Assignment', route: 'crew-assignment', icon: 'team',      can: 'movements.assign-crew' },
-  { label: 'Duty Roster',   route: 'duty-roster',       icon: 'schedule',  can: 'console.view' },
+  { label: 'Duty Roster',   route: 'duty-roster',       icon: 'schedule',  can: 'roster.manage' },
   { label: 'Jobs (Mobile)', route: 'jobs/mobile',       icon: 'phone',     can: 'jobs.view', flag: 'jobsMobileMenu' },
   { label: 'Matches',       route: 'matches',           icon: 'trophy',    can: 'fleet.view' },
   { label: 'Event Teams',   route: 'event-teams',       icon: 'team',      can: 'fleet.view' },

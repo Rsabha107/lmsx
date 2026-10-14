@@ -84,7 +84,7 @@ class JobLifecycleService
 
             $timestampColumn = JobOperation::STATUS_TIMESTAMPS[$to] ?? null;
             if ($timestampColumn && ! $job->{$timestampColumn}) {
-                $attrs[$timestampColumn] = now();
+                $attrs[$timestampColumn] = $this->checkpointTime($job, $to) ?? now();
             }
 
             // Undoing an accidental start clears the evidence that it ever ran.
@@ -861,12 +861,28 @@ class JobLifecycleService
         }
 
         if ($to === 'in-progress' && ! $movement->actual_departure) {
-            $movement->update(['actual_departure' => now()]);
+            $movement->update(['actual_departure' => $this->checkpointTime($job, $to) ?? now()]);
         } elseif ($to === 'completed' && ! $movement->actual_arrival) {
-            $movement->update(['actual_arrival' => now()]);
+            $movement->update(['actual_arrival' => $this->checkpointTime($job, $to) ?? now()]);
         } elseif ($isRevertToPending) {
             $movement->update(['actual_departure' => null]);
         }
+    }
+
+    /**
+     * A job starts at its first checkpoint's actual time and completes at its last,
+     * so its times are venue wall-clock like the checkpoints'. Null when none is done.
+     */
+    public function checkpointTime(JobOperation $job, string $to): ?Carbon
+    {
+        $done = $job->checkpoints()->where('state', 'done')->whereNotNull('completed_at');
+        $value = match ($to) {
+            'in-progress' => $done->min('completed_at'),
+            'completed' => $done->max('completed_at'),
+            default => null,
+        };
+
+        return $value ? Carbon::parse($value) : null;
     }
 
     /**

@@ -43,7 +43,7 @@ class RolePermissionSeeder extends Seeder
         'ai.use',
         // Open and change Roles & Permissions. Held only by SecurityRole, never by admin.
         'access.manage',
-        // Edit the staff duty roster and its shift types (everyone with console.view can read it).
+        // Open and edit the staff duty roster and its shift types. Admin only.
         'roster.manage',
     ];
 
@@ -70,7 +70,7 @@ class RolePermissionSeeder extends Seeder
         }
 
         Role::findByName('admin')->syncPermissions(array_diff(self::PERMISSIONS, ['access.manage']));
-        Role::findByName('SecurityRole')->syncPermissions(['access.manage', 'roster.manage']);
+        Role::findByName('SecurityRole')->syncPermissions(['access.manage']);
 
         // Field supervisors: the mobile job workflow and nothing else. No
         // console.view, so every desk page is closed to them, and no

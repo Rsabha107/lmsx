@@ -47,14 +47,13 @@ class DutyRosterTest extends TestCase
             'cells' => [['user_id' => $aida->id, 'date' => '2026-10-11'], ['user_id' => $aida->id, 'date' => '2026-10-12']],
         ])->assertRedirect();
 
-        $this->as('transport', $event)->get('/duty-roster?from=2026-10-11&weeks=1')
+        $this->as('admin', $event)->get('/duty-roster?from=2026-10-11&weeks=1')
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->component('DutyRoster')
                 ->where('from', '2026-10-11')
                 ->where('members.0.name', 'Aida')
-                ->where("shifts.{$aida->id}|2026-10-12", $morning->id)
-                ->where('candidates', []));
+                ->where("shifts.{$aida->id}|2026-10-12", $morning->id));
 
         $this->as('admin', $event)->put('/duty-roster/shifts', [
             'shift_type_id' => null,
@@ -64,18 +63,22 @@ class DutyRosterTest extends TestCase
         $this->assertDatabaseHas('audit_logs', ['action' => 'Duty roster updated']);
     }
 
-    public function test_readers_cannot_change_the_roster(): void
+    public function test_only_admins_can_open_or_change_the_roster(): void
     {
         $event = $this->createEvent();
         $user = User::factory()->create();
         RosterMember::create(['event_id' => $event->id, 'user_id' => $user->id]);
 
-        $this->as('transport', $event)->put('/duty-roster/shifts', [
-            'shift_type_id' => ShiftType::first()->id,
-            'cells' => [['user_id' => $user->id, 'date' => '2026-10-11']],
-        ])->assertForbidden();
+        foreach (['agency', 'transport', 'SecurityRole', 'ground_control'] as $role) {
+            $this->as($role, $event)->get('/duty-roster')->assertForbidden();
+            $this->as($role, $event)->get('/duty-roster/export')->assertForbidden();
+            $this->as($role, $event)->put('/duty-roster/shifts', [
+                'shift_type_id' => ShiftType::first()->id,
+                'cells' => [['user_id' => $user->id, 'date' => '2026-10-11']],
+            ])->assertForbidden();
+            $this->as($role, $event)->post('/duty-roster/members', ['user_ids' => [$user->id]])->assertForbidden();
+        }
 
-        $this->as('transport', $event)->post('/duty-roster/members', ['user_ids' => [$user->id]])->assertForbidden();
         $this->assertSame(0, RosterShift::count());
     }
 
@@ -115,7 +118,7 @@ class DutyRosterTest extends TestCase
         $evening = ShiftType::where('name', 'Evening')->firstOrFail();
         RosterShift::create(['event_id' => $event->id, 'user_id' => $user->id, 'date' => '2026-10-14', 'shift_type_id' => $evening->id]);
 
-        $response = $this->as('transport', $event)->get('/duty-roster/export?from=2026-10-11&weeks=1')->assertOk();
+        $response = $this->as('admin', $event)->get('/duty-roster/export?from=2026-10-11&weeks=1')->assertOk();
 
         $path = tempnam(sys_get_temp_dir(), 'xlsx');
         file_put_contents($path, $response->streamedContent());

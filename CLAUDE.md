@@ -65,6 +65,7 @@ User-facing documentation lives in one file: `docs/NAQLA_LMS_GUIDE.md` (source f
 - Punctuality (`is_on_time`, raw `delay_minutes`) is judged against the checkpoint's own `scheduled_at` (`JobLifecycleService::resolvePunctuality`); no scheduled time → both null. `php artisan checkpoints:recompute-punctuality [--event=] [--apply]` re-judges stored results (dry run by default). Daleel's movement details send a `punctuality` label (`on time` / `late` / `not judged`) so a null flag isn't misread.
 - Override "exclude date": the server picks the day nearest `scheduled_at` (`alignTimeOfDayTo`), matching the Jobs.vue preview.
 - Datetimes are wall-clock strings; parse `YYYY-MM-DD HH:MM` as text in the frontend (no timezone conversion).
+- A job's `started_at` / `completed_at` (and the movement's `actual_departure` / `actual_arrival`) come from its first / last done checkpoint's `completed_at` (`JobLifecycleService::checkpointTime`); `now()` only when no checkpoint is done. `php artisan jobs:recompute-times [--event=] [--apply]` resets existing jobs (dry run by default).
 
 ## Frontend conventions
 - Pages in `resources/js/Pages`, shared components in `resources/js/Components`, composables in `resources/js/Composables`.
@@ -74,7 +75,7 @@ User-facing documentation lives in one file: `docs/NAQLA_LMS_GUIDE.md` (source f
 
 ## Key pages
 - Planning `Plans.vue` (very large), Jobs Queue `Jobs.vue`, Crew Assignment `CrewAssignment.vue` (table / day timeline / week matrix), Resource Schedule `ResourceSchedule.vue` (one resource's week as a Gantt; Excel via `/resource-schedule/export`, PDF via the browser print dialog).
-- Duty Roster `DutyRoster.vue` (`/duty-roster`, `DutyRosterController`): staff shifts per event (`roster_members`, `roster_shifts`, global `shift_types`). Read: `console.view`; write: `roster.manage` (admin + SecurityRole). Tabs: Summary (default; coverage, workload, period figures, computed client-side) and Schedule (`?tab=schedule`, paint grid). Excel via `/duty-roster/export`.
+- Duty Roster `DutyRoster.vue` (`/duty-roster`, `DutyRosterController`): staff shifts per event (`roster_members`, `roster_shifts`, global `shift_types`). Admin only: every route (view, export, edit) needs `roster.manage`, held only by admin (`2026_10_14_000001_make_duty_roster_admin_only`). Tabs: Summary (default; coverage, workload, period figures, computed client-side) and Schedule (`?tab=schedule`, paint grid). Excel via `/duty-roster/export`.
 - Day Board `DayBoard.vue` (`/day-board`, `jobs.view`): a day's jobs by hour with current + previous checkpoint; attention flags computed client-side against the live clock. Supervisors without `jobs.view-unassigned` see only jobs they supervise. Agency also gets it (route `role_or_permission:jobs.view|agency`, ability `dayBoard.view`), seeing all crews' jobs within `ProviderScope`. Their job links open `JobDetail` read-only (`JobOperationPolicy::read`, `job.read_only`; no buttons, no `jobs.view`).
 
 ## Style

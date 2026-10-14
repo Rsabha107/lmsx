@@ -65,7 +65,6 @@ User-facing documentation lives in one file: `docs/NAQLA_LMS_GUIDE.md` (source f
 - Punctuality (`is_on_time`, raw `delay_minutes`) is judged against the checkpoint's own `scheduled_at` (`JobLifecycleService::resolvePunctuality`); no scheduled time → both null. `php artisan checkpoints:recompute-punctuality [--event=] [--apply]` re-judges stored results (dry run by default). Daleel's movement details send a `punctuality` label (`on time` / `late` / `not judged`) so a null flag isn't misread.
 - Override "exclude date": the server picks the day nearest `scheduled_at` (`alignTimeOfDayTo`), matching the Jobs.vue preview.
 - Datetimes are wall-clock strings; parse `YYYY-MM-DD HH:MM` as text in the frontend (no timezone conversion).
-- A job's `started_at` / `completed_at` (and the movement's `actual_departure` / `actual_arrival`) come from its first / last done checkpoint's `completed_at` (`JobLifecycleService::checkpointTime`); `now()` only when no checkpoint is done. `php artisan jobs:recompute-times [--event=] [--apply]` resets existing jobs (dry run by default).
 
 ## Frontend conventions
 - Pages in `resources/js/Pages`, shared components in `resources/js/Components`, composables in `resources/js/Composables`.

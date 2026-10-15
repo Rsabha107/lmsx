@@ -12,6 +12,8 @@ use Illuminate\Support\Facades\Auth;
  */
 class AuditLog extends Model
 {
+    use Concerns\SerializesWallClock;
+
     protected $fillable = [
         'user_id',
         'user_name',

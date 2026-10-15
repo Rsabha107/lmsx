@@ -13,6 +13,8 @@ use App\Models\GameMatch;
 
 class Movement extends Model
 {
+    use Concerns\SerializesWallClock;
+
     use SoftDeletes;
 
     /** "M" is avoided: M1, M2… already mean something else to the business. */

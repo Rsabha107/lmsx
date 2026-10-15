@@ -6,6 +6,8 @@ use Illuminate\Database\Eloquent\Model;
 
 class Contact extends Model
 {
+    use Concerns\SerializesWallClock;
+
     protected $table = 'pma_contacts';
 
     protected $fillable = [

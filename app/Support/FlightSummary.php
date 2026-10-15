@@ -28,7 +28,7 @@ final class FlightSummary
             'is_bus' => $flight->flight_number === 'BUS',
             'origin_airport' => $flight->originAirport?->code,
             'destination_airport' => $flight->destinationAirport?->code,
-            'scheduled_at' => $flight->scheduled_at?->toIso8601String(),
+            'scheduled_at' => WallClock::iso($flight->scheduled_at),
             'scheduled_time' => $flight->scheduled_at?->format('H:i'),
             'scheduled_date' => $flight->scheduled_at?->format('D j M'),
             // For <input type="datetime-local"> in the override modal.

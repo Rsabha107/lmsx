@@ -124,16 +124,21 @@ class AgencyCrewAssignmentTest extends TestCase
             'driver_id' => $driver->id,
             'field_supervisor_id' => $supervisor->id,
         ]);
-        $this->createJob($event, $movement, $team, ['job_id' => 'JOB-SHEET-1']);
+        $job = $this->createJob($event, $movement, $team, ['job_id' => 'JOB-SHEET-1']);
+        $this->createCheckpoint($event, $job, ['order' => 2, 'name' => 'Convoy Depart', 'scheduled_at' => '2026-10-14 10:30:00']);
+        $this->createCheckpoint($event, $job, ['order' => 1, 'name' => 'Arrival at Staging', 'scheduled_at' => '2026-10-14 09:45:00']);
         $this->createMovement($event, $this->createPlan($event), $team, ['code' => 'MV-OTHERDAY', 'window_start' => '2026-10-15 10:00:00']);
 
         $response = $this->agency($event)->get('/crew-assignment/export?date=2026-10-14')->assertOk();
 
         $sheet = \PhpOffice\PhpSpreadsheet\IOFactory::load($this->capture($response))->getActiveSheet();
         $this->assertSame('JOB-SHEET-1', $sheet->getCell('A4')->getValue());
-        $this->assertSame('QA-1234', $sheet->getCell('M4')->getValue());
-        $this->assertSame('Sheet Driver', $sheet->getCell('J4')->getValue());
-        $this->assertNull($sheet->getCell('G4')->getValue());
+        $this->assertSame('First Checkpoint', $sheet->getCell('F3')->getValue());
+        $this->assertSame('Arrival at Staging', $sheet->getCell('F4')->getValue());
+        $this->assertSame('09:45', $sheet->getCell('G4')->getValue());
+        $this->assertSame('QA-1234', $sheet->getCell('O4')->getValue());
+        $this->assertSame('Sheet Driver', $sheet->getCell('L4')->getValue());
+        $this->assertNull($sheet->getCell('I4')->getValue());
         $this->assertNull($sheet->getCell('A5')->getValue());
     }
 
@@ -155,8 +160,8 @@ class AgencyCrewAssignmentTest extends TestCase
         $response = $this->agency($event)->get('/crew-assignment/export?date=2026-10-14')->assertOk();
 
         $sheet = \PhpOffice\PhpSpreadsheet\IOFactory::load($this->capture($response))->getActiveSheet();
-        $this->assertSame('Airport - Hamad International', $sheet->getCell('H4')->getValue());
-        $this->assertSame('Hotel - Sheraton Doha', $sheet->getCell('I4')->getValue());
+        $this->assertSame('Airport - Hamad International', $sheet->getCell('J4')->getValue());
+        $this->assertSame('Hotel - Sheraton Doha', $sheet->getCell('K4')->getValue());
     }
 
     private function capture($response): string

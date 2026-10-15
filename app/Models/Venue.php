@@ -9,6 +9,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 
 class Venue extends Model
 {
+    use Concerns\SerializesWallClock;
+
     use HasFactory;
 
     protected $fillable = [

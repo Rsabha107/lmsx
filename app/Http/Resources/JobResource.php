@@ -4,6 +4,7 @@ namespace App\Http\Resources;
 
 use App\Support\CountryFlags;
 use App\Support\FlightSummary;
+use App\Support\WallClock;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -53,10 +54,10 @@ class JobResource extends JsonResource
             'kind' => $movement?->kind ?? 'transfer',
             'from' => $movement?->from_location ?? '—',
             'to' => $movement?->to_location ?? '—',
-            'window_start' => $movement?->window_start?->toIso8601String(),
-            'window_end' => $movement?->window_end?->toIso8601String(),
+            'window_start' => WallClock::iso($movement?->window_start),
+            'window_end' => WallClock::iso($movement?->window_end),
             'window' => $this->formatWindow($movement),
-            'pickup_at' => $pickupAt?->toIso8601String(),
+            'pickup_at' => WallClock::iso($pickupAt),
             'pickup_time' => $pickupAt?->format('H:i'),
             'pickup_date' => $pickupAt?->format('D j M'),
             'pickup_checkpoint' => $this->firstCheckpoint()?->name,
@@ -124,7 +125,7 @@ class JobResource extends JsonResource
             'number' => $match->match_number,
             'stage' => $match->stage,
             'venue' => $match->venue?->name,
-            'kick_off' => $match->kick_off?->toIso8601String(),
+            'kick_off' => WallClock::iso($match->kick_off),
             'kick_off_time' => $match->kick_off?->format('H:i'),
             'kick_off_date' => $match->kick_off?->format('D j M'),
             'gates_opening' => $match->gates_opening?->format('H:i'),

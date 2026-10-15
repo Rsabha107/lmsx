@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources;
 
+use App\Support\WallClock;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -28,15 +29,15 @@ class CheckpointResource extends JsonResource
             'requires_baggage_count' => (bool) ($this->checkpoint?->requires_baggage_count ?? false),
             'estimated_minutes' => $this->estimated_minutes,
 
-            'scheduled_at' => $this->scheduled_at?->toIso8601String(),
-            'completed_at' => $this->completed_at?->toIso8601String(),
+            'scheduled_at' => WallClock::iso($this->scheduled_at),
+            'completed_at' => WallClock::iso($this->completed_at),
             'scheduled_time' => $this->scheduled_at?->format('H:i'),
             'actual_time' => $this->completed_at?->format('H:i'),
 
             // Where completed_at came from: device | manual | server | override.
             'time_source' => $this->time_source,
-            'event_at' => $this->event_at?->toIso8601String(),
-            'received_at' => $this->received_at?->toIso8601String(),
+            'event_at' => WallClock::iso($this->event_at),
+            'received_at' => WallClock::iso($this->received_at),
             'clock_skew_seconds' => $this->clock_skew_seconds,
 
             'is_on_time' => $this->is_on_time,

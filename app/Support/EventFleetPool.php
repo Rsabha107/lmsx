@@ -30,9 +30,11 @@ class EventFleetPool
             $counts[$label] = (clone $missing)->count();
 
             if ($apply && $counts[$label] > 0) {
+                // The app's clock, not MySQL's NOW(): the connection is pinned to +00:00.
+                $now = now()->format('Y-m-d H:i:s');
                 DB::table($pivot)->insertUsing(
                     ['event_id', $column, 'created_at', 'updated_at'],
-                    $missing->select('e.id', 'r.id', DB::raw('NOW()'), DB::raw('NOW()')),
+                    $missing->selectRaw('e.id, r.id, ?, ?', [$now, $now]),
                 );
             }
         }

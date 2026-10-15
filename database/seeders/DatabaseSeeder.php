@@ -32,11 +32,10 @@ class DatabaseSeeder extends Seeder
             CountrySeeder::class,
             TeamClassificationSeeder::class,
             
-            // Fleet & Contacts
+            // Fleet
             VehicleSeeder::class,
             FleetProviderSeeder::class,
             DriverSeeder::class,
-            ContactSeeder::class,
             
             // Events (teams require an event to belong to)
             EventSeeder::class,

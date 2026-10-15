@@ -3,9 +3,11 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Controllers\MicrosoftController;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\ValidationException;
 
@@ -30,8 +32,33 @@ class AuthController extends Controller
             ]);
         }
 
-        $device = $credentials['device_name'] ?? 'mobile';
+        return $this->issueToken($user, $credentials['device_name'] ?? 'mobile');
+    }
 
+    /** Redeems the one-time code from the Microsoft SSO callback, with the PKCE verifier. */
+    public function microsoft(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'code' => 'required|string|max:128',
+            'verifier' => 'required|string|min:43|max:128',
+            'device_name' => 'nullable|string|max:120',
+        ]);
+
+        $grant = Cache::pull(MicrosoftController::mobileCodeKey($data['code']));
+        $challenge = rtrim(strtr(base64_encode(hash('sha256', $data['verifier'], true)), '+/', '-_'), '=');
+        $user = $grant && hash_equals($grant['challenge'], $challenge) ? User::find($grant['user_id']) : null;
+
+        if (! $user) {
+            throw ValidationException::withMessages([
+                'code' => ['The Microsoft sign-in has expired. Please try again.'],
+            ]);
+        }
+
+        return $this->issueToken($user, $data['device_name'] ?? 'mobile');
+    }
+
+    private function issueToken(User $user, string $device): JsonResponse
+    {
         // One active token per device keeps re-logins from piling up rows.
         $user->tokens()->where('name', $device)->delete();
 

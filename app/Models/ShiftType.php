@@ -6,6 +6,8 @@ use Illuminate\Database\Eloquent\Model;
 
 class ShiftType extends Model
 {
+    use Concerns\SerializesWallClock;
+
     protected $fillable = ['name', 'code', 'color', 'start_time', 'end_time', 'is_leave', 'sort'];
 
     protected $casts = [

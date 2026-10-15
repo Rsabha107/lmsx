@@ -12,6 +12,7 @@ use App\Models\JobIssue;
 use App\Models\JobOperation;
 use App\Services\CheckpointUploadService;
 use App\Services\JobLifecycleService;
+use App\Support\WallClock;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -88,7 +89,7 @@ class MobileJobController extends Controller
             'data' => JobResource::collection($jobs)->resolve(),
             'visible_ids' => $visibleIds,
             'delta' => $since !== null,
-            'synced_at' => $syncedAt->toIso8601String(),
+            'synced_at' => WallClock::iso($syncedAt),
         ]);
     }
 
@@ -312,7 +313,7 @@ class MobileJobController extends Controller
                 'label' => $issue->label(),
                 'severity' => $issue->severity,
                 'notes' => $issue->notes,
-                'reported_at' => $issue->created_at->toIso8601String(),
+                'reported_at' => WallClock::iso($issue->created_at),
             ],
         ], $status, $replayed ? ['Idempotent-Replayed' => 'true'] : []);
     }

@@ -7,6 +7,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class JobCheckpoint extends Model
 {
+    use Concerns\SerializesWallClock;
+
     protected $fillable = [
         'job_id',
         'event_id',

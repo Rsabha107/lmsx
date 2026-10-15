@@ -10,6 +10,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class JobOperation extends Model
 {
+    use Concerns\SerializesWallClock;
+
     protected $table = 'jobs_operations';
 
     public const STATUSES = ['pending', 'dispatched', 'in-progress', 'completed', 'cancelled'];

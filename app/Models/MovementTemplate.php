@@ -9,6 +9,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class MovementTemplate extends Model
 {
+    use Concerns\SerializesWallClock;
+
     use UppercasesCode;
 
     protected $fillable = [

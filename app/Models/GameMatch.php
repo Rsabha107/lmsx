@@ -6,6 +6,8 @@ use Illuminate\Database\Eloquent\Model;
 
 class GameMatch extends Model
 {
+    use Concerns\SerializesWallClock;
+
     protected $table = 'matches';
 
     protected $fillable = [

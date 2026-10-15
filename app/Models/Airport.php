@@ -6,6 +6,8 @@ use Illuminate\Database\Eloquent\Model;
 
 class Airport extends Model
 {
+    use Concerns\SerializesWallClock;
+
     protected $fillable = [
         'code',
         'name',

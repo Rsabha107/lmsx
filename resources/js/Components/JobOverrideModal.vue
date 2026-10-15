@@ -293,6 +293,7 @@ import Modal from './Modal.vue';
 import Button from './Button.vue';
 import { useCrewBusy } from '../Composables/useCrewBusy';
 import { supervisorsFor, personLabel } from '../Composables/crewPeople';
+import { varianceFromPlan } from '../Composables/useVenueTime';
 
 /**
  * The Jobs Queue override: complete or skip a checkpoint (with time, evidence
@@ -304,6 +305,8 @@ const props = defineProps({
   drivers: { type: Array, default: () => [] },
   supervisors: { type: Array, default: () => [] },
   vehicles: { type: Array, default: () => [] },
+  // Open on this checkpoint with "Done" picked, e.g. to record evidence from the console.
+  completeCheckpointId: { type: Number, default: null },
 });
 
 const emit = defineEmits(['close', 'saved']);
@@ -401,8 +404,9 @@ watch(() => props.show, (open) => {
   if (!open) return;
   const job = props.job;
   const active = job?.checkpoints?.find(c => c.status === 'active' || c.state === 'active');
-  checkpoint.value = active ?? job?.checkpoints?.[0] ?? null;
-  state.value = null;
+  const target = props.completeCheckpointId ? job?.checkpoints?.find(c => c.id === props.completeCheckpointId) : null;
+  checkpoint.value = target ?? active ?? job?.checkpoints?.[0] ?? null;
+  state.value = target ? 'done' : null;
   const now = new Date();
   time.value = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
   excludeDate.value = false;
@@ -470,7 +474,7 @@ const plannedLabel = computed(() => {
 });
 
 const varianceMinutes = computed(() => {
-  if (!checkpoint.value?.scheduled_ts || !time.value) return null;
+  if (!checkpoint.value?.scheduled_local || !time.value) return null;
   const shift = checkpointShift.value;
   const [ah, am] = time.value.split(':').map(Number);
   if (isNaN(ah) || isNaN(am)) return null;
@@ -486,12 +490,7 @@ const varianceMinutes = computed(() => {
     return diff;
   }
 
-  const scheduledHour = new Date((checkpoint.value.scheduled_ts + shift * 60) * 1000).getHours();
-  const actualDate = new Date();
-  actualDate.setHours(ah, am, 0, 0);
-  // Scheduled late at night, done early morning: the next day.
-  if (scheduledHour >= 18 && ah < 6) actualDate.setDate(actualDate.getDate() + 1);
-  return Math.round((Math.floor(actualDate.getTime() / 1000) - (checkpoint.value.scheduled_ts + shift * 60)) / 60);
+  return varianceFromPlan(checkpoint.value.scheduled_local, time.value, shift);
 });
 
 const varianceText = computed(() => {

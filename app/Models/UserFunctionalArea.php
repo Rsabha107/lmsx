@@ -7,6 +7,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class UserFunctionalArea extends Model
 {
+    use Concerns\SerializesWallClock;
+
     protected $fillable = [
         'user_id',
         'functional_area',

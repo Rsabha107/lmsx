@@ -8,6 +8,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 
 class Checkpoint extends Model
 {
+    use Concerns\SerializesWallClock;
+
     use UppercasesCode;
 
     protected $fillable = [

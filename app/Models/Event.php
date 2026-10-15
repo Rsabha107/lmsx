@@ -9,6 +9,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 
 class Event extends Model
 {
+    use Concerns\SerializesWallClock;
+
     protected $fillable = [
         'name',
         'short_name',

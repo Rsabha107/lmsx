@@ -15,7 +15,6 @@ class LmsData
             'checkpoints'    => self::checkpoints(),
             'mapNodes'       => self::mapNodes(),
             'liveJobs'       => self::liveJobs(),
-            'contacts'       => self::contacts(),
             'audit'          => self::audit(),
         ];
     }
@@ -168,20 +167,6 @@ class LmsData
             ['id'=>'J-1044','code'=>'SAH','from'=>'aur','to'=>'azr','progress'=>0.35,'status'=>'in-progress'],
             ['id'=>'J-1045','code'=>'PAM','from'=>'ory','to'=>'sol','progress'=>0.22,'status'=>'delayed'],
             ['id'=>'J-1046','code'=>'TOK','from'=>'ver','to'=>'trg','progress'=>0.80,'status'=>'in-progress'],
-        ];
-    }
-
-    public static function contacts(): array
-    {
-        return [
-            ['name'=>'Irena Volkov',    'role'=>'Logistics Manager',       'org'=>'NAQLA HQ',  'phone'=>'+33 6 12 44 00 01','on'=>true],
-            ['name'=>'Marcus Idowu',    'role'=>'Dispatch Lead',           'org'=>'NAQLA HQ',  'phone'=>'+33 6 12 44 00 02','on'=>true],
-            ['name'=>'Priya Anand',     'role'=>'Field Supervisor · CDG',  'org'=>'Ops Team A',    'phone'=>'+33 6 12 44 00 03','on'=>true],
-            ['name'=>'Jonas Lindqvist', 'role'=>'Field Supervisor · ORY',  'org'=>'Ops Team B',    'phone'=>'+33 6 12 44 00 04','on'=>false],
-            ['name'=>'Sofía Reyes',     'role'=>'Transport Partner',       'org'=>'Nord Coaches',  'phone'=>'+33 6 12 44 00 05','on'=>true],
-            ['name'=>'Thabo Ngwenya',   'role'=>'Team Liaison · MER',      'org'=>'FC Meridian',   'phone'=>'+33 6 12 44 00 06','on'=>true],
-            ['name'=>'Hannah Stein',    'role'=>'Team Liaison · NOR',      'org'=>'Nordstad FK',   'phone'=>'+33 6 12 44 00 07','on'=>true],
-            ['name'=>'Omar El-Haddad',  'role'=>'Venue Ops',               'org'=>'Stadium Azure', 'phone'=>'+33 6 12 44 00 08','on'=>true],
         ];
     }
 

@@ -7,6 +7,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class AiInteraction extends Model
 {
+    use Concerns\SerializesWallClock;
+
     const UPDATED_AT = null;
 
     protected $fillable = [

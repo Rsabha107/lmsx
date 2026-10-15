@@ -10,6 +10,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class CheckpointTemplate extends Model
 {
+    use Concerns\SerializesWallClock;
+
     use UppercasesCode;
 
     protected $fillable = [

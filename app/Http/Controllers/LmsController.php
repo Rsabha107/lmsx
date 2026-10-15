@@ -73,7 +73,29 @@ class LmsController extends Controller
             'schedule'      => LmsData::schedule(),
             'notifications' => $notifications->recent($request->session()->get('active_event_id'), 6),
             'audit'         => LmsData::audit(),
+            'clocks'        => $request->user()->hasRole('admin') ? $this->clocks() : null,
         ]);
+    }
+
+    private function clocks(): array
+    {
+        $app = now();
+        // server_now is what SQL clients see: the server's default zone, not the app's +00:00 session.
+        $db = DB::selectOne(
+            "SELECT NOW() AS session_now, UTC_TIMESTAMP() AS utc_now, @@session.time_zone AS session_tz,
+                    @@global.time_zone AS global_tz, @@system_time_zone AS system_tz,
+                    CONVERT_TZ(UTC_TIMESTAMP(), '+00:00', @@global.time_zone) AS server_now"
+        );
+
+        return [
+            'app' => [
+                'now' => $app->format('Y-m-d H:i:s'),
+                'utc' => $app->copy()->utc()->format('Y-m-d H:i:s'),
+                'zone' => $app->timezoneName,
+                'offset' => $app->utcOffset(),
+            ],
+            'db' => (array) $db,
+        ];
     }
 
     public function plans(Request $request): Response

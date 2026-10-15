@@ -341,7 +341,9 @@
                 <div class="next-step-text">
                   <span class="next-step-label">Next step</span>
                   <span class="next-step-name">{{ nextCheckpoint.name }}</span>
-                  <span v-if="nextStepNeedsEvidence" class="next-step-hint">Needs a photo, signature or count — complete it in the mobile app.</span>
+                  <span v-if="nextStepNeedsEvidence" class="next-step-hint">
+                    {{ canCompleteWithEvidence ? 'Needs a photo, signature or count.' : 'Needs a photo, signature or count — complete it in the mobile app.' }}
+                  </span>
                 </div>
                 <Button
                   v-if="canCompleteNextStep"
@@ -349,6 +351,12 @@
                   size="md"
                   @click="openCompleteModal"
                 >Mark complete</Button>
+                <Button
+                  v-else-if="canCompleteWithEvidence"
+                  variant="primary"
+                  size="md"
+                  @click="openEvidenceComplete"
+                >Complete with evidence</Button>
               </div>
               <CheckpointTimeline :checkpoints="selectedJob.checkpoints" hide-title />
             </div>
@@ -506,6 +514,7 @@
       :drivers="props.drivers"
       :supervisors="props.supervisors"
       :vehicles="props.vehicles"
+      :complete-checkpoint-id="overrideCheckpointId"
       @close="showOverrideModal = false"
       @saved="onOverrideSaved"
     />
@@ -621,6 +630,7 @@ import JobDayTimeline from '../Components/JobDayTimeline.vue';
 import ColumnFilter from '../Components/ColumnFilter.vue';
 import { useColumnFilters } from '../Composables/useColumnFilters';
 import { useToast } from '../Composables/useToast';
+import { varianceFromPlan } from '../Composables/useVenueTime';
 
 const page = usePage();
 const hasActiveEvent = computed(() => !!page.props.activeEventId);
@@ -1246,8 +1256,16 @@ function confirmDeleteJobs() {
   });
 }
 const showOverrideModal = ref(false);
+const overrideCheckpointId = ref(null);
 
 function openOverrideModal() {
+  overrideCheckpointId.value = null;
+  showOverrideModal.value = true;
+}
+
+// Photo, signature and counts are recorded through the override form, which collects them.
+function openEvidenceComplete() {
+  overrideCheckpointId.value = nextCheckpoint.value?.id ?? null;
   showOverrideModal.value = true;
 }
 
@@ -1267,6 +1285,11 @@ const nextStepNeedsEvidence = computed(() => {
 
 const canCompleteNextStep = computed(() => !!nextCheckpoint.value
   && !nextStepNeedsEvidence.value
+  && !['cancelled', 'completed'].includes(selectedJob.value?.status));
+
+const canCompleteWithEvidence = computed(() => !!nextCheckpoint.value
+  && nextStepNeedsEvidence.value
+  && canOverride.value
   && !['cancelled', 'completed'].includes(selectedJob.value?.status));
 
 const toast = useToast();
@@ -1302,7 +1325,7 @@ function closeCompleteModal() {
 // Same calculation as the Override modal.
 const completeVarianceMinutes = computed(() => {
   const cp = nextCheckpoint.value;
-  if (!cp?.scheduled_ts || !completeTime.value) return null;
+  if (!cp?.scheduled_local || !completeTime.value) return null;
   const [ah, am] = completeTime.value.split(':').map(Number);
   if (isNaN(ah) || isNaN(am)) return null;
 
@@ -1316,12 +1339,7 @@ const completeVarianceMinutes = computed(() => {
     return diff;
   }
 
-  const scheduledHour = new Date(cp.scheduled_ts * 1000).getHours();
-  const actual = new Date();
-  actual.setHours(ah, am, 0, 0);
-  // Scheduled late at night, done early morning: the next day.
-  if (scheduledHour >= 18 && ah < 6) actual.setDate(actual.getDate() + 1);
-  return Math.round((Math.floor(actual.getTime() / 1000) - cp.scheduled_ts) / 60);
+  return varianceFromPlan(cp.scheduled_local, completeTime.value);
 });
 
 const completeVarianceLabel = computed(() => {

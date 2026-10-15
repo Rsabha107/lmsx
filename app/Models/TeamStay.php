@@ -7,6 +7,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class TeamStay extends Model
 {
+    use Concerns\SerializesWallClock;
+
     protected $fillable = [
         'event_id',
         'team_id',

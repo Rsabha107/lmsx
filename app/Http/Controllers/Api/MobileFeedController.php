@@ -6,9 +6,13 @@ use App\Http\Controllers\Controller;
 use App\Http\Controllers\Api\Concerns\ScopesMobileAccess;
 use App\Models\Contact;
 use App\Models\Event;
+use App\Models\FleetProvider;
 use App\Models\JobCheckpoint;
 use App\Models\JobIssue;
 use App\Models\JobOperation;
+use App\Models\Movement;
+use App\Models\User;
+use App\Support\WallClock;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -52,8 +56,8 @@ class MobileFeedController extends Controller
                     'id' => 'late-'.$cp->id,
                     'tone' => ($cp->delay_minutes ?? 0) > 15 ? 'danger' : 'warn',
                     'title' => 'Late: '.$cp->name,
-                    'body' => "$jobRef · $team · {$cp->delay_minutes} min past the movement window.",
-                    'at' => $cp->completed_at?->toIso8601String(),
+                    'body' => "$jobRef · $team · {$cp->delay_minutes} min late.",
+                    'at' => WallClock::iso($cp->completed_at),
                     ...$link,
                 ];
             }
@@ -64,7 +68,7 @@ class MobileFeedController extends Controller
                     'tone' => 'warn',
                     'title' => 'Overridden: '.$cp->name,
                     'body' => "$jobRef · ".($cp->override_reason ?: 'No reason recorded.'),
-                    'at' => $cp->overridden_at?->toIso8601String(),
+                    'at' => WallClock::iso($cp->overridden_at),
                     ...$link,
                 ];
             }
@@ -75,7 +79,7 @@ class MobileFeedController extends Controller
                     'tone' => 'neutral',
                     'title' => 'Skipped: '.$cp->name,
                     'body' => "$jobRef · ".($cp->skip_reason ?: 'No reason recorded.'),
-                    'at' => $cp->skipped_at?->toIso8601String(),
+                    'at' => WallClock::iso($cp->skipped_at),
                     ...$link,
                 ];
             }
@@ -94,7 +98,7 @@ class MobileFeedController extends Controller
                 'body' => ($issue->job?->job_id ?? 'JOB').' · '
                     .($issue->notes ?: 'No detail given.')
                     .($issue->reporter ? ' — '.$issue->reporter->name : ''),
-                'at' => $issue->created_at->toIso8601String(),
+                'at' => WallClock::iso($issue->created_at),
                 'job_id' => $issue->job_id,
                 'code' => $issue->job?->team?->code,
             ];
@@ -113,7 +117,7 @@ class MobileFeedController extends Controller
                 'method' => $cp->completion_method ?? 'web',
                 'action' => 'Checkpoint ✓',
                 'target' => ($cp->job?->job_id ?? 'JOB').' · '.$cp->name,
-                'at' => $cp->completed_at?->toIso8601String(),
+                'at' => WallClock::iso($cp->completed_at),
                 'job_id' => $cp->job_id,
                 'code' => $cp->job?->team?->code,
                 'team' => $cp->job?->team?->team_name,
@@ -124,7 +128,7 @@ class MobileFeedController extends Controller
         return response()->json([
             'alerts' => array_slice($alerts, 0, 25),
             'activity' => $activity,
-            'synced_at' => now()->toIso8601String(),
+            'synced_at' => WallClock::iso(now()),
         ]);
     }
 
@@ -169,7 +173,7 @@ class MobileFeedController extends Controller
         return response()->json([
             'nodes' => array_values(array_keys($locations)),
             'jobs' => $live,
-            'synced_at' => now()->toIso8601String(),
+            'synced_at' => WallClock::iso(now()),
         ]);
     }
 
@@ -195,6 +199,7 @@ class MobileFeedController extends Controller
         $totalCheckpoints = $checkpoints()->count();
         $doneCheckpoints = $checkpoints()->where('state', 'done')->count();
         $onTime = $checkpoints()->where('state', 'done')->where('is_on_time', true)->count();
+        $event = Event::find($eventId);
 
         return response()->json([
             'user' => [
@@ -203,7 +208,7 @@ class MobileFeedController extends Controller
                 'email' => $user->email,
                 'roles' => $user->getRoleNames(),
             ],
-            'event' => Event::find($eventId)?->only(['id', 'name']),
+            'event' => $event?->only(['id', 'name']),
             'stats' => [
                 'jobs' => (clone $jobs)->count(),
                 'checkpoints' => $doneCheckpoints.'/'.$totalCheckpoints,
@@ -211,20 +216,95 @@ class MobileFeedController extends Controller
                     ? round(($onTime / $doneCheckpoints) * 100).'%'
                     : '—',
             ],
-            'contacts' => Contact::query()
-                ->where('disabled', false)
-                ->orderBy('name')
-                ->get()
-                ->map(fn ($c) => [
-                    'id' => $c->id,
-                    'name' => $c->name,
-                    'role' => $c->role,
-                    'org' => $c->org,
-                    'phone' => $c->phone,
-                    'online' => (bool) $c->on_shift,
-                ]),
-            'synced_at' => now()->toIso8601String(),
+            'contacts' => $this->contacts($user, $event),
+            'synced_at' => WallClock::iso(now()),
         ]);
+    }
+
+    /**
+     * The app groups contacts by org, in this order: the user's crew, the directory, field supervisors, providers.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    private function contacts(User $user, ?Event $event): array
+    {
+        $row = fn (string $id, ?string $name, ?string $role, ?string $org, ?string $phone, bool $online = false) => [
+            'id' => $id,
+            'name' => (string) $name,
+            'role' => (string) $role,
+            'org' => (string) $org,
+            'phone' => (string) $phone,
+            'online' => $online,
+        ];
+
+        $jobs = JobOperation::where('event_id', $event?->id)
+            ->supervisedBy($user->id)
+            ->whereNotIn('status', ['completed', 'cancelled'])
+            ->with([
+                'team:id,code', 'supervisor:id,name,phone',
+                'movement.driver:id,name,phone,status', 'movement.units.driver:id,name,phone,status',
+                'movement.fieldSupervisor:id,name,phone', 'movement.extraSupervisors:id,name,phone',
+            ])
+            ->get();
+
+        $crew = [];
+        $add = function (string $id, string $role, $person, ?string $team, bool $online = false) use (&$crew) {
+            $crew[$id] ??= ['person' => $person, 'role' => $role, 'teams' => [], 'online' => $online];
+            $crew[$id]['teams'][] = $team;
+        };
+        foreach ($jobs as $job) {
+            $m = $job->movement;
+            foreach ([$m?->driver, ...($m?->units->pluck('driver') ?? [])] as $driver) {
+                if ($driver) {
+                    $add("driver-{$driver->id}", 'Driver', $driver, $job->team?->code, $driver->status === 'on_shift');
+                }
+            }
+            foreach ([$m?->fieldSupervisor ?? $job->supervisor, ...($m?->extraSupervisors ?? [])] as $supervisor) {
+                if ($supervisor && $supervisor->id !== $user->id) {
+                    $add("user-{$supervisor->id}", 'Supervisor', $supervisor, $job->team?->code);
+                }
+            }
+        }
+
+        $rows = [];
+        $shownUsers = [$user->id];
+        foreach ($crew as $id => $c) {
+            $teams = implode(', ', array_unique(array_filter($c['teams'])));
+            $rows[] = $row($id, $c['person']->name, $teams ? "{$c['role']} · {$teams}" : $c['role'], 'My crew', $c['person']->phone, $c['online']);
+            if (str_starts_with($id, 'user-')) {
+                $shownUsers[] = $c['person']->id;
+            }
+        }
+
+        foreach (Contact::active()->orderBy('name')->get() as $contact) {
+            if ($contact->user_id && in_array((int) $contact->user_id, $shownUsers, true)) {
+                continue;
+            }
+            $rows[] = $row("contact-{$contact->id}", $contact->name, $contact->role, $contact->org, $contact->phone, (bool) $contact->on_shift);
+            if ($contact->user_id) {
+                $shownUsers[] = (int) $contact->user_id;
+            }
+        }
+
+        $supervisors = User::fieldSupervisors($user)
+            ->whereHas('events', fn ($q) => $q->where('events.id', $event?->id))
+            ->whereNotIn('users.id', $shownUsers)
+            ->with('fleetProvider:id,code')
+            ->orderBy('name')
+            ->get(['users.id', 'name', 'phone', 'job_title', 'fleet_provider_id']);
+        foreach ($supervisors as $supervisor) {
+            $role = implode(' · ', array_filter([$supervisor->job_title ?: 'Field Supervisor', $supervisor->fleetProvider?->code]));
+            $rows[] = $row("user-{$supervisor->id}", $supervisor->name, $role, 'Field supervisors', $supervisor->phone);
+        }
+
+        // The event's providers: its default one and any running its movements.
+        $providerIds = Movement::where('event_id', $event?->id)->whereNotNull('fleet_provider_id')->distinct()
+            ->pluck('fleet_provider_id')->push($event?->fleet_provider_id)->filter()->unique();
+        foreach (FleetProvider::whereIn('id', $providerIds)->orderBy('name')->get() as $provider) {
+            $rows[] = $row("provider-{$provider->id}", $provider->contact_person ?: $provider->name, 'Fleet provider contact', $provider->name, $provider->phone);
+        }
+
+        return $rows;
     }
 
     /**

@@ -7,6 +7,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class Setting extends Model
 {
+    use Concerns\SerializesWallClock;
+
     protected $table = 'pma_settings';
 
     protected $fillable = [

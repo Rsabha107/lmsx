@@ -8,6 +8,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class FleetProvider extends Model
 {
+    use Concerns\SerializesWallClock;
+
     protected static function booted(): void
     {
         static::addGlobalScope(new ProviderScope);

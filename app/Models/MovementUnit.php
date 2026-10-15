@@ -8,6 +8,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 /** An extra vehicle + driver on a movement; the lead pair stays on the movement itself. */
 class MovementUnit extends Model
 {
+    use Concerns\SerializesWallClock;
+
     protected $fillable = ['movement_id', 'vehicle_id', 'driver_id', 'position'];
 
     protected $casts = [

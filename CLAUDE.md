@@ -65,6 +65,8 @@ User-facing documentation lives in one file: `docs/NAQLA_LMS_GUIDE.md` (source f
 - Punctuality (`is_on_time`, raw `delay_minutes`) is judged against the checkpoint's own `scheduled_at` (`JobLifecycleService::resolvePunctuality`); no scheduled time → both null. `php artisan checkpoints:recompute-punctuality [--event=] [--apply]` re-judges stored results (dry run by default). Daleel's movement details send a `punctuality` label (`on time` / `late` / `not judged`) so a null flag isn't misread.
 - Override "exclude date": the server picks the day nearest `scheduled_at` (`alignTimeOfDayTo`), matching the Jobs.vue preview.
 - Datetimes are wall-clock strings; parse `YYYY-MM-DD HH:MM` as text in the frontend (no timezone conversion).
+- Everything is Qatar time: `APP_TIMEZONE=Asia/Qatar` (so `now()` is Doha), MySQL connection pinned to `+00:00` (`DB_TIMEZONE`) so TIMESTAMP columns keep their digits. Models use `Concerns\SerializesWallClock` (JSON = stored digits + `Z`, never converted); API ISO dates go through `App\Support\WallClock::iso()` (digits + `+00:00`). Browser variance maths uses `Composables/useVenueTime.js`, not `*_ts`. `php artisan time:shift-to-venue [--apply]` is the one-off +3h move of old server-clock (UTC) values; it refuses a second run.
+- Admins see the app, MySQL (app session and server default), UTC and browser clocks in the Dashboard's System Clocks card (`LmsController::clocks`). SQL clients on a MySQL whose default zone isn't `+00:00` (local Laragon: Arab Standard Time) show TIMESTAMP columns shifted; `SET time_zone='+00:00'` first.
 
 ## Frontend conventions
 - Pages in `resources/js/Pages`, shared components in `resources/js/Components`, composables in `resources/js/Composables`.

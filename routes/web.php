@@ -35,8 +35,13 @@ Route::middleware('guest')->group(function () {
     Route::get('/reset-password/{token}', [AuthController::class, 'showResetPassword'])->name('password.reset');
     Route::post('/reset-password', [AuthController::class, 'resetPassword'])->name('password.update');
     Route::get('/auth/microsoft/redirect', [MicrosoftController::class, 'redirectToMicrosoft'])->name('auth.microsoft');
-    Route::get('/auth/microsoft/callback', [MicrosoftController::class, 'handleMicrosoftCallback'])->name('auth.microsoft.callback');
 });
+
+// Not guest-only: the phone's browser may hold a console session, which the callback replaces or leaves alone.
+Route::get('/auth/microsoft/mobile', [MicrosoftController::class, 'redirectFromMobile'])
+    ->middleware('throttle:10,1')
+    ->name('auth.microsoft.mobile');
+Route::get('/auth/microsoft/callback', [MicrosoftController::class, 'handleMicrosoftCallback'])->name('auth.microsoft.callback');
 
 Route::post('/logout', [AuthController::class, 'logout'])->name('logout')->middleware('auth');
 

@@ -19,7 +19,7 @@ class CheckpointTimeEvidenceTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        Carbon::setTestNow('2026-10-09 15:00:00');
+        Carbon::setTestNow(Carbon::parse('2026-10-09 15:00:00', 'UTC'));
     }
 
     protected function tearDown(): void

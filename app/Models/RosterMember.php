@@ -7,6 +7,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class RosterMember extends Model
 {
+    use Concerns\SerializesWallClock;
+
     protected $fillable = ['event_id', 'user_id', 'designation', 'sort'];
 
     public function user(): BelongsTo

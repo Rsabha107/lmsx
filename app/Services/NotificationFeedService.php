@@ -157,7 +157,7 @@ class NotificationFeedService
             'tone' => $tone,
             'title' => $title,
             'body' => $body,
-            'at' => $at?->toIso8601String(),
+            'at' => \App\Support\WallClock::iso($at),
             't' => $at?->diffForHumans() ?? '—',
         ];
     }

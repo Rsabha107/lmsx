@@ -10,6 +10,8 @@ use Illuminate\Support\Facades\DB;
 
 class Driver extends Model
 {
+    use Concerns\SerializesWallClock;
+
     protected static function booted(): void
     {
         static::addGlobalScope(new ProviderScope);

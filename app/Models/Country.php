@@ -7,6 +7,8 @@ use Illuminate\Database\Eloquent\Model;
 
 class Country extends Model
 {
+    use Concerns\SerializesWallClock;
+
     use HasFactory;
 
     protected $fillable = [

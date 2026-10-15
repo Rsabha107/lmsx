@@ -11,6 +11,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  */
 class ConflictAcceptance extends Model
 {
+    use Concerns\SerializesWallClock;
+
     protected $fillable = ['event_id', 'conflict_id', 'reason', 'user_id'];
 
     public function user(): BelongsTo

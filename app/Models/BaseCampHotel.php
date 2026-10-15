@@ -6,6 +6,8 @@ use Illuminate\Database\Eloquent\Model;
 
 class BaseCampHotel extends Model
 {
+    use Concerns\SerializesWallClock;
+
     protected $table = 'base_camp_hotels';
 
     protected $fillable = [

@@ -7,6 +7,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class JobIssue extends Model
 {
+    use Concerns\SerializesWallClock;
+
     /** Report reasons offered by the mobile app, keyed by severity. */
     public const TYPES = [
         'vehicle_breakdown' => 'danger',

@@ -191,7 +191,8 @@ class MovementCrewController extends Controller
                 fn ($q) => $q->whereIn('functional_area', $user->functionalAreaCodes()),
             )
             ->with([
-                'team:id,code,team_name', 'job:id,movement_id,job_id,status', 'match:id,kick_off',
+                'team:id,code,team_name', 'job:id,movement_id,job_id,status', 'match:id,kick_off,venue_id', 'match.venue:id,name',
+                'job.checkpoints:id,job_id,order,name,scheduled_at',
                 'flight:id,direction,scheduled_at,origin_airport_id,destination_airport_id',
                 'flight.originAirport:id,name', 'flight.destinationAirport:id,name', 'accommodation:id,hotel_name',
                 'vehicle:id,code,plate_number', 'driver:id,name', 'fieldSupervisor:id,name',
@@ -210,7 +211,8 @@ class MovementCrewController extends Controller
                 stripos($location, 'airport') !== false => ($m->flight?->direction === 'departure'
                     ? $m->flight?->originAirport : $m->flight?->destinationAirport)?->name,
                 stripos($location, 'hotel') !== false => $m->accommodation?->hotel_name,
-                default => null,
+                // VSA / Stadium / Changing Room are at the match venue.
+                default => $m->match?->venue?->name,
             };
 
             return $place ? "{$location} - {$place}" : $location;
@@ -222,9 +224,9 @@ class MovementCrewController extends Controller
         $sheet->setCellValue('A1', 'PMA RESOURCE ALLOCATION SCHEDULE ' . strtoupper($day->format('j F Y')));
         $sheet->getStyle('A1')->getFont()->setBold(true)->setSize(14);
 
-        $headers = ['Job ID', 'Activity Type', 'PMA', 'Arrival Date', 'Arrival Time', 'Match KO time', 'Truck Report', 'FROM (VENUE)', 'TO (VENUE)', 'Driver', 'Supervisor', 'Crew', 'Truck Plate #', 'Status', 'Notes'];
+        $headers = ['Job ID', 'Activity Type', 'PMA', 'Arrival Date', 'Arrival Time', 'First Checkpoint', 'First Checkpoint Time', 'Match KO time', 'Truck Report', 'FROM (VENUE)', 'TO (VENUE)', 'Driver', 'Supervisor', 'Crew', 'Truck Plate #', 'Status', 'Notes'];
         $sheet->fromArray($headers, null, 'A3');
-        $head = $sheet->getStyle('A3:O3');
+        $head = $sheet->getStyle('A3:Q3');
         $head->getFont()->setBold(true)->getColor()->setRGB('FFFFFF');
         $head->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('1F4E79');
         $head->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER)->setVertical(Alignment::VERTICAL_CENTER)->setWrapText(true);
@@ -233,6 +235,7 @@ class MovementCrewController extends Controller
         foreach ($movements as $m) {
             $onFlight = in_array($m->kind, ['arrival', 'departure'], true);
             $plates = fn ($v) => $v ? ($v->plate_number ?? $v->code) : null;
+            $firstCheckpoint = $m->job?->checkpoints->first();
 
             $sheet->fromArray([
                 $m->job?->job_id ?? $m->code,
@@ -240,6 +243,8 @@ class MovementCrewController extends Controller
                 $m->team?->team_name,
                 $m->window_start->format('l, F j, Y'),
                 $onFlight ? $m->flight?->scheduled_at?->format('H:i') : null,
+                $firstCheckpoint?->name,
+                $firstCheckpoint?->scheduled_at?->format('H:i'),
                 $m->kind === 'match' ? $m->match?->kick_off?->format('H:i') : null,
                 null,
                 $venue($m->from_location, $m),
@@ -254,7 +259,7 @@ class MovementCrewController extends Controller
             $row++;
         }
 
-        foreach (range('A', 'O') as $col) {
+        foreach (range('A', 'Q') as $col) {
             $sheet->getColumnDimension($col)->setAutoSize(true);
         }
         $sheet->freezePane('A4');

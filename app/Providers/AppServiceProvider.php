@@ -6,6 +6,7 @@ use App\Models\JobOperation;
 use App\Models\Movement;
 use App\Policies\JobOperationPolicy;
 use App\Policies\MovementPolicy;
+use Carbon\FactoryImmutable;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Event;
@@ -41,6 +42,9 @@ class AppServiceProvider extends ServiceProvider
 
         Gate::policy(Movement::class, MovementPolicy::class);
         Gate::policy(JobOperation::class, JobOperationPolicy::class);
+
+        // Dates sent outside a model keep the models' wall-clock JSON shape (see SerializesWallClock).
+        FactoryImmutable::getDefaultInstance()->serializeUsing('Y-m-d\TH:i:s.u\Z');
 
         // Conservative limit — this hits a paid external API synchronously
         // on every request, so it needs its own (tighter) limiter rather

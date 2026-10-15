@@ -10,6 +10,8 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class Team extends Model
 {
+    use Concerns\SerializesWallClock;
+
     use HasFactory;
 
     protected $fillable = [

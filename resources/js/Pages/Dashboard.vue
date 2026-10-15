@@ -78,11 +78,41 @@
         </table>
       </div>
     </section>
+
+    <!-- System clocks (admins) -->
+    <section v-if="clocks" class="dash-card" style="margin-top:20px">
+      <div class="card-header">
+        <span class="card-title">System Clocks</span>
+        <span class="card-hint">Server clocks read at page load, then ticking</span>
+      </div>
+      <div class="audit-table-wrap">
+        <table class="audit-table">
+          <thead>
+            <tr>
+              <th>Clock</th><th>Time</th><th>Time zone</th><th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="row in clockRows" :key="row.key">
+              <td class="audit-who">{{ row.label }}</td>
+              <td class="mono clock-time">{{ row.time }}</td>
+              <td class="audit-target">{{ row.zone }}</td>
+              <td>
+                <status-pill :tone="row.pill.tone">{{ row.pill.label }}</status-pill>
+                <div class="audit-meta clock-note">{{ row.note }}</div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
   </app-layout>
 </template>
 
 <script setup>
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useStatusLabels } from '../Composables/useStatusLabels';
+import { VENUE_TIMEZONE } from '../Composables/useVenueTime';
 import AppLayout from '../Components/AppLayout.vue';
 import KPICard from '../Components/KPICard.vue';
 import SvgIcon from '../Components/SvgIcon.vue';
@@ -95,6 +125,112 @@ const props = defineProps({
   schedule:      { type: Array, default: () => [] },
   notifications: { type: Array, default: () => [] },
   audit:         { type: Array, default: () => [] },
+  clocks:        { type: Object, default: null },
+});
+
+// Server readings are a snapshot; they tick on by the browser's elapsed time.
+const loadedAt = ref(Date.now());
+const nowMs = ref(loadedAt.value);
+let clockTimer = null;
+onMounted(() => {
+  if (props.clocks) clockTimer = setInterval(() => { nowMs.value = Date.now(); }, 1000);
+});
+onBeforeUnmount(() => clearInterval(clockTimer));
+watch(() => props.clocks, () => {
+  loadedAt.value = Date.now();
+  nowMs.value = loadedAt.value;
+});
+
+// 'YYYY-MM-DD HH:mm:ss' read as UTC, so the browser's own zone never applies.
+function wallMs(value) {
+  const m = value?.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})/);
+  return m ? Date.UTC(+m[1], m[2] - 1, +m[3], +m[4], +m[5], +m[6]) : null;
+}
+const wallText = (ms) => new Date(ms).toISOString().slice(0, 19).replace('T', ' ');
+const pad2 = (n) => String(n).padStart(2, '0');
+const offsetText = (min) => `UTC${min < 0 ? '−' : '+'}${pad2(Math.floor(Math.abs(min) / 60))}:${pad2(Math.abs(min) % 60)}`;
+function spanText(sec) {
+  const s = Math.abs(sec);
+  if (s < 120) return `${s} s`;
+  return s < 7200 ? `${Math.round(s / 60)} min` : `${+(s / 3600).toFixed(1)} h`;
+}
+const aheadBehind = (sec) => `${spanText(sec)} ${sec > 0 ? 'ahead' : 'behind'}`;
+
+const clockRows = computed(() => {
+  const c = props.clocks;
+  if (!c) return [];
+
+  const elapsed = nowMs.value - loadedAt.value;
+  const tick = (value) => {
+    const ms = wallMs(value);
+    return ms === null ? '—' : wallText(ms + elapsed);
+  };
+  const zoneText = (tz, offset) => (/^[+-]\d/.test(tz)
+    ? `UTC${tz}`
+    : `${tz === 'SYSTEM' ? `SYSTEM (${c.db.system_tz})` : tz}${offset === null ? '' : ` · ${offsetText(offset)}`}`);
+
+  const utcMs = wallMs(c.db.utc_now);
+  const sessionOffset = Math.round((wallMs(c.db.session_now) - utcMs) / 60000);
+  const serverOffset = c.db.server_now ? Math.round((wallMs(c.db.server_now) - utcMs) / 60000) : null;
+  const clientShift = serverOffset === null ? null : (serverOffset - sessionOffset) * 60;
+  const dbDrift = Math.round((utcMs - wallMs(c.app.utc)) / 1000);
+  const browserDrift = Math.round((loadedAt.value - wallMs(c.app.utc)) / 1000);
+  const browserOffset = -new Date(nowMs.value).getTimezoneOffset();
+  const isVenue = c.app.zone === VENUE_TIMEZONE;
+  const pinned = c.db.session_tz === '+00:00';
+
+  return [
+    {
+      key: 'app',
+      label: 'Application (PHP)',
+      time: tick(c.app.now),
+      zone: zoneText(c.app.zone, c.app.offset),
+      pill: isVenue ? { tone: 'ok', label: 'Qatar time' } : { tone: 'danger', label: 'Not Qatar time' },
+      note: isVenue ? 'What the app stores and shows.' : `Set APP_TIMEZONE=${VENUE_TIMEZONE}.`,
+    },
+    {
+      key: 'db',
+      label: 'MySQL · app connection',
+      time: tick(c.db.session_now),
+      zone: zoneText(c.db.session_tz, sessionOffset),
+      pill: pinned ? { tone: 'ok', label: 'Pinned' } : { tone: 'danger', label: 'Not pinned' },
+      note: pinned
+        ? "Keeps the app's digits as written. MySQL's NOW() reads UTC here, so the app uses its own clock."
+        : 'Expected +00:00 (DB_TIMEZONE); TIMESTAMP values can shift.',
+    },
+    {
+      key: 'server',
+      label: 'MySQL · server default',
+      time: tick(c.db.server_now),
+      zone: zoneText(c.db.global_tz, serverOffset),
+      pill: clientShift === null
+        ? { tone: 'neutral', label: 'Unknown' }
+        : clientShift === 0
+          ? { tone: 'ok', label: 'Same as app' }
+          : { tone: 'warn', label: `${clientShift > 0 ? '+' : '−'}${spanText(clientShift)} in SQL clients` },
+      note: clientShift === null
+        ? "MySQL can't convert to this zone (time zone tables not loaded)."
+        : clientShift === 0
+          ? 'Used by SQL clients; they show the same digits as the app.'
+          : `Used by HeidiSQL and other SQL clients: TIMESTAMP columns (job and checkpoint times, created/updated) show ${spanText(clientShift)} ${clientShift > 0 ? 'later' : 'earlier'} than in the app. Run SET time_zone = '+00:00'; first.`,
+    },
+    {
+      key: 'utc',
+      label: 'UTC',
+      time: tick(c.app.utc),
+      zone: 'UTC',
+      pill: Math.abs(dbDrift) <= 5 ? { tone: 'ok', label: 'PHP = MySQL' } : { tone: 'warn', label: `MySQL ${aheadBehind(dbDrift)}` },
+      note: 'Reference only; Qatar is UTC+03:00.',
+    },
+    {
+      key: 'browser',
+      label: 'This browser',
+      time: wallText(nowMs.value + browserOffset * 60000),
+      zone: zoneText(Intl.DateTimeFormat().resolvedOptions().timeZone, browserOffset),
+      pill: Math.abs(browserDrift) <= 30 ? { tone: 'ok', label: 'In sync' } : { tone: 'warn', label: aheadBehind(browserDrift) },
+      note: "This device's clock; live screens such as the Day Board use it.",
+    },
+  ];
 });
 
 const statusMap = {
@@ -229,4 +365,9 @@ const MovementRow = {
 .audit-action { font-weight: 600; color: var(--accent-fg); }
 .audit-target { color: var(--ink2); }
 .audit-meta { color: var(--ink3); font-size: 12px; }
+
+/* clocks */
+.card-hint { font-size: 11.5px; color: var(--ink4); }
+.clock-time { color: var(--ink); font-weight: 600; }
+.clock-note { margin-top: 4px; }
 </style>

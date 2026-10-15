@@ -7,6 +7,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class MovementTemplateLeg extends Model
 {
+    use Concerns\SerializesWallClock;
+
     protected $fillable = [
         'movement_template_id',
         'checkpoint_template_id',

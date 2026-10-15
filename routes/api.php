@@ -17,6 +17,9 @@ Route::name('api.mobile.')->group(function () {
     Route::post('/login', [AuthController::class, 'login'])
         ->middleware('throttle:5,1')
         ->name('login');
+    Route::post('/sso/microsoft', [AuthController::class, 'microsoft'])
+        ->middleware('throttle:5,1')
+        ->name('sso.microsoft');
 
     Route::middleware(['auth:sanctum', 'throttle:mobile'])->group(function () {
         Route::get('/me', [AuthController::class, 'me'])->name('me');

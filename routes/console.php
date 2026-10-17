@@ -9,3 +9,4 @@ Artisan::command('inspire', function () {
 })->purpose('Display an inspiring quote');
 
 Schedule::command('flights:sync')->everyThirtyMinutes();
+Schedule::command('push:job-reminders')->everyMinute()->withoutOverlapping();

@@ -574,7 +574,7 @@ class JobLifecycleService
      */
     public function assignMovementCrew(Movement $movement, ?int $vehicleId, ?int $driverId, ?int $supervisorId, ?array $units = null, ?array $extraSupervisorIds = null): bool
     {
-        return DB::transaction(function () use ($movement, $vehicleId, $driverId, $supervisorId, $units, $extraSupervisorIds) {
+        return app(JobPushNotifier::class)->trackCrew($movement, fn () => DB::transaction(function () use ($movement, $vehicleId, $driverId, $supervisorId, $units, $extraSupervisorIds) {
             $movement->loadMissing(['vehicle', 'driver', 'fieldSupervisor', 'job', 'units.vehicle', 'units.driver', 'extraSupervisors']);
 
             $vehicleName = fn (?Vehicle $v) => $v ? ($v->code ?? $v->plate_number ?? "#{$v->id}") : 'Unassigned';
@@ -654,7 +654,7 @@ class JobLifecycleService
             );
 
             return true;
-        });
+        }));
     }
 
     /**
@@ -675,6 +675,13 @@ class JobLifecycleService
      * movement so Planning shows the same crew. A null id leaves that role as is.
      */
     private function reassignCrew(JobOperation $job, ?int $driverId, ?int $supervisorId, ?string $reason, ?int $vehicleId = null): bool
+    {
+        $apply = fn () => $this->applyJobCrew($job, $driverId, $supervisorId, $reason, $vehicleId);
+
+        return $job->movement ? app(JobPushNotifier::class)->trackCrew($job->movement, $apply) : $apply();
+    }
+
+    private function applyJobCrew(JobOperation $job, ?int $driverId, ?int $supervisorId, ?string $reason, ?int $vehicleId): bool
     {
         $changes = [];
         $vehicleName = fn (?Vehicle $v) => $v ? ($v->code ?? $v->plate_number ?? "#{$v->id}") : 'Unassigned';
@@ -777,15 +784,52 @@ class JobLifecycleService
 
         if ($job->status === 'pending' || $job->status === 'dispatched') {
             $this->silentlyTransition($job, 'in-progress');
-
-            return;
-        }
-
-        if ($autoComplete
+        } elseif ($autoComplete
             && $job->status === 'in-progress'
             && $job->checkpoints_total > 0
             && $job->checkpoints_completed === $job->checkpoints_total) {
             $this->silentlyTransition($job, 'completed');
+        }
+
+        $this->alignJobTimes($job->refresh());
+    }
+
+    /**
+     * Started and completed follow the recorded checkpoint times, not the moment
+     * they were entered, so an override or a late sync with an earlier time moves them.
+     * Taken from the first and last done steps in order, so one mistyped time on a
+     * middle step can't move the job's start or finish.
+     */
+    private function alignJobTimes(JobOperation $job): void
+    {
+        $done = fn () => $job->checkpoints()->where('state', 'done')->whereNotNull('completed_at');
+        $first = $done()->reorder('order')->orderBy('id')->first()?->completed_at?->format('Y-m-d H:i:s');
+
+        if (! $first) {
+            return;
+        }
+
+        $times = [];
+        if ($job->started_at) {
+            $times['started_at'] = $first;
+        }
+        if ($job->status === 'completed' && $job->completed_at) {
+            $times['completed_at'] = $done()->reorder('order', 'desc')->orderByDesc('id')->first()->completed_at->format('Y-m-d H:i:s');
+        }
+
+        $changed = array_filter($times, fn ($value, $column) => $job->{$column}?->format('Y-m-d H:i:s') !== $value, ARRAY_FILTER_USE_BOTH);
+        if ($changed) {
+            $job->update($changed);
+        }
+
+        $movement = $job->movement;
+        $movementTimes = array_filter([
+            'actual_departure' => isset($times['started_at']) && $movement?->actual_departure ? $times['started_at'] : null,
+            'actual_arrival' => isset($times['completed_at']) && $movement?->actual_arrival ? $times['completed_at'] : null,
+        ]);
+        $movementChanged = array_filter($movementTimes, fn ($value, $column) => $movement->{$column}?->format('Y-m-d H:i:s') !== $value, ARRAY_FILTER_USE_BOTH);
+        if ($movementChanged) {
+            $movement->update($movementChanged);
         }
     }
 

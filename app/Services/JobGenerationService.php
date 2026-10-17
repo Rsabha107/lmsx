@@ -96,6 +96,8 @@ class JobGenerationService
             $jobs[] = $this->generateJobFromMovement($movement, $options);
         }
 
+        app(JobPushNotifier::class)->jobsCreated($jobs);
+
         return $jobs;
     }
 
@@ -202,6 +204,10 @@ class JobGenerationService
                 $cp->update(['scheduled_at' => $time]);
                 $moved++;
             }
+        }
+
+        if ($moved > 0) {
+            app(JobPushNotifier::class)->retimed($job);
         }
 
         return $moved;

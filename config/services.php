@@ -59,4 +59,10 @@ return [
         'timeout' => (int) env('AI_TIMEOUT', 15),
     ],
 
+    // Firebase Cloud Messaging (HTTP v1). Push stays off until a service-account JSON is set.
+    'fcm' => [
+        'credentials' => env('FCM_CREDENTIALS'),
+        'channel' => env('FCM_ANDROID_CHANNEL', 'naqla_jobs'),
+    ],
+
 ];

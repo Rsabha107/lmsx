@@ -111,17 +111,7 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/checkpoint-templates/{template}', [PlanManagementController::class, 'previewCheckpointTemplate'])->name('checkpoint-template.show');
         
         // Movement Templates
-        Route::get('/movement-templates', function () {
-            return response()->json([
-                'templates' => \App\Models\MovementTemplate::active()
-                    ->with('legs.checkpointTemplate')
-                    ->get()
-            ]);
-        })->name('movement-templates');
-        
-        Route::get('/movement-templates/{template}', function (\App\Models\MovementTemplate $template) {
-            $template->load('legs.checkpointTemplate.checkpoints');
-            return response()->json(['template' => $template]);
-        })->name('movement-template.show');
+        Route::get('/movement-templates', [PlanManagementController::class, 'movementTemplates'])->name('movement-templates');
+        Route::get('/movement-templates/{template}', [PlanManagementController::class, 'showMovementTemplate'])->name('movement-template.show');
     });
 });

@@ -42,11 +42,19 @@ User-facing documentation lives in one file: `docs/NAQLA_LMS_GUIDE.md` (source f
 - Time evidence: completion accepts `event_at` + `client_sent_at` (ISO 8601 **with offset**, both required together). The device time is shifted by the measured clock skew (server receipt minus `client_sent_at`) and stored as venue wall-clock (the app has no timezone handling, so the offset is dropped after the maths). Implausible times (skew over a day, future, older than 7 days) fall back to server receipt. `actual_time` (HH:mm) is a `manual` time. Columns on `job_checkpoints`: `event_at` (raw claim), `received_at`, `clock_skew_seconds`, `time_source` (`device|manual|server|override`).
 - Rate limits: `throttle:mobile` (120/min per user) on the whole token API, `throttle:mobile-upload` (30/min) on checkpoint completion and issue reports (`AppServiceProvider`).
 
+## Push notifications (FCM)
+- Off until `FCM_CREDENTIALS` (service-account JSON path) is set; `FcmClient::enabled()`. The app needs `FIREBASE_*` in its `config/*.json`.
+- Devices: `POST/DELETE /api/mobile/devices` → `user_devices`, tied to the Sanctum token (cascade: logout drops the device). Dead tokens are deleted on send.
+- `JobPushNotifier` sends to a job's supervisors (lead + extras), never to the actor, via `SendPushNotification::dispatchAfterResponse` (no queue worker needed). Crew changes go through `trackCrew()` (wraps `assignMovementCrew`, `reassignCrew`, Planning `updateMovement`; nested calls report once). Also `jobsCreated` (bulk generation, grouped) and `retimed` (`rescheduleJob`).
+- `push:job-reminders` (every minute): 60 / 15 min before a not-started job's first scheduled checkpoint; `push_notification_log` dedupes per lead/job/start time/user.
+- Tests: `Bus::fake([SendPushNotification::class])`; `PushNotificationsTest::enableFcm()` makes a throwaway key.
+
 ## Security and audit
 - Trusted proxies default to loopback/private ranges (`bootstrap/app.php`); set `TRUSTED_PROXIES` to the balancer CIDRs, `TRUSTED_HOSTS` to the hostnames. `php artisan app:check-production` verifies debug, cookies, proxies, hosts and token expiry.
 - Privileged and configuration changes (users, roles, permissions, events, fleet, templates, offsets, imports) go through `AuditLog::change()` with `AuditLog::changes($model, $original)` for before/after; never put credentials in the summary. Don't log request payloads.
 - `WriteRouteAuthorizationTest` fails for any write route that is auth-only and not on its allow-list.
 - Events lists use `Event::accessibleTo($user)` (assignments unless admin / `events.access-all`).
+- `PlanManagementController`: plans, movements and templates reached by id must be in the active event (`ensureInActiveEvent`); lists and bulk actions filter on `activeEventId()` (null when none picked or access was removed). `PlanEventScopingTest` covers it.
 
 ## Crew model
 - Job and checkpoint state changes go only through `JobLifecycleService` (the models have no mutators; `LifecycleBoundaryTest` fails if app code outside the services sets lifecycle state).
@@ -73,6 +81,7 @@ User-facing documentation lives in one file: `docs/NAQLA_LMS_GUIDE.md` (source f
 - Excel-style header filters: `ColumnFilter.vue` + `useColumnFilters.js` (used on Jobs and Planning; options show per-value counts).
 - Crew roster helpers: `useCrewRoster.js` (`minutesFrom`, `mergedMinutes`, `duration`).
 - Modals: `Modal.vue` / `ConfirmModal.vue`; toasts via `useToast`.
+- No `v-html` for data. `ConfirmModal`'s `message` goes through `InlineMarkup.vue`: only `<strong>`, `<b>`, `<em>`, `<br>` and entities are honoured, anything else shows as text.
 
 ## Key pages
 - Planning `Plans.vue` (very large), Jobs Queue `Jobs.vue`, Crew Assignment `CrewAssignment.vue` (table / day timeline / week matrix), Resource Schedule `ResourceSchedule.vue` (one resource's week as a Gantt; Excel via `/resource-schedule/export`, PDF via the browser print dialog).

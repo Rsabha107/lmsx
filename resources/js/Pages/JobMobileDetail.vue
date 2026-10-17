@@ -331,7 +331,7 @@
                     type="text"
                     class="form-input"
                     autocomplete="name"
-                    placeholder="e.g. Priya Anand"
+                    placeholder="Your full name"
                     :aria-invalid="fieldErrors.signature ? 'true' : undefined"
                     :aria-describedby="`cp-typed-signature-hint${fieldErrors.signature ? ' cp-signature-error' : ''}`"
                   />

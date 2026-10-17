@@ -36,6 +36,20 @@ class PlanManagementController extends Controller
         $this->jobService = $jobService;
     }
 
+    /** The session's event, or null when none is picked or the user lost access to it. */
+    private function activeEventId(Request $request): ?int
+    {
+        $eventId = (int) $request->session()->get('active_event_id');
+
+        return $eventId && $request->user()->canAccessEvent($eventId) ? $eventId : null;
+    }
+
+    /** Records reached by id must belong to the active event. */
+    private function ensureInActiveEvent(Request $request, $eventId): void
+    {
+        abort_unless($eventId && (int) $eventId === $this->activeEventId($request), 403);
+    }
+
     /**
      * checkpoint_template_id => total checkpoint count, for every template
      * in the system. One cheap query, reused for every movement's
@@ -80,8 +94,13 @@ class PlanManagementController extends Controller
      */
     public function index(Request $request)
     {
-        $activeEventId = $request->session()->get('active_event_id');
+        $activeEventId = $this->activeEventId($request);
         Log::info('Plans page accessed via PlanManagementController', ['active_event_id' => $activeEventId]);
+
+        // The page shows its pick-an-event state; don't send every event's data with it.
+        if (! $activeEventId) {
+            return Inertia::render('Plans', ['activeEvent' => null]);
+        }
 
         // Get active event
         $activeEvent = $activeEventId ? Event::with('country')->find($activeEventId) : null;
@@ -836,6 +855,8 @@ class PlanManagementController extends Controller
      */
     public function update(Request $request, Plan $plan)
     {
+        $this->ensureInActiveEvent($request, $plan->event_id);
+
         $validated = $request->validate([
             'name' => 'required|string|max:255',
             'date' => 'required|date',
@@ -879,8 +900,10 @@ class PlanManagementController extends Controller
     /**
      * Live counts shown in the delete-plan confirmation dialog.
      */
-    public function deleteCheck(Plan $plan)
+    public function deleteCheck(Request $request, Plan $plan)
     {
+        $this->ensureInActiveEvent($request, $plan->event_id);
+
         return response()->json([
             'movements_count' => $plan->movements()->count(),
             'jobs_count' => $plan->movements()->whereNotNull('job_id')->count(),
@@ -892,6 +915,8 @@ class PlanManagementController extends Controller
      */
     public function destroy(Request $request, Plan $plan)
     {
+        $this->ensureInActiveEvent($request, $plan->event_id);
+
         if ($plan->movements()->exists()) {
             $request->validate([
                 'confirm_name' => ['required', 'string', function ($attribute, $value, $fail) use ($plan) {
@@ -927,10 +952,8 @@ class PlanManagementController extends Controller
             'confirm' => ['nullable', 'string'],
         ]);
 
-        $activeEventId = $request->session()->get('active_event_id');
-
         $plans = Plan::whereIn('id', $validated['ids'])
-            ->when($activeEventId, fn ($q) => $q->where('event_id', $activeEventId))
+            ->where('event_id', $this->activeEventId($request))
             ->withCount([
                 'movements as live_movements_count',
                 'movements as jobs_count' => fn ($q) => $q->whereNotNull('job_id'),
@@ -969,8 +992,10 @@ class PlanManagementController extends Controller
     /**
      * Show a plan with its movements.
      */
-    public function show(Plan $plan)
+    public function show(Request $request, Plan $plan)
     {
+        $this->ensureInActiveEvent($request, $plan->event_id);
+
         $plan->load([
             'movements.team',
             'movements.vehicle',
@@ -1001,6 +1026,8 @@ class PlanManagementController extends Controller
      */
     public function generateJobs(Request $request, Plan $plan)
     {
+        $this->ensureInActiveEvent($request, $plan->event_id);
+
         $validated = $request->validate([
             'movement_ids' => 'required|array',
             'movement_ids.*' => 'exists:movements,id',
@@ -1047,6 +1074,8 @@ class PlanManagementController extends Controller
      */
     public function addMovement(Request $request, Plan $plan)
     {
+        $this->ensureInActiveEvent($request, $plan->event_id);
+
         // Check if this is a template-based creation for a team
         if ($request->has('movement_template_id') && $request->filled('movement_template_id')) {
             $validated = $request->validate([
@@ -1161,8 +1190,10 @@ class PlanManagementController extends Controller
      */
     public function updateCheckpointTemplate(Request $request, Movement $movement)
     {
+        $this->ensureInActiveEvent($request, $movement->event_id);
+
         $validated = $request->validate([
-            'checkpoint_template_id' => 'required|exists:checkpoint_templates,id',
+            'checkpoint_template_id' => ['required', Rule::exists('checkpoint_templates', 'id')->where('event_id', $movement->event_id)],
         ]);
 
         if ($movement->hasJob()) {
@@ -1188,13 +1219,12 @@ class PlanManagementController extends Controller
     public function getCheckpointTemplates(Request $request)
     {
         $type = $request->query('type');
-        $activeEventId = $request->session()->get('active_event_id');
 
         // Templates belong to an event; offering another event's would let a
         // movement be built from checkpoints that don't apply to it.
         $query = CheckpointTemplate::active()
             ->with('checkpoints')
-            ->when($activeEventId, fn ($q) => $q->where('event_id', $activeEventId));
+            ->where('event_id', $this->activeEventId($request));
 
         if ($type) {
             $query->where('movement_type', $type);
@@ -1208,8 +1238,10 @@ class PlanManagementController extends Controller
     /**
      * API: Preview what checkpoints a template contains.
      */
-    public function previewCheckpointTemplate(CheckpointTemplate $template)
+    public function previewCheckpointTemplate(Request $request, CheckpointTemplate $template)
     {
+        $this->ensureInActiveEvent($request, $template->event_id);
+
         $template->load('checkpoints');
 
         return response()->json([
@@ -1234,6 +1266,8 @@ class PlanManagementController extends Controller
      */
     public function updateMovement(Request $request, Movement $movement, JobLifecycleService $lifecycle)
     {
+        $this->ensureInActiveEvent($request, $movement->event_id);
+
         // Only allow updating operational fields
         // Core fields (team, flight, kind, locations, passengers) are read-only if linked to a flight
         $validated = $request->validate([
@@ -1277,12 +1311,14 @@ class PlanManagementController extends Controller
         }
 
         unset($validated['units'], $validated['supervisors']);
-        $movement->update($validated);
+        app(\App\Services\JobPushNotifier::class)->trackCrew($movement, function () use ($movement, $validated, $units, $supervisors, $lifecycle) {
+            $movement->update($validated);
 
-        if ($units !== null || $supervisors !== null) {
-            $movement->refresh();
-            $lifecycle->assignMovementCrew($movement, $movement->vehicle_id, $movement->driver_id, $movement->field_supervisor_id, $units, $supervisors);
-        }
+            if ($units !== null || $supervisors !== null) {
+                $movement->refresh();
+                $lifecycle->assignMovementCrew($movement, $movement->vehicle_id, $movement->driver_id, $movement->field_supervisor_id, $units, $supervisors);
+            }
+        });
 
         return redirect()->back()->with('success', 'Movement updated successfully.');
     }
@@ -1292,6 +1328,8 @@ class PlanManagementController extends Controller
      */
     public function updateStatus(Request $request, Plan $plan)
     {
+        $this->ensureInActiveEvent($request, $plan->event_id);
+
         $validated = $request->validate([
             'status' => 'required|string|in:draft,approved,active,completed,cancelled',
         ]);
@@ -1304,8 +1342,10 @@ class PlanManagementController extends Controller
     /**
      * Delete a movement.
      */
-    public function deleteMovement(Movement $movement)
+    public function deleteMovement(Request $request, Movement $movement)
     {
+        $this->ensureInActiveEvent($request, $movement->event_id);
+
         // Check if movement has generated jobs
         if ($movement->job_id) {
             return redirect()->back()->with('error', 'Cannot delete movement with generated jobs. Delete the job first.');
@@ -1323,8 +1363,10 @@ class PlanManagementController extends Controller
      * few hundred movements) — the frontend calls this when a movement is
      * actually selected instead.
      */
-    public function checkpoints(Movement $movement)
+    public function checkpoints(Request $request, Movement $movement)
     {
+        $this->ensureInActiveEvent($request, $movement->event_id);
+
         $movement->load([
             'checkpointTemplate.checkpoints',
             'job.checkpoints.completedBy',
@@ -1352,7 +1394,9 @@ class PlanManagementController extends Controller
             'ids.*' => 'integer|exists:movements,id',
         ]);
 
-        $movements = Movement::whereIn('id', $validated['ids'])->get();
+        $movements = Movement::whereIn('id', $validated['ids'])
+            ->where('event_id', $this->activeEventId($request))
+            ->get();
 
         $deletableIds = $movements->filter(fn ($movement) => !$movement->job_id)->pluck('id');
         $skippedCount = $movements->count() - $deletableIds->count();
@@ -1368,6 +1412,28 @@ class PlanManagementController extends Controller
             $deletableIds->count() > 0 ? 'success' : 'error',
             $message
         );
+    }
+
+    /**
+     * API: Active movement templates of the active event.
+     */
+    public function movementTemplates(Request $request)
+    {
+        return response()->json([
+            'templates' => MovementTemplate::active()
+                ->where('event_id', $this->activeEventId($request))
+                ->with('legs.checkpointTemplate')
+                ->get(),
+        ]);
+    }
+
+    public function showMovementTemplate(Request $request, MovementTemplate $template)
+    {
+        $this->ensureInActiveEvent($request, $template->event_id);
+
+        $template->load('legs.checkpointTemplate.checkpoints');
+
+        return response()->json(['template' => $template]);
     }
 
     /**
@@ -1474,7 +1540,7 @@ class PlanManagementController extends Controller
     {
         $validated = $request->validate([
             'kind' => 'required|in:arrival,departure,transfer,training,match,daily_ops',
-            'team_id' => 'required|exists:teams,id',
+            'team_id' => ['required', Rule::exists('teams', 'id')->where('event_id', $this->activeEventId($request))],
             'flight_id' => 'nullable|exists:team_flights,id',
             'match_id' => 'nullable|exists:matches,id',
             'checkpoint_template_id' => 'nullable|integer',
@@ -1499,7 +1565,7 @@ class PlanManagementController extends Controller
             'checks' => 'required|array',
             'checks.*.key' => 'required|string',
             'checks.*.kind' => 'required|in:arrival,departure,transfer,training,match,daily_ops',
-            'checks.*.team_id' => 'required|integer|exists:teams,id',
+            'checks.*.team_id' => ['required', 'integer', Rule::exists('teams', 'id')->where('event_id', $this->activeEventId($request))],
             'checks.*.flight_id' => 'nullable|integer|exists:team_flights,id',
             'checks.*.match_id' => 'nullable|integer|exists:matches,id',
             'checks.*.checkpoint_template_id' => 'nullable|integer',

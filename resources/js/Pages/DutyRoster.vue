@@ -647,7 +647,7 @@ function moveMember(m, move) {
 }
 
 const removing = ref(null);
-// ConfirmModal renders its message as HTML.
+// Keeps a name like "<b>x</b>" literal in ConfirmModal's message.
 const escapeHtml = (s) => String(s ?? '').replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]);
 function removeMember() {
   const m = removing.value;

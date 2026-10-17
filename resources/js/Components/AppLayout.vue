@@ -49,7 +49,7 @@
           <svg-icon :name="theme === 'dark' ? 'sun' : 'moon'" />
           <span class="sidebar-footer-label">{{ theme === 'dark' ? 'Light' : 'Dark' }}</span>
         </button>
-        <div class="sidebar-role-pill">{{ role }}</div>
+        <div v-if="role" class="sidebar-role-pill" :title="role">{{ role }}</div>
         <button class="logout-btn" @click="logout" title="Sign out">
           <svg-icon name="logout" />
         </button>
@@ -197,7 +197,10 @@ function onDocClick(e) {
 // Theme & density
 const theme = ref(localStorage.getItem('lms-theme') || 'light');
 const density = ref(localStorage.getItem('lms-density') || 'comfortable');
-const role = ref(localStorage.getItem('lms-role') || 'Manager');
+const ROLE_LABELS = { admin: 'Admin', SecurityRole: 'Security' };
+const role = computed(() => (page.props.auth?.roles ?? [])
+  .map((name) => ROLE_LABELS[name] ?? name.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()))
+  .join(' · '));
 
 function toggleTheme() {
   theme.value = theme.value === 'dark' ? 'light' : 'dark';
@@ -607,7 +610,7 @@ MobileNavItem.props = ['item'];
 .sidebar-role-pill {
   background: var(--accent-soft); color: var(--accent-fg);
   font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 20px;
-  white-space: nowrap; flex-shrink: 0;
+  white-space: nowrap; min-width: 0; max-width: 140px; overflow: hidden; text-overflow: ellipsis;
 }
 .sidebar--mini .sidebar-role-pill { display: none; }
 

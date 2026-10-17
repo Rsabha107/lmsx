@@ -405,14 +405,21 @@ function checkpointAt(row, order) {
   if (order == null) return null;
   return row.checkpoints?.find(c => c.order === order) ?? null;
 }
-function avgDeltaMinutes(rows, name) {
+function avgDeltaStats(rows, name) {
   const order = findCheckpointOrder(name);
   const vals = [];
+  let excluded = 0;
   for (const r of rows) {
     const cp = checkpointAt(r, order);
-    if (cp?.scheduled_ts && cp?.completed_ts) vals.push((cp.completed_ts - cp.scheduled_ts) / 60);
+    if (!cp?.scheduled_ts || !cp?.completed_ts) continue;
+    const minutes = (cp.completed_ts - cp.scheduled_ts) / 60;
+    if (Math.abs(minutes) > MAX_LEG_MINUTES) excluded++;
+    else vals.push(minutes);
   }
-  return vals.length ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : null;
+  return {
+    avg: vals.length ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : null,
+    excluded,
+  };
 }
 // A leg longer than this (or negative) is a mis-dated checkpoint, e.g. a mobile test tap weeks early.
 const MAX_LEG_MINUTES = 24 * 60;
@@ -472,10 +479,11 @@ function fmtCount(v) {
 
 /** Average actual-minus-planned, worded and coloured like the table's badges. */
 function varianceTile(label, rows, name) {
-  const v = avgDeltaMinutes(rows, name);
-  if (v === null) return { icon: 'clock', label, value: '—' };
-  if (v === 0) return { icon: 'clock', label, value: 'On time', tone: 'early' };
-  return { icon: 'clock', label, value: `${Math.abs(v)}m ${v > 0 ? 'late' : 'early'}`, tone: v > 0 ? 'late' : 'early' };
+  const { avg: v, excluded } = avgDeltaStats(rows, name);
+  const sub = excluded ? `${excluded} mis-dated checkpoint${excluded === 1 ? '' : 's'} left out` : null;
+  if (v === null) return { icon: 'clock', label, value: '—', sub };
+  if (v === 0) return { icon: 'clock', label, value: 'On time', tone: 'early', sub };
+  return { icon: 'clock', label, value: `${Math.abs(v)}m ${v > 0 ? 'late' : 'early'}`, tone: v > 0 ? 'late' : 'early', sub };
 }
 
 const kpiGroups = computed(() => {
@@ -492,7 +500,7 @@ const kpiGroups = computed(() => {
     tiles: [
       { icon: 'team', label: 'Teams', value: teams },
       kind === 'arrival'
-        ? { icon: 'plane', label: 'Teams Arrived to Date', value: planned }
+        ? { icon: 'plane', label: 'Teams Arrived to Date', value: rows.filter(r => ['in-progress', 'completed'].includes(r.job_status)).length }
         : { icon: 'fleet', label: 'Movements Planned', value: planned },
       { icon: 'fleet', label: 'Movements Completed', value: completed },
     ],
@@ -588,29 +596,25 @@ const kpiGroups = computed(() => {
 function setKind(kind) {
   searchQuery.value  = '';
   selectedDate.value = '';
-  selectedEvent.value = '';
   selectedFunctionalArea.value = '';
-  router.get('/kit-truck', { kind }, { preserveScroll: true });
+  router.get('/kit-truck', { kind, event: props.filters.event ?? '' }, { preserveScroll: true });
 }
 function setDate(date) {
-  const params = { kind: props.filters.kind };
+  const params = { kind: props.filters.kind, event: props.filters.event ?? '' };
   if (date) params.date = date;
-  if (props.filters.event) params.event = props.filters.event;
   if (props.filters.functional_area) params.functional_area = props.filters.functional_area;
   router.get('/kit-truck', params, { preserveScroll: true });
 }
 function setEvent(event) {
-  const params = { kind: props.filters.kind };
-  if (event) params.event = event;
+  const params = { kind: props.filters.kind, event: event ?? '' };
   if (props.filters.date) params.date = props.filters.date;
   if (props.filters.functional_area) params.functional_area = props.filters.functional_area;
   router.get('/kit-truck', params, { preserveScroll: true });
 }
 function setFunctionalArea(functionalArea) {
-  const params = { kind: props.filters.kind };
+  const params = { kind: props.filters.kind, event: props.filters.event ?? '' };
   if (functionalArea) params.functional_area = functionalArea;
   if (props.filters.date) params.date = props.filters.date;
-  if (props.filters.event) params.event = props.filters.event;
   router.get('/kit-truck', params, { preserveScroll: true });
 }
 </script>

@@ -376,7 +376,10 @@ class MovementTemplateController extends Controller
         $plansCount = $movementTemplate->plans()->count();
         
         if ($plansCount > 0) {
-            return back()->with('error', "Cannot delete template. It is used in {$plansCount} plan(s).");
+            $emptyCount = $movementTemplate->plans()->doesntHave('movements')->count();
+            $empty = $emptyCount > 0 ? " {$emptyCount} of them have no movements." : '';
+
+            return back()->with('error', "Cannot delete template. It is used in {$plansCount} plan(s).{$empty}");
         }
 
         $name = $movementTemplate->name;

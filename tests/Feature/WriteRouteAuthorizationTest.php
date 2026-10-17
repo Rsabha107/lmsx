@@ -16,6 +16,7 @@ class WriteRouteAuthorizationTest extends TestCase
     private const AUTH_FLOW = [
         'login.attempt', 'logout', 'password.email', 'password.update',
         'api.mobile.login', 'api.mobile.sso.microsoft', 'api.mobile.logout',
+        'api.mobile.devices.store', 'api.mobile.devices.destroy',
         'session.active-event', 'session.active-plan',
     ];
 

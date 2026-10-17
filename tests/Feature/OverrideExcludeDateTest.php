@@ -108,6 +108,46 @@ class OverrideExcludeDateTest extends TestCase
         $this->assertSame(0, $checkpoint->getRawOriginal('delay_minutes'));
     }
 
+    public function test_job_start_and_finish_follow_the_overridden_times(): void
+    {
+        $scheduled = now()->subDays(3)->setTime(10, 0);
+        [$event, $first] = $this->checkpointAt($scheduled);
+        $job = $first->job;
+        $last = $this->createCheckpoint($event, $job, ['order' => 2, 'scheduled_at' => $scheduled->copy()->addHour()]);
+        $at = fn (string $time) => $scheduled->copy()->setTime(...array_map('intval', explode(':', $time)))->format('Y-m-d H:i');
+
+        $this->override($event, $first->id, '10:20', '1')->assertOk();
+        $this->assertSame($at('10:20'), $job->refresh()->started_at->format('Y-m-d H:i'));
+        $this->assertSame($at('10:20'), $job->movement->actual_departure->format('Y-m-d H:i'));
+
+        // Correcting the time moves the start with it.
+        $this->override($event, $first->id, '10:05', '1')->assertOk();
+        $this->assertSame($at('10:05'), $job->refresh()->started_at->format('Y-m-d H:i'));
+
+        $this->override($event, $last->id, '11:10', '1')->assertOk();
+        $job->refresh();
+        $this->assertSame('completed', $job->status);
+        $this->assertSame($at('11:10'), $job->completed_at->format('Y-m-d H:i'));
+        $this->assertSame($at('11:10'), $job->movement->fresh()->actual_arrival->format('Y-m-d H:i'));
+    }
+
+    public function test_a_mistyped_middle_step_does_not_move_the_finish(): void
+    {
+        $scheduled = now()->subDays(3)->setTime(10, 0);
+        [$event, $first] = $this->checkpointAt($scheduled);
+        $job = $first->job;
+        $middle = $this->createCheckpoint($event, $job, ['order' => 2, 'scheduled_at' => $scheduled->copy()->addMinutes(30)]);
+        $last = $this->createCheckpoint($event, $job, ['order' => 3, 'scheduled_at' => $scheduled->copy()->addHour()]);
+
+        $this->override($event, $first->id, '10:00', '1')->assertOk();
+        $this->override($event, $middle->id, '21:30', '1')->assertOk();
+        $this->override($event, $last->id, '11:00', '1')->assertOk();
+
+        $job->refresh();
+        $this->assertSame($scheduled->copy()->setTime(10, 0)->format('Y-m-d H:i'), $job->started_at->format('Y-m-d H:i'));
+        $this->assertSame($scheduled->copy()->setTime(11, 0)->format('Y-m-d H:i'), $job->completed_at->format('Y-m-d H:i'));
+    }
+
     public function test_a_checkpoint_without_a_scheduled_time_is_neither_on_time_nor_late(): void
     {
         [$event, $checkpoint] = $this->checkpointAt(now()->subDays(3)->setTime(10, 0));

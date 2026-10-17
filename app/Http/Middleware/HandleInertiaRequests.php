@@ -22,10 +22,10 @@ class HandleInertiaRequests extends Middleware
 
         return array_merge(parent::share($request), [
             'appName'       => 'NAQLA LMS',
-            'matchDay'      => 'Match Day 4',
             'today'         => now()->format('D, d M Y'),
             'auth' => [
                 'user' => $request->user()?->only('id', 'name', 'email'),
+                'roles' => $request->user()?->getRoleNames()->values()->all() ?? [],
                 'can' => $this->abilities($request),
             ],
             'flash' => [

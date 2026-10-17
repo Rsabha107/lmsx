@@ -21,7 +21,10 @@ class KitTruckDashboardController extends Controller
     {
         $kind              = $request->query('kind', 'match');
         $filterDate        = $request->query('date');
-        $filterEvent       = $request->query('event');
+        // No event parameter = the active event; an empty one = all events.
+        $filterEvent       = $request->has('event')
+            ? $request->query('event')
+            : $request->session()->get('active_event_id');
         $filterFunctionalArea = $request->query('functional_area');
 
         // Load jobs of the selected movement kind with all needed relations
@@ -215,6 +218,7 @@ class KitTruckDashboardController extends Controller
         // ── Kind counts for the filter pills ──────────────────────────────
         $kindCounts = Movement::select('kind', DB::raw('count(*) as total'))
             ->whereHas('job') // Only count movements that have jobs
+            ->when(!empty($filterEvent), fn ($q) => $q->where('event_id', $filterEvent))
             ->groupBy('kind')
             ->pluck('total', 'kind');
 
@@ -251,7 +255,7 @@ class KitTruckDashboardController extends Controller
             'filters'         => [
                 'kind' => $kind, 
                 'date' => $filterDate, 
-                'event' => $filterEvent,
+                'event' => $filterEvent ? (int) $filterEvent : '',
                 'functional_area' => $filterFunctionalArea,
             ],
         ]);

@@ -1142,10 +1142,25 @@
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: #DC2626;">
             <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
           </svg>
-          <span>Delete {{ deleteTarget.entityType }}</span>
+          <span>{{ deleteError ? 'Cannot delete' : 'Delete' }} {{ deleteTarget.entityType }}</span>
         </div>
       </template>
-      <div style="padding: 4px 0;">
+      <div v-if="deleteError" style="padding: 4px 0;">
+        <p style="font-size: 14px; color: #B91C1C; font-weight: 600; margin-bottom: 12px;">
+          {{ deleteError }}
+        </p>
+        <template v-if="deleteTarget.type === 'movement-template'">
+          <p style="font-size: 13px; color: var(--ink2); margin-bottom: 8px;">
+            Delete or rebuild those plans in Planning first, then delete the template.
+          </p>
+          <p style="font-size: 13px; color: var(--ink2);">
+            Some of them may have <strong>zero movements</strong> and are easy to miss. In Planning,
+            search for <strong>{{ deleteTarget.name }}</strong> or use the <strong>No movements</strong>
+            filter, and attend to them.
+          </p>
+        </template>
+      </div>
+      <div v-else style="padding: 4px 0;">
         <p style="font-size: 14px; color: var(--ink); margin-bottom: 12px;">
           Are you sure you want to delete <strong>{{ deleteTarget.name }}</strong>?
         </p>
@@ -1154,7 +1169,10 @@
         </p>
       </div>
       <template #footer>
-        <div style="display: flex; gap: 8px; justify-content: flex-end;">
+        <div v-if="deleteError" style="display: flex; gap: 8px; justify-content: flex-end;">
+          <Button variant="secondary" size="sm" @click="cancelDelete">Close</Button>
+        </div>
+        <div v-else style="display: flex; gap: 8px; justify-content: flex-end;">
           <Button variant="secondary" size="sm" @click="cancelDelete" :disabled="processingDelete">Cancel</Button>
           <Button variant="primary" size="sm" @click="confirmDelete" :disabled="processingDelete" style="background: #DC2626; border-color: #DC2626;">
             {{ processingDelete ? 'Deleting...' : 'Delete' }}
@@ -1401,6 +1419,7 @@ const showEditCheckpoint = ref(false);
 const showEditCheckpointTemplate = ref(false);
 const showEditMovementTemplate = ref(false);
 const showDeleteConfirmation = ref(false);
+const deleteError = ref(null);
 
 // Processing states
 const processingCheckpoint = ref(false);
@@ -2227,7 +2246,7 @@ function confirmDelete() {
       // check the actual flash message to know whether the delete happened.
       const flash = page.props.flash;
       if (flash?.error) {
-        showErrorToast(flash.error);
+        deleteError.value = flash.error;
         return;
       }
       showDeleteConfirmation.value = false;
@@ -2246,6 +2265,7 @@ function confirmDelete() {
 function cancelDelete() {
   showDeleteConfirmation.value = false;
   deleteTarget.value = null;
+  deleteError.value = null;
 }
 
 // Styling helpers

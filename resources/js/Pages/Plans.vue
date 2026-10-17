@@ -731,7 +731,14 @@
             </div>
             
             <!-- Plan Type Filters -->
-            <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+            <div style="display: flex; gap: 6px; flex-wrap: wrap; align-items: center;">
+              <input
+                v-model="planListSearch"
+                type="search"
+                placeholder="Search code, name, template, team..."
+                aria-label="Search plans"
+                style="width: 240px; padding: 5px 10px; border: 1px solid var(--border); border-radius: 8px; font-size: 12px; background: var(--surface); color: var(--ink); outline: none;"
+              />
               <button
                 @click="planTypeFilter = null"
                 :class="['filter-chip', { 'filter-chip--active': planTypeFilter === null }]"
@@ -774,6 +781,15 @@
               >
                 Other
                 <span class="filter-chip-count">{{ planTypesCounts.other }}</span>
+              </button>
+              <button
+                v-if="planTypesCounts.empty > 0 || emptyPlansOnly"
+                @click="emptyPlansOnly = !emptyPlansOnly"
+                :class="['filter-chip', { 'filter-chip--active': emptyPlansOnly }]"
+                title="Plans that have no movements"
+              >
+                No movements
+                <span class="filter-chip-count">{{ planTypesCounts.empty }}</span>
               </button>
             </div>
           </div>
@@ -5092,32 +5108,32 @@
                             padding: '6px 10px',
                             borderRadius: '6px',
                             border: '1px solid',
-                            background: matchDuplicateChecks.get(team.team_id)?.exists && matchDuplicateChecks.get(team.team_id)?.strict ? '#FEE2E2' : 
-                                       matchDuplicateChecks.get(team.team_id)?.exists ? '#FEF3C7' : '#EFF6FF',
-                            borderColor: matchDuplicateChecks.get(team.team_id)?.exists && matchDuplicateChecks.get(team.team_id)?.strict ? '#FCA5A5' :
-                                        matchDuplicateChecks.get(team.team_id)?.exists ? '#FCD34D' : '#BFDBFE'
+                            background: matchDuplicateChecks.get(matchCheckKey(team))?.exists && matchDuplicateChecks.get(matchCheckKey(team))?.strict ? '#FEE2E2' : 
+                                       matchDuplicateChecks.get(matchCheckKey(team))?.exists ? '#FEF3C7' : '#EFF6FF',
+                            borderColor: matchDuplicateChecks.get(matchCheckKey(team))?.exists && matchDuplicateChecks.get(matchCheckKey(team))?.strict ? '#FCA5A5' :
+                                        matchDuplicateChecks.get(matchCheckKey(team))?.exists ? '#FCD34D' : '#BFDBFE'
                           }"
-                          :title="matchDuplicateChecks.get(team.team_id)?.exists ? 
-                                  (matchDuplicateChecks.get(team.team_id)?.strict ? '❌ Duplicate (blocked)' : '⚠️ Similar movement found') : ''"
+                          :title="matchDuplicateChecks.get(matchCheckKey(team))?.exists ? 
+                                  (matchDuplicateChecks.get(matchCheckKey(team))?.strict ? '❌ Duplicate (blocked)' : '⚠️ Similar movement found') : ''"
                         >
                           <span
                             :style="{
                               fontSize: '11px',
                               fontWeight: '700',
                               fontFamily: 'var(--mono)',
-                              color: matchDuplicateChecks.get(team.team_id)?.exists && matchDuplicateChecks.get(team.team_id)?.strict ? '#991B1B' :
-                                     matchDuplicateChecks.get(team.team_id)?.exists ? '#92400E' : '#1E40AF'
+                              color: matchDuplicateChecks.get(matchCheckKey(team))?.exists && matchDuplicateChecks.get(matchCheckKey(team))?.strict ? '#991B1B' :
+                                     matchDuplicateChecks.get(matchCheckKey(team))?.exists ? '#92400E' : '#1E40AF'
                             }"
                           >
-                            <span v-if="matchDuplicateChecks.get(team.team_id)?.exists && matchDuplicateChecks.get(team.team_id)?.strict">❌ </span>
-                            <span v-else-if="matchDuplicateChecks.get(team.team_id)?.exists">⚠️ </span>
+                            <span v-if="matchDuplicateChecks.get(matchCheckKey(team))?.exists && matchDuplicateChecks.get(matchCheckKey(team))?.strict">❌ </span>
+                            <span v-else-if="matchDuplicateChecks.get(matchCheckKey(team))?.exists">⚠️ </span>
                             {{ team.team_code }}
                           </span>
                           <span 
                             :style="{
                               fontSize: '11px',
-                              color: matchDuplicateChecks.get(team.team_id)?.exists && matchDuplicateChecks.get(team.team_id)?.strict ? '#7F1D1D' :
-                                     matchDuplicateChecks.get(team.team_id)?.exists ? '#78350F' : '#1E3A8A'
+                              color: matchDuplicateChecks.get(matchCheckKey(team))?.exists && matchDuplicateChecks.get(matchCheckKey(team))?.strict ? '#7F1D1D' :
+                                     matchDuplicateChecks.get(matchCheckKey(team))?.exists ? '#78350F' : '#1E3A8A'
                             }"
                           >
                             {{ team.team_name }}
@@ -8333,7 +8349,9 @@ const bulkDuplicateChecks = ref(new Map()); // Map<team_id, { exists, strict, me
 const bulkDuplicateCheckLoading = ref(false);
 
 // Match duplicate checking state
-const matchDuplicateChecks = ref(new Map()); // Map<team_id, { exists, strict, message, existing }>
+const matchDuplicateChecks = ref(new Map()); // Map<matchCheckKey, { exists, strict, message, existing }>
+// A team plays several matches, so one match's movements must not block its others.
+const matchCheckKey = (team) => `${team.match_id}:${team.team_id}`;
 const matchDuplicateCheckLoading = ref(false);
 
 // Edit plan state
@@ -8584,6 +8602,8 @@ const teamMovementKindFilter = ref(null); // null = all, or 'arrival', 'departur
 
 // Plan type filter for By Plan view
 const planTypeFilter = ref(null); // null = all, 'arrival', 'match', 'transfer', 'other'
+const emptyPlansOnly = ref(false);
+const planListSearch = ref("");
 
 // Function to detect plan type from plan name
 function detectPlanType(plan) {
@@ -8610,6 +8630,18 @@ const plansByDate = computed(() => {
   // Apply type filter
   if (planTypeFilter.value) {
     filteredPlans = filteredPlans.filter(plan => detectPlanType(plan) === planTypeFilter.value);
+  }
+  if (emptyPlansOnly.value) {
+    filteredPlans = filteredPlans.filter(plan => !plan.movements_count);
+  }
+  const term = planListSearch.value.trim().toLowerCase();
+  if (term) {
+    filteredPlans = filteredPlans.filter(plan => [
+      plan.code,
+      plan.name,
+      plan.movement_template?.name,
+      ...(plan.movements || []).map(mv => mv.team?.team_name),
+    ].some(text => text?.toLowerCase().includes(term)));
   }
   
   // Group by date
@@ -8654,12 +8686,14 @@ const planTypesCounts = computed(() => {
     match: 0,
     departure: 0,
     transfer: 0,
-    other: 0
+    other: 0,
+    empty: 0
   };
   
   allPlans.value.forEach(plan => {
     const type = detectPlanType(plan);
     counts[type]++;
+    if (!plan.movements_count) counts.empty++;
   });
   
   return counts;
@@ -10437,7 +10471,7 @@ const matchAllowedPreview = computed(() => {
   // For each plan (date group), count teams that don't have strict duplicates
   matchesPreview.value.plans.forEach((plan) => {
     const allowedTeamsInPlan = plan.teams.filter((team) => {
-      const check = matchDuplicateChecks.value.get(team.team_id);
+      const check = matchDuplicateChecks.value.get(matchCheckKey(team));
       const isBlocked = check?.exists && check?.strict;
       if (isBlocked) hasStrictDuplicates = true;
       return !isBlocked;
@@ -10919,7 +10953,7 @@ async function checkMatchDuplicates() {
             checkData.match_id = team.match_id;
             checkData.checkpoint_template_id = leg.checkpoint_template_id || null;
             checks.push(checkData);
-            teamIdByKey.set(key, team.team_id);
+            teamIdByKey.set(key, matchCheckKey(team));
           }
           // For arrival/departure legs, check flight duplicates if available
           else if ((legType === 'arrival' || legType === 'departure')) {
@@ -10932,7 +10966,7 @@ async function checkMatchDuplicates() {
             checkData.from_location = leg.from_location;
             checkData.to_location = leg.to_location;
             checks.push(checkData);
-            teamIdByKey.set(key, team.team_id);
+            teamIdByKey.set(key, matchCheckKey(team));
           }
         }
       }
@@ -11263,7 +11297,7 @@ function createMatchPlans() {
       // Filter out teams with strict duplicates
       const allowedTeams = plan.teams
         .filter((team) => {
-          const check = matchDuplicateChecks.value.get(team.team_id);
+          const check = matchDuplicateChecks.value.get(matchCheckKey(team));
           const isBlocked = check?.exists && check?.strict;
           
           // Debug logging

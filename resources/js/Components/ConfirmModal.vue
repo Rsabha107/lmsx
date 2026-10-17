@@ -3,7 +3,7 @@
     <template #title>{{ title }}</template>
 
     <div style="padding: 0;">
-      <p style="margin: 0; color: var(--ink2); font-size: 14px; white-space: pre-line;" v-html="message"></p>
+      <p style="margin: 0; color: var(--ink2); font-size: 14px; white-space: pre-line;"><InlineMarkup :text="message" /></p>
       <p v-if="resolvedNote" style="margin: 12px 0 0; color: var(--ink3); font-size: 13px;">
         {{ resolvedNote }}
       </p>
@@ -45,11 +45,12 @@
 import { computed, ref, watch } from 'vue';
 import Modal from './Modal.vue';
 import Button from './Button.vue';
+import InlineMarkup from './InlineMarkup.vue';
 
 const props = defineProps({
   show: { type: Boolean, default: false },
   title: { type: String, default: 'Are you sure?' },
-  // Rendered as HTML so callers can bold names/counts.
+  // Only <strong>, <b>, <em> and <br> are honoured (see InlineMarkup); anything else shows as text.
   message: { type: String, default: '' },
   // Secondary line under the message; defaults to the irreversibility warning for danger.
   note: { type: String, default: null },

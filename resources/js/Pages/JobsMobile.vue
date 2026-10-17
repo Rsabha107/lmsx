@@ -14,12 +14,20 @@
       <!-- Header -->
       <div class="mobile-header">
         <h1 class="mobile-title">My Jobs</h1>
-        <div class="mobile-subtitle">{{ schedule.length }} active jobs</div>
-        <div class="mobile-supervisor">Priya Anand · Supervisor</div>
+        <div class="mobile-subtitle">{{ openCount }} open {{ openCount === 1 ? 'job' : 'jobs' }}</div>
+        <div v-if="userName" class="mobile-supervisor">{{ userName }}</div>
+      </div>
+
+      <div v-if="!schedule.length" class="empty-state-full empty-state-list">
+        <div class="empty-state-icon">🗂️</div>
+        <h2 class="empty-state-title">No jobs assigned to you</h2>
+        <p class="empty-state-text">
+          Jobs appear here once you are set as their supervisor for this event.
+        </p>
       </div>
 
       <!-- Job Cards -->
-      <div class="job-cards">
+      <div v-else class="job-cards">
         <button
           v-for="job in schedule"
           :key="job.id"
@@ -54,17 +62,13 @@
           </div>
 
           <div class="job-card-route">
-            <svg-icon name="plane" :size="14" style="color: var(--ink3);" />
+            <svg-icon :name="routeIcon(job.kind)" :size="14" style="color: var(--ink3);" />
             <span>{{ formatJobFromLocation(job) }}</span>
             <span style="color: var(--ink4); margin: 0 4px;">→</span>
             <span>{{ formatJobToLocation(job) }}</span>
           </div>
 
           <div class="job-card-details">
-            <!-- <div v-if="job.window_start" class="detail-item detail-item--prominent">
-              <svg-icon name="calendar" :size="14" />
-              <span class="mono">{{ job.window_start }}</span>
-            </div> -->
             <div class="detail-item">
               <svg-icon name="clock" :size="14" />
               <span class="mono">{{ job.dep }} – {{ job.arr }}</span>
@@ -94,18 +98,13 @@
           </div>
         </button>
       </div>
-
-      <!-- Floating Action Button -->
-      <!-- <button class="fab" @click="showNewJob = true">
-        <svg-icon name="plus" :size="20" style="color: #fff;" />
-      </button> -->
     </div>
   </app-layout>
 </template>
 
 <script setup>
 import { useStatusLabels } from '../Composables/useStatusLabels';
-import { ref, computed } from 'vue';
+import { computed } from 'vue';
 import { router, usePage } from '@inertiajs/vue3';
 import AppLayout from '../Components/AppLayout.vue';
 import StatusPill from '../Components/StatusPill.vue';
@@ -113,12 +112,17 @@ import SvgIcon from '../Components/SvgIcon.vue';
 
 const page = usePage();
 const hasActiveEvent = computed(() => !!page.props.activeEventId);
+const userName = computed(() => page.props.auth?.user?.name ?? '');
 
 const props = defineProps({
   schedule: { type: Array, default: () => [] },
 });
 
-const showNewJob = ref(false);
+const openCount = computed(() => props.schedule
+  .filter((job) => !['completed', 'done', 'cancelled'].includes(job.status)).length);
+
+const ROUTE_ICONS = { arrival: 'plane', departure: 'plane', match: 'trophy', training: 'team' };
+const routeIcon = (kind) => ROUTE_ICONS[kind] ?? 'tracker';
 
 function selectJob(job) {
   router.visit(`/jobs/mobile/${job.id}`);
@@ -350,6 +354,9 @@ function formatJobToLocation(job) {
   color: var(--ink3);
   max-width: 400px;
 }
+.empty-state-list {
+  min-height: 40vh;
+}
 
 .mobile-container {
   max-width: 480px;
@@ -557,29 +564,6 @@ function formatJobToLocation(job) {
   border-radius: 8px;
   font-size: 12px;
   font-weight: 600;
-}
-
-/* Floating Action Button */
-.fab {
-  position: fixed;
-  bottom: 24px;
-  right: 24px;
-  width: 56px;
-  height: 56px;
-  border-radius: 16px;
-  background: var(--accent);
-  color: #fff;
-  border: none;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.2s;
-}
-
-.fab:active {
-  transform: scale(0.95);
 }
 
 .mono {

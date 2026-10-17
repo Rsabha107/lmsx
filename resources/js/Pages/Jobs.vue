@@ -534,7 +534,7 @@
 
     <Modal :show="pendingDelete !== null" max-width="500px" @close="closeDeleteJobs">
       <template #title>{{ pendingDelete?.length === 1 ? 'Delete Job?' : 'Delete Jobs?' }}</template>
-      <p style="margin: 0; color: var(--ink2); font-size: 14px;" v-html="deleteMessage"></p>
+      <p style="margin: 0; color: var(--ink2); font-size: 14px;"><InlineMarkup :text="deleteMessage" /></p>
       <div v-if="deleteNeedsTyping" style="margin-top: 14px;">
         <label for="delete-jobs-confirm" style="display: block; font-size: 13px; color: var(--ink2); margin-bottom: 6px;">
           Type <strong>{{ deleteConfirmPhrase }}</strong> to confirm
@@ -622,6 +622,7 @@ import Button from '../Components/Button.vue';
 import CheckpointTimeline from '../Components/CheckpointTimeline.vue';
 import FlagIcon from '../Components/FlagIcon.vue';
 import ConfirmModal from '../Components/ConfirmModal.vue';
+import InlineMarkup from '../Components/InlineMarkup.vue';
 import JobOverrideModal from '../Components/JobOverrideModal.vue';
 import { useJobStatusActions, canStartJob, canCancelJob, canReinstateJob } from '../Composables/useJobStatusActions';
 import { formatJobFromLocation, formatJobToLocation } from '../Composables/useJobLocations';
@@ -1230,7 +1231,7 @@ const deleteMessage = computed(() => {
   return `This will permanently delete ${subject} together with their checkpoints, captured photos/signatures and field issues.<br><br>`
     + 'The movements are kept and jobs can be generated for them again.'
     + (started
-      ? `<br><br><strong style="color: var(--danger);">${started} ${started === 1 ? 'job is' : 'jobs are'} in progress or completed</strong> — their field records will be lost.`
+      ? `<br><br><strong>${started} ${started === 1 ? 'job is' : 'jobs are'} in progress or completed</strong> — their field records will be lost.`
       : '');
 });
 

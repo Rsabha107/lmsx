@@ -8,6 +8,7 @@
  */
 
 use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\DeviceController;
 use App\Http\Controllers\Api\MobileFeedController;
 use App\Http\Controllers\Api\MobileJobController;
 use Illuminate\Support\Facades\Route;
@@ -24,6 +25,9 @@ Route::name('api.mobile.')->group(function () {
     Route::middleware(['auth:sanctum', 'throttle:mobile'])->group(function () {
         Route::get('/me', [AuthController::class, 'me'])->name('me');
         Route::post('/logout', [AuthController::class, 'logout'])->name('logout');
+
+        Route::post('/devices', [DeviceController::class, 'store'])->name('devices.store');
+        Route::delete('/devices', [DeviceController::class, 'destroy'])->name('devices.destroy');
 
         Route::get('/jobs', [MobileJobController::class, 'index'])->name('jobs.index');
         Route::get('/jobs/{job}', [MobileJobController::class, 'show'])->name('jobs.show');

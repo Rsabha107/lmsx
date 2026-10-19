@@ -356,7 +356,7 @@ function cpDeltaLabel(row, order) {
   const d = cpDelta(row, order);
   if (d === null) return '';
   if (d === 0) return 'on time';
-  return d > 0 ? `${d}m late` : `${Math.abs(d)}m early`;
+  return `${fmtDuration(d, true)} ${d > 0 ? 'late' : 'early'}`;
 }
 function cpHighlight(row, order) {
   const cp = getCheckpoint(row, order);
@@ -396,21 +396,22 @@ const groupedRows = computed(() => {
 // currently configured in this event's templates — phase 2 will make the
 // tile-to-checkpoint mapping and target thresholds configurable per event
 // instead of hardcoded here.
-function findCheckpointOrder(name) {
-  const target = name.trim().toUpperCase();
-  const col = props.columns.find(c => c.name?.trim().toUpperCase() === target);
-  return col ? col.order : null;
-}
-function checkpointAt(row, order) {
-  if (order == null) return null;
-  return row.checkpoints?.find(c => c.order === order) ?? null;
+// Looked up by name in each job, not by position: templates differ (one has an extra
+// KIT HANDOVER step), so the same step can sit at another order from job to job.
+const normName = (s) => (s ?? '').trim().toUpperCase().replace(/\s+/g, ' ');
+// Earlier templates used shorter names for the same step.
+const CHECKPOINT_ALIASES = {
+  'GWC ARRIVAL AT VSA/STA': ['GWC ARRIVAL AT VSA'],
+};
+function checkpointNamed(row, name) {
+  const wanted = [name, ...(CHECKPOINT_ALIASES[name] ?? [])].map(normName);
+  return row.checkpoints?.find(c => wanted.includes(normName(c.name))) ?? null;
 }
 function avgDeltaStats(rows, name) {
-  const order = findCheckpointOrder(name);
   const vals = [];
   let excluded = 0;
   for (const r of rows) {
-    const cp = checkpointAt(r, order);
+    const cp = checkpointNamed(r, name);
     if (!cp?.scheduled_ts || !cp?.completed_ts) continue;
     const minutes = (cp.completed_ts - cp.scheduled_ts) / 60;
     if (Math.abs(minutes) > MAX_LEG_MINUTES) excluded++;
@@ -425,13 +426,11 @@ function avgDeltaStats(rows, name) {
 const MAX_LEG_MINUTES = 24 * 60;
 
 function durationStats(rows, nameA, nameB) {
-  const orderA = findCheckpointOrder(nameA);
-  const orderB = findCheckpointOrder(nameB);
   const vals = [];
   let excluded = 0;
   for (const r of rows) {
-    const a = checkpointAt(r, orderA);
-    const b = checkpointAt(r, orderB);
+    const a = checkpointNamed(r, nameA);
+    const b = checkpointNamed(r, nameB);
     if (!a?.completed_ts || !b?.completed_ts) continue;
     const minutes = (b.completed_ts - a.completed_ts) / 60;
     if (minutes < 0 || minutes > MAX_LEG_MINUTES) excluded++;
@@ -452,26 +451,33 @@ function durationTile(icon, label, rows, nameA, nameB) {
   };
 }
 function countOnTime(rows, name, onTime) {
-  const order = findCheckpointOrder(name);
   let n = 0;
   for (const r of rows) {
-    const cp = checkpointAt(r, order);
+    const cp = checkpointNamed(r, name);
     if (cp && cp.is_on_time === onTime) n++;
   }
   return n;
 }
 function sumField(rows, name, field) {
-  const order = findCheckpointOrder(name);
   let sum = 0, any = false;
   for (const r of rows) {
-    const cp = checkpointAt(r, order);
+    const cp = checkpointNamed(r, name);
     if (cp && cp[field] != null) { sum += cp[field]; any = true; }
   }
   return any ? sum : null;
 }
 function fmtMinutes(v) {
   if (v === null || v === undefined) return '—';
-  return `${v} min${Math.abs(v) === 1 ? '' : 's'}`;
+  return fmtDuration(v);
+}
+// 45 mins · 1 hr 30 mins · 24 hrs; compact (table badges): 45m · 1h 30m · 24h.
+function fmtDuration(minutes, compact = false) {
+  const m = Math.abs(Math.round(minutes));
+  if (m < 60) return compact ? `${m}m` : `${m} min${m === 1 ? '' : 's'}`;
+  const h = Math.floor(m / 60);
+  const rest = m % 60;
+  if (compact) return rest ? `${h}h ${rest}m` : `${h}h`;
+  return `${h} hr${h === 1 ? '' : 's'}${rest ? ` ${rest} min${rest === 1 ? '' : 's'}` : ''}`;
 }
 function fmtCount(v) {
   return v === null || v === undefined ? '—' : v;
@@ -483,7 +489,7 @@ function varianceTile(label, rows, name) {
   const sub = excluded ? `${excluded} mis-dated checkpoint${excluded === 1 ? '' : 's'} left out` : null;
   if (v === null) return { icon: 'clock', label, value: '—', sub };
   if (v === 0) return { icon: 'clock', label, value: 'On time', tone: 'early', sub };
-  return { icon: 'clock', label, value: `${Math.abs(v)}m ${v > 0 ? 'late' : 'early'}`, tone: v > 0 ? 'late' : 'early', sub };
+  return { icon: 'clock', label, value: `${fmtDuration(v)} ${v > 0 ? 'late' : 'early'}`, tone: v > 0 ? 'late' : 'early', sub };
 }
 
 const kpiGroups = computed(() => {
@@ -492,8 +498,10 @@ const kpiGroups = computed(() => {
 
   const teams = new Set(rows.map(r => r.team_code).filter(Boolean)).size;
   const planned = rows.length;
-  const maxOrder = props.columns.reduce((max, c) => Math.max(max, c.order), 0);
-  const completed = rows.filter(r => checkpointAt(r, maxOrder)?.completed_at).length;
+  // Averages, on-time counts and bag totals use completed jobs only: a job still under way
+  // has legs not yet recorded and would skew them.
+  const done = rows.filter(r => r.job_status === 'completed');
+  const completed = done.length;
 
   const overview = {
     title: kind === 'match' ? 'Operations Overview' : `${kindLabel.value} Overview`,
@@ -513,20 +521,20 @@ const kpiGroups = computed(() => {
       {
         title: 'GWC Performance',
         tiles: [
-          { icon: 'check', label: 'On-time to Staging', value: countOnTime(rows, 'ARRIVAL TIME AT POA STAGING', true) },
-          { icon: 'warn', label: 'Early/Late to Staging', value: countOnTime(rows, 'ARRIVAL TIME AT POA STAGING', false) },
-          varianceTile('Avg Planned v Actual (Staging)', rows, 'ARRIVAL TIME AT POA STAGING'),
-          durationTile('clock', 'Avg Duration Airport → Hotel', rows, 'CONVOY ARRIVAL AT AIRPORT', 'LUGGAGE ARRIVAL TO HOTEL'),
-          durationTile('clock', 'Avg Hotel Arrival → Offload', rows, 'LUGGAGE ARRIVAL TO HOTEL', 'OFFLOAD END TIME'),
+          { icon: 'check', label: 'On-time to Staging', value: countOnTime(done, 'ARRIVAL TIME AT POA STAGING', true) },
+          { icon: 'warn', label: 'Early/Late to Staging', value: countOnTime(done, 'ARRIVAL TIME AT POA STAGING', false) },
+          varianceTile('Avg Planned v Actual (Staging)', done, 'ARRIVAL TIME AT POA STAGING'),
+          durationTile('clock', 'Avg Duration Airport → Hotel', done, 'CONVOY ARRIVAL AT AIRPORT', 'LUGGAGE ARRIVAL TO HOTEL'),
+          durationTile('clock', 'Avg Hotel Arrival → Offload', done, 'LUGGAGE ARRIVAL TO HOTEL', 'OFFLOAD END TIME'),
         ],
       },
       {
         title: 'External Performance',
         tiles: [
-          durationTile('clock', 'Avg Staging → Convoy Depart', rows, 'ARRIVAL TIME AT POA STAGING', 'POA STAGING CONVY DEPART'),
-          durationTile('clock', 'Avg Convoy Depart → QAS Handover', rows, 'POA STAGING CONVY DEPART', 'QAS HANDOVER TIME'),
-          { icon: 'bag', label: 'Total Bags Received', value: fmtCount(sumField(rows, 'LUGGAGE PIECES', 'bags_loaded')) },
-          durationTile('clock', 'Avg Bag Loading Duration', rows, 'QAS HANDOVER TIME', 'KIT LOAD END'),
+          durationTile('clock', 'Avg Staging → Convoy Depart', done, 'ARRIVAL TIME AT POA STAGING', 'POA STAGING CONVY DEPART'),
+          durationTile('clock', 'Avg Convoy Depart → QAS Handover', done, 'POA STAGING CONVY DEPART', 'QAS HANDOVER TIME'),
+          { icon: 'bag', label: 'Total Bags Received', value: fmtCount(sumField(done, 'LUGGAGE PIECES', 'bags_loaded')) },
+          durationTile('clock', 'Avg Bag Loading Duration', done, 'QAS HANDOVER TIME', 'KIT LOAD END'),
         ],
       },
     ];
@@ -538,51 +546,51 @@ const kpiGroups = computed(() => {
       {
         title: 'GWC Performance',
         tiles: [
-          varianceTile('Avg Planned v Actual (Hotel Arrival)', rows, 'ARRIVAL TIME AT HOTEL'),
-          durationTile('clock', 'Avg Hotel Arrival → Loading Start', rows, 'ARRIVAL TIME AT HOTEL', 'BAG LOAD START'),
-          durationTile('clock', 'Avg Bag Loading Duration', rows, 'BAG LOAD START', 'BAG LOAD END'),
-          durationTile('clock', 'Avg Loading End → Departure', rows, 'BAG LOAD END', 'DEPARTURE FROM HOTEL'),
-          durationTile('clock', 'Avg Departure → Airport Arrival', rows, 'DEPARTURE FROM HOTEL', 'LUGGAGE ARRIVAL AT AIRPORT'),
+          varianceTile('Avg Planned v Actual (Hotel Arrival)', done, 'ARRIVAL TIME AT HOTEL'),
+          durationTile('clock', 'Avg Hotel Arrival → Loading Start', done, 'ARRIVAL TIME AT HOTEL', 'BAG LOAD START'),
+          durationTile('clock', 'Avg Bag Loading Duration', done, 'BAG LOAD START', 'BAG LOAD END'),
+          durationTile('clock', 'Avg Loading End → Departure', done, 'BAG LOAD END', 'DEPARTURE FROM HOTEL'),
+          durationTile('clock', 'Avg Departure → Airport Arrival', done, 'DEPARTURE FROM HOTEL', 'LUGGAGE ARRIVAL AT AIRPORT'),
         ],
       },
       {
         title: 'Baggage',
         tiles: [
-          { icon: 'bag', label: 'Planned Bags', value: fmtCount(sumField(rows, 'LUGGAGE PIECES', 'planned_bags')) },
-          { icon: 'bag', label: 'Actual Bags', value: fmtCount(sumField(rows, 'LUGGAGE PIECES', 'bags_loaded')) },
-          { icon: 'bag', label: 'Food Bags', value: fmtCount(sumField(rows, 'LUGGAGE PIECES', 'food_bags')) },
-          { icon: 'bag', label: 'Oversized Pieces', value: fmtCount(sumField(rows, 'LUGGAGE PIECES', 'oversized_pieces')) },
+          { icon: 'bag', label: 'Planned Bags', value: fmtCount(sumField(done, 'LUGGAGE PIECES', 'planned_bags')) },
+          { icon: 'bag', label: 'Actual Bags', value: fmtCount(sumField(done, 'LUGGAGE PIECES', 'bags_loaded')) },
+          { icon: 'bag', label: 'Food Bags', value: fmtCount(sumField(done, 'LUGGAGE PIECES', 'food_bags')) },
+          { icon: 'bag', label: 'Oversized Pieces', value: fmtCount(sumField(done, 'LUGGAGE PIECES', 'oversized_pieces')) },
         ],
       },
     ];
   }
 
   if (kind === 'match') {
-    overview.tiles.push({ icon: 'warn', label: 'Early/Late Arrivals', value: countOnTime(rows, 'GWC ARRIVAL TIME AT HOTEL', false) });
+    overview.tiles.push({ icon: 'warn', label: 'Early/Late Arrivals', value: countOnTime(done, 'GWC ARRIVAL TIME AT HOTEL', false) });
     return [
       overview,
       {
         title: 'GWC Performance',
         tiles: [
-          varianceTile('Avg Planned v Actual (Hotel Arrival)', rows, 'GWC ARRIVAL TIME AT HOTEL'),
-          durationTile('clock', 'Avg Duration Hotel → VSA', rows, 'DEPARTURE TIME FROM HOTEL TO FOP', 'GWC ARRIVAL AT VSA'),
-          varianceTile('Avg Planned v Actual (VSA Arrival)', rows, 'GWC ARRIVAL AT VSA'),
-          durationTile('clock', 'Avg Duration VSA → Hotel', rows, 'GWC DEPARTURE FROM VSA/STADIUM TO HOTEL', 'ARRIVAL TO HOTEL'),
+          varianceTile('Avg Planned v Actual (Hotel Arrival)', done, 'GWC ARRIVAL TIME AT HOTEL'),
+          durationTile('clock', 'Avg Duration Hotel → VSA', done, 'DEPARTURE TIME FROM HOTEL TO FOP', 'GWC ARRIVAL AT VSA/STA'),
+          varianceTile('Avg Planned v Actual (VSA Arrival)', done, 'GWC ARRIVAL AT VSA/STA'),
+          durationTile('clock', 'Avg Duration VSA → Hotel', done, 'GWC DEPARTURE FROM VSA/STADIUM TO HOTEL', 'ARRIVAL TO HOTEL'),
         ],
       },
       {
         title: 'PMA Kit-Manager Performance',
         tiles: [
-          durationTile('clock', 'Avg Hotel Arrival → Loading Start', rows, 'GWC ARRIVAL TIME AT HOTEL', 'BAG LOAD START'),
-          durationTile('bag', 'Avg Kit Loading Time (Hotel)', rows, 'BAG LOAD START', 'BAG LOAD END'),
-          durationTile('clock', 'Avg Loading End → Hotel Departure', rows, 'BAG LOAD END', 'DEPARTURE TIME FROM HOTEL TO FOP'),
-          durationTile('clock', 'Avg Final Whistle → Loading Start (Stadium)', rows, 'FINAL WHISTLE', 'LOADING AT STADIUM'),
+          durationTile('clock', 'Avg Hotel Arrival → Loading Start', done, 'GWC ARRIVAL TIME AT HOTEL', 'BAG LOAD START'),
+          durationTile('bag', 'Avg Kit Loading Time (Hotel)', done, 'BAG LOAD START', 'BAG LOAD END'),
+          durationTile('clock', 'Avg Loading End → Hotel Departure', done, 'BAG LOAD END', 'DEPARTURE TIME FROM HOTEL TO FOP'),
+          durationTile('clock', 'Avg Final Whistle → Loading Start (Stadium)', done, 'FINAL WHISTLE', 'LOADING AT STADIUM'),
         ],
       },
       {
         title: 'SSOC',
         tiles: [
-          durationTile('clock', 'Avg VSA Departure → Hotel Unload Complete', rows, 'ARRIVAL TO HOTEL', 'HOTEL UNLOADING END TIME'),
+          durationTile('clock', 'Avg VSA Departure → Hotel Unload Complete', done, 'ARRIVAL TO HOTEL', 'HOTEL UNLOADING END TIME'),
         ],
       },
     ];

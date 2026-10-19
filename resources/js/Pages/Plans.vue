@@ -195,69 +195,33 @@
 
           <!-- Grouped plan list (LIST VIEW) -->
           <div v-if="planDropdownView === 'list'" style="max-height: 340px; overflow-y: auto; padding-bottom: 4px">
-            <!-- All Plans option -->
+            <!-- Event-wide: the plan list, or every plan's movements -->
             <div
-              @click="selectAllPlans"
-              :style="{
-                padding: '10px 14px',
-                cursor: 'pointer',
-                borderLeft:
-                  activePlan === null
-                    ? '3px solid #3B82F6'
-                    : '3px solid transparent',
-                background:
-                  activePlan === null ? '#EFF6FF' : 'transparent',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                transition: 'background 0.1s',
-                marginBottom: '8px',
-              }"
-              @mouseenter="
-                (e) => {
-                  if (activePlan !== null)
-                    e.currentTarget.style.background = '#F9FAFB';
-                }
-              "
-              @mouseleave="
-                (e) => {
-                  e.currentTarget.style.background =
-                    activePlan === null ? '#EFF6FF' : 'transparent';
-                }
-              "
+              v-for="opt in allPlanOptions"
+              :key="opt.id"
+              role="button"
+              tabindex="0"
+              class="plan-dd-all"
+              :class="{ 'plan-dd-all--on': opt.active }"
+              @click="opt.select()"
+              @keydown.enter.prevent="opt.select()"
             >
               <div>
-                <div
-                  style="
-                    font-size: 13px;
-                    font-weight: 600;
-                    color: #111827;
-                    margin-bottom: 2px;
-                  "
-                >
-                  {{ inAllPlansView ? 'All Plans' : 'All Movements' }} (Event-wide)
-                </div>
-                <div style="font-size: 11px; color: #9ca3af">
-                  View all movements across all plans
-                </div>
+                <div style="font-size: 13px; font-weight: 600; color: #111827; margin-bottom: 2px">{{ opt.label }}</div>
+                <div style="font-size: 11px; color: #9ca3af">{{ opt.sub }}</div>
               </div>
               <svg
-                v-if="activePlan === null"
+                v-if="opt.active"
                 width="16"
                 height="16"
                 viewBox="0 0 20 20"
                 fill="none"
                 style="color: #3b82f6; flex-shrink: 0; margin-left: 10px"
               >
-                <path
-                  d="M4 10L8 14L16 6"
-                  stroke="currentColor"
-                  stroke-width="2"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                />
+                <path d="M4 10L8 14L16 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
               </svg>
             </div>
+            <div style="height: 8px"></div>
             <template v-for="group in groupedFilteredPlans" :key="group.status">
               <div v-if="group.plans.length">
                 <div
@@ -362,56 +326,25 @@
 
           <!-- Grouped plan grid (GRID VIEW) -->
           <div v-if="planDropdownView === 'grid'" style="max-height: 400px; overflow-y: auto; padding: 8px 12px;">
-            <!-- All Plans Card -->
-            <div
-              @click="selectAllPlans"
-              :style="{
-                padding: '12px',
-                cursor: 'pointer',
-                borderRadius: '8px',
-                border: activePlan === null ? '2px solid #3B82F6' : '1px solid #e5e7eb',
-                background: activePlan === null ? '#EFF6FF' : '#fff',
-                transition: 'all 0.15s',
-                marginBottom: '8px',
-              }"
-              @mouseenter="
-                (e) => {
-                  if (activePlan !== null) {
-                    e.currentTarget.style.borderColor = '#cbd5e1';
-                    e.currentTarget.style.boxShadow = '0 2px 6px rgba(0,0,0,0.08)';
-                  }
-                }
-              "
-              @mouseleave="
-                (e) => {
-                  e.currentTarget.style.borderColor = activePlan === null ? '#3B82F6' : '#e5e7eb';
-                  e.currentTarget.style.boxShadow = 'none';
-                }
-              "
-            >
-              <div style="display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 6px;">
-                <div style="font-size: 13px; font-weight: 700; color: #111827;">
-                  {{ inAllPlansView ? 'All Plans' : 'All Movements' }}
-                </div>
-                <svg
-                  v-if="activePlan === null"
-                  width="18"
-                  height="18"
-                  viewBox="0 0 20 20"
-                  fill="none"
-                  style="color: #3b82f6; flex-shrink: 0;"
-                >
-                  <path
-                    d="M4 10L8 14L16 6"
-                    stroke="currentColor"
-                    stroke-width="2.5"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                  />
-                </svg>
-              </div>
-              <div style="font-size: 11px; color: #6b7280;">
-                Event-wide view of all movements
+            <!-- Event-wide: the plan list, or every plan's movements -->
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px;">
+              <div
+                v-for="opt in allPlanOptions"
+                :key="opt.id"
+                role="button"
+                tabindex="0"
+                @click="opt.select()"
+                @keydown.enter.prevent="opt.select()"
+                :style="{
+                  padding: '12px',
+                  cursor: 'pointer',
+                  borderRadius: '8px',
+                  border: opt.active ? '2px solid #3B82F6' : '1px solid #e5e7eb',
+                  background: opt.active ? '#EFF6FF' : '#fff',
+                }"
+              >
+                <div style="font-size: 13px; font-weight: 700; color: #111827; margin-bottom: 4px;">{{ opt.label }}</div>
+                <div style="font-size: 11px; color: #6b7280;">{{ opt.sub }}</div>
               </div>
             </div>
 
@@ -650,501 +583,20 @@
         </button>
       </div>
 
-      <!-- Plans tab -->
-      <div v-if="activeTab === 'plans'" style="flex: 1; overflow: auto">
-          <div
-            style="
-              padding: 0 0 14px;
-            "
-          >
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-              <div style="display: flex; align-items: center; gap: 12px;">
-                <div
-                  style="
-                    display: flex;
-                    align-items: center;
-                    gap: 8px;
-                    font-size: 11px;
-                    letter-spacing: 1px;
-                    text-transform: uppercase;
-                    color: var(--ink3);
-                    font-weight: 700;
-                  "
-                >
-                  Plans
-                  <span
-                    style="
-                      display: inline-flex;
-                      align-items: center;
-                      justify-content: center;
-                      min-width: 20px;
-                      height: 20px;
-                      padding: 0 6px;
-                      border-radius: 999px;
-                      background: var(--accent-soft);
-                      color: var(--accent);
-                      font-size: 11px;
-                      font-weight: 700;
-                      letter-spacing: normal;
-                      text-transform: none;
-                    "
-                    >{{ allPlans.length }}</span
-                  >
-                </div>
-                <!-- View Toggle -->
-                <div class="view-toggle">
-                  <button
-                    @click="plansPageView = 'table'"
-                    :class="['toggle-btn', plansPageView === 'table' ? 'toggle-btn--active' : '']"
-                    title="Table view"
-                  >
-                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style="display: block;">
-                      <rect x="1" y="2" width="14" height="2.5" rx="1" stroke="currentColor" stroke-width="1.5"/>
-                      <rect x="1" y="6.75" width="14" height="2.5" rx="1" stroke="currentColor" stroke-width="1.5"/>
-                      <rect x="1" y="11.5" width="14" height="2.5" rx="1" stroke="currentColor" stroke-width="1.5"/>
-                    </svg>
-                  </button>
-                  <button
-                    @click="plansPageView = 'grid'"
-                    :class="['toggle-btn', plansPageView === 'grid' ? 'toggle-btn--active' : '']"
-                    title="Grid view"
-                  >
-                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style="display: block;">
-                      <rect x="1" y="1" width="5.5" height="5.5" rx="1.5" stroke="currentColor" stroke-width="1.5"/>
-                      <rect x="9.5" y="1" width="5.5" height="5.5" rx="1.5" stroke="currentColor" stroke-width="1.5"/>
-                      <rect x="1" y="9.5" width="5.5" height="5.5" rx="1.5" stroke="currentColor" stroke-width="1.5"/>
-                      <rect x="9.5" y="9.5" width="5.5" height="5.5" rx="1.5" stroke="currentColor" stroke-width="1.5"/>
-                    </svg>
-                  </button>
-                </div>
-              </div>
-              <Button
-                variant="primary"
-                size="sm"
-                :disabled="!canCreatePlan"
-                :title="prerequisiteHint"
-                @click="showNewPlan = true"
-              >
-                <template #icon><svg-icon name="plus" :size="14" /></template>
-                New Plan
-              </Button>
-            </div>
-            
-            <!-- Plan Type Filters -->
-            <div style="display: flex; gap: 6px; flex-wrap: wrap; align-items: center;">
-              <input
-                v-model="planListSearch"
-                type="search"
-                placeholder="Search code, name, template, team..."
-                aria-label="Search plans"
-                style="width: 240px; padding: 5px 10px; border: 1px solid var(--border); border-radius: 8px; font-size: 12px; background: var(--surface); color: var(--ink); outline: none;"
-              />
-              <button
-                @click="planTypeFilter = null"
-                :class="['filter-chip', { 'filter-chip--active': planTypeFilter === null }]"
-              >
-                All
-                <span class="filter-chip-count">{{ planTypesCounts.all }}</span>
-              </button>
-              <button
-                @click="planTypeFilter = 'arrival'"
-                :class="['filter-chip', { 'filter-chip--active': planTypeFilter === 'arrival' }]"
-              >
-                ✈️ Arrival
-                <span class="filter-chip-count">{{ planTypesCounts.arrival }}</span>
-              </button>
-              <button
-                @click="planTypeFilter = 'match'"
-                :class="['filter-chip', { 'filter-chip--active': planTypeFilter === 'match' }]"
-              >
-                ⚽ Match
-                <span class="filter-chip-count">{{ planTypesCounts.match }}</span>
-              </button>
-              <button
-                @click="planTypeFilter = 'departure'"
-                :class="['filter-chip', { 'filter-chip--active': planTypeFilter === 'departure' }]"
-              >
-                🛫 Departure
-                <span class="filter-chip-count">{{ planTypesCounts.departure }}</span>
-              </button>
-              <button
-                @click="planTypeFilter = 'transfer'"
-                :class="['filter-chip', { 'filter-chip--active': planTypeFilter === 'transfer' }]"
-              >
-                🚌 Transfer
-                <span class="filter-chip-count">{{ planTypesCounts.transfer }}</span>
-              </button>
-              <button
-                v-if="planTypesCounts.other > 0"
-                @click="planTypeFilter = 'other'"
-                :class="['filter-chip', { 'filter-chip--active': planTypeFilter === 'other' }]"
-              >
-                Other
-                <span class="filter-chip-count">{{ planTypesCounts.other }}</span>
-              </button>
-              <button
-                v-if="planTypesCounts.empty > 0 || emptyPlansOnly"
-                @click="emptyPlansOnly = !emptyPlansOnly"
-                :class="['filter-chip', { 'filter-chip--active': emptyPlansOnly }]"
-                title="Plans that have no movements"
-              >
-                No movements
-                <span class="filter-chip-count">{{ planTypesCounts.empty }}</span>
-              </button>
-            </div>
-          </div>
-
-        <div class="plan-table-card">
-          <div v-if="visiblePlans.length" class="plans-bulk-bar">
-            <label class="plans-bulk-select">
-              <input
-                type="checkbox"
-                :checked="allVisiblePlansSelected"
-                :indeterminate="selectedVisiblePlans.length > 0 && !allVisiblePlansSelected"
-                @change="toggleSelectAllPlans"
-              />
-              Select all ({{ visiblePlans.length }})
-            </label>
-            <template v-if="selectedVisiblePlans.length">
-              <span class="plans-bulk-count">{{ selectedVisiblePlans.length }} selected</span>
-              <Button variant="secondary" size="sm" @click="selectedPlanIds = new Set()">Clear</Button>
-              <Button
-                variant="primary"
-                size="sm"
-                style="background: #dc2626; border-color: #dc2626"
-                @click="openBulkDeletePlans"
-              >Delete selected</Button>
-            </template>
-          </div>
-          <!-- TABLE VIEW HEADER -->
-          <div
-            v-if="plansPageView === 'table'"
-            style="
-              display: grid;
-              grid-template-columns: 28px 80px 120px 1.5fr 1fr 120px 100px 120px;
-              gap: 10px;
-              padding: 10px 14px;
-              border-bottom: 1px solid var(--border);
-              font-size: 11px;
-              font-weight: 700;
-              color: var(--ink3);
-              letter-spacing: 0.6px;
-              text-transform: uppercase;
-              position: sticky;
-              top: 0;
-              background: var(--surface);
-            "
-          >
-            <div></div>
-            <div>Type</div>
-            <div>Code</div>
-            <div>Name</div>
-            <div>Template</div>
-            <div>Status</div>
-            <div>Movements</div>
-            <div>Actions</div>
-          </div>
-          <div
-            v-if="!allPlans || allPlans.length === 0"
-            class="plans-empty-state"
-          >
-            <div class="empty-state-icon">
-              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                <polyline points="14 2 14 8 20 8"></polyline>
-                <line x1="12" y1="18" x2="12" y2="12"></line>
-                <line x1="9" y1="15" x2="15" y2="15"></line>
-              </svg>
-            </div>
-            <h3 class="empty-state-title">No Plans Yet</h3>
-            <p class="empty-state-description">Movement plans organize team transportation logistics. Create your first plan to get started.</p>
-            
-            <div class="plans-instructions">
-              <div class="instruction-step">
-                <span class="step-number">1</span>
-                <div class="step-content">
-                  <strong>Set Up Prerequisites</strong>
-                  <ul class="prereq-list">
-                    <li v-for="item in prerequisites" :key="item.label" class="prereq-item">
-                      <span class="prereq-mark" :class="item.met ? 'prereq-mark--ok' : (item.required ? 'prereq-mark--missing' : 'prereq-mark--optional')">
-                        <svg-icon :name="item.met ? 'check' : 'x'" :size="11" />
-                      </span>
-                      <a :href="item.href" class="prereq-label" :class="{ 'prereq-label--met': item.met }">{{ item.label }}</a>
-                      <span v-if="!item.required" class="prereq-optional">optional</span>
-                    </li>
-                  </ul>
-                </div>
-              </div>
-              <div class="instruction-step">
-                <span class="step-number">2</span>
-                <div class="step-content">
-                  <strong>Create a Plan</strong>
-                  <p>Click "New Plan" to create an arrival, match, departure, or transfer plan</p>
-                </div>
-              </div>
-              <div class="instruction-step">
-                <span class="step-number">3</span>
-                <div class="step-content">
-                  <strong>Add Movements</strong>
-                  <p>Select a template and configure pickup/dropoff locations for each team</p>
-                </div>
-              </div>
-              <div class="instruction-step">
-                <span class="step-number">4</span>
-                <div class="step-content">
-                  <strong>Generate Jobs</strong>
-                  <p>Convert your plan into executable operations and assign resources</p>
-                </div>
-              </div>
-            </div>
-            
-            <div class="empty-state-actions">
-              <Button
-                variant="primary"
-                size="sm"
-                :disabled="!canCreatePlan"
-                :title="prerequisiteHint"
-                @click="showNewPlan = true"
-              >
-                <template #icon><svg-icon name="plus" :size="14" /></template>
-                Create Your First Plan
-              </Button>
-              <p v-if="!canCreatePlan" class="prereq-blocked">{{ prerequisiteHint }}</p>
-            </div>
-          </div>
-          
-          <!-- Empty state for filtered results -->
-          <div
-            v-else-if="allPlans.length > 0 && plansByDate.length === 0"
-            style="padding: 40px; text-align: center; color: var(--ink3)"
-          >
-            <div style="font-size: 14px; font-weight: 600; margin-bottom: 8px">
-              No plans match this filter
-            </div>
-            <div style="font-size: 12px">
-              Try selecting a different plan type
-            </div>
-          </div>
-          
-          <!-- TABLE VIEW: Grouped by Date -->
-          <template v-if="plansPageView === 'table'">
-          <!-- Grouped by Date -->
-          <template v-for="dateGroup in plansByDate" :key="dateGroup.date">
-            <!-- Date Header -->
-            <div
-              style="
-                padding: 10px 14px;
-                background: var(--bg);
-                border-bottom: 1px solid var(--border);
-                display: flex;
-                align-items: center;
-                justify-content: space-between;
-                position: sticky;
-                top: 46px;
-                z-index: 1;
-              "
-            >
-              <div style="display: flex; align-items: center; gap: 8px;">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
-                  <line x1="16" y1="2" x2="16" y2="6"></line>
-                  <line x1="8" y1="2" x2="8" y2="6"></line>
-                  <line x1="3" y1="10" x2="21" y2="10"></line>
-                </svg>
-                <span style="font-size: 12px; font-weight: 700; color: var(--ink);">
-                  {{ formatDate(dateGroup.date) }}
-                </span>
-              </div>
-              <span style="font-size: 11px; color: var(--ink3); font-weight: 600;">
-                {{ dateGroup.plans.length }} {{ dateGroup.plans.length === 1 ? 'plan' : 'plans' }}
-              </span>
-            </div>
-            
-            <!-- Plans for this date -->
-            <div
-              v-for="(plan, i) in dateGroup.plans"
-              :key="plan.id"
-              @click="selectPlan(plan.id)"
-              :style="{
-                display: 'grid',
-                gridTemplateColumns: '28px 80px 120px 1.5fr 1fr 120px 100px 120px',
-                gap: '10px',
-                padding: '12px 14px',
-                borderBottom:
-                  i === dateGroup.plans.length - 1 ? 'none' : '1px solid var(--border)',
-                alignItems: 'center',
-                cursor: 'pointer',
-                transition: 'background 0.13s',
-              }"
-              @mouseenter="$event.currentTarget.style.background = 'var(--panel)'"
-              @mouseleave="$event.currentTarget.style.background = 'transparent'"
-            >
-              <div @click.stop>
-                <input
-                  type="checkbox"
-                  :checked="selectedPlanIds.has(plan.id)"
-                  :aria-label="`Select ${plan.name}`"
-                  @change="togglePlanSelection(plan)"
-                />
-              </div>
-              <!-- Type Badge -->
-              <div>
-                <Badge type="plan-type" :variant="plan.planType">
-                  <template v-if="plan.planType === 'arrival'">✈️</template>
-                  <template v-else-if="plan.planType === 'match'">⚽</template>
-                  <template v-else-if="plan.planType === 'departure'">🛫</template>
-                  <template v-else-if="plan.planType === 'transfer'">🚌</template>
-                  <template v-else>📋</template>
-                </Badge>
-              </div>
-            <div
-              style="
-                font-family: var(--mono);
-                font-size: 11px;
-                color: var(--ink);
-                font-weight: 700;
-              "
-            >
-              {{ plan.code }}
-            </div>
-            <div style="font-size: 13px; color: var(--ink); font-weight: 600">
-              {{ plan.name }}
-            </div>
-            <div style="font-size: 12px; color: var(--ink3)">
-              <span v-if="plan.movement_template">{{
-                plan.movement_template.name
-              }}</span>
-              <span v-else style="font-style: italic">Blank</span>
-            </div>
-            <div>
-              <Badge type="status" :variant="plan.status">
-                {{ plan.status }}
-              </Badge>
-            </div>
-            <div
-              style="
-                font-size: 12px;
-                color: var(--ink2);
-                font-family: var(--mono);
-              "
-            >
-              {{ plan.movements_count || 0 }}
-            </div>
-            <div
-              style="display: flex; gap: 6px; justify-content: center"
-              @click.stop
-            >
-              <TableActions
-                :show-duplicate="true"
-                @duplicate="duplicatePlan(plan)"
-                @edit="editPlan(plan)"
-                @delete="deletePlan(plan)"
-              />
-            </div>
-          </div>
-        </template>
-          </template>
-          
-          <!-- GRID VIEW: Grouped by Date -->
-          <template v-if="plansPageView === 'grid'">
-            <div style="padding: 16px;">
-              <template v-for="dateGroup in plansByDate" :key="'grid-' + dateGroup.date">
-                <!-- Date Header -->
-                <div style="margin-bottom: 12px; padding-bottom: 8px; border-bottom: 2px solid var(--border);">
-                  <div style="display: flex; align-items: center; gap: 8px;">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                      <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
-                      <line x1="16" y1="2" x2="16" y2="6"></line>
-                      <line x1="8" y1="2" x2="8" y2="6"></line>
-                      <line x1="3" y1="10" x2="21" y2="10"></line>
-                    </svg>
-                    <span style="font-size: 13px; font-weight: 700; color: var(--ink);">
-                      {{ formatDate(dateGroup.date) }}
-                    </span>
-                    <span style="font-size: 11px; color: var(--ink3); font-weight: 600;">
-                      · {{ dateGroup.plans.length }} {{ dateGroup.plans.length === 1 ? 'plan' : 'plans' }}
-                    </span>
-                  </div>
-                </div>
-                
-                <!-- Plans Grid -->
-                <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; margin-bottom: 24px;">
-                  <div
-                    v-for="plan in dateGroup.plans"
-                    :key="'card-' + plan.id"
-                    @click="selectPlan(plan.id)"
-                    style="
-                      padding: 14px;
-                      border: 1px solid var(--border);
-                      border-radius: 10px;
-                      cursor: pointer;
-                      transition: all 0.15s;
-                      background: var(--surface);
-                    "
-                    @mouseenter="$event.currentTarget.style.borderColor = 'var(--accent)'; $event.currentTarget.style.boxShadow = '0 2px 8px rgba(59, 130, 246, 0.15)'"
-                    @mouseleave="$event.currentTarget.style.borderColor = 'var(--border)'; $event.currentTarget.style.boxShadow = 'none'"
-                  >
-                    <!-- Header: Type + Actions -->
-                    <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px;">
-                      <div style="display: flex; align-items: center; gap: 8px;">
-                        <input
-                          type="checkbox"
-                          :checked="selectedPlanIds.has(plan.id)"
-                          :aria-label="`Select ${plan.name}`"
-                          @click.stop
-                          @change="togglePlanSelection(plan)"
-                        />
-                        <Badge type="plan-type" :variant="plan.planType">
-                          <template v-if="plan.planType === 'arrival'">✈️</template>
-                          <template v-else-if="plan.planType === 'match'">⚽</template>
-                          <template v-else-if="plan.planType === 'departure'">🛫</template>
-                          <template v-else-if="plan.planType === 'transfer'">🚌</template>
-                          <template v-else>📋</template>
-                        </Badge>
-                      </div>
-                      <div @click.stop>
-                        <TableActions
-                          :show-duplicate="true"
-                          @duplicate="duplicatePlan(plan)"
-                          @edit="editPlan(plan)"
-                          @delete="deletePlan(plan)"
-                        />
-                      </div>
-                    </div>
-                    
-                    <!-- Code -->
-                    <div style="font-family: var(--mono); font-size: 11px; color: var(--ink3); font-weight: 700; margin-bottom: 6px;">
-                      {{ plan.code }}
-                    </div>
-                    
-                    <!-- Name -->
-                    <div style="font-size: 14px; color: var(--ink); font-weight: 600; margin-bottom: 10px; line-height: 1.3;">
-                      {{ plan.name }}
-                    </div>
-                    
-                    <!-- Template -->
-                    <div style="font-size: 11px; color: var(--ink3); margin-bottom: 10px;">
-                      <span style="font-weight: 600;">Template:</span>
-                      <span v-if="plan.movement_template"> {{ plan.movement_template.name }}</span>
-                      <span v-else style="font-style: italic;"> Blank</span>
-                    </div>
-                    
-                    <!-- Footer: Status + Movements -->
-                    <div style="display: flex; justify-content: space-between; align-items: center;">
-                      <Badge type="status" :variant="plan.status">
-                        {{ plan.status }}
-                      </Badge>
-                      <div style="font-size: 12px; color: var(--ink2); font-family: var(--mono); font-weight: 600;">
-                        {{ plan.movements_count || 0 }} mvs
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </template>
-            </div>
-          </template>
-        </div>
-      </div>
+      <PlanList
+        v-if="activeTab === 'plans'"
+        v-model:selected-ids="selectedPlanIds"
+        :plans="allPlans"
+        :prerequisites="prerequisites"
+        :can-create-plan="canCreatePlan"
+        :prerequisite-hint="prerequisiteHint"
+        @new-plan="showNewPlan = true"
+        @open="selectPlan"
+        @duplicate="duplicatePlan"
+        @edit="editPlan"
+        @delete="deletePlan"
+        @bulk-delete="openBulkDeletePlans"
+      />
 
       <!-- Movements tab -->
       <div
@@ -1552,9 +1004,7 @@
                   >-</span
                 >
                 <div style="font-size: 11px; color: var(--ink3);">
-                  <span v-if="isBusMovement(mv)" style="font-weight: 700; color: var(--ink2);">
-                    BUS
-                  </span>
+                  <span v-if="isBusMovement(mv)" style="font-weight: 700; color: var(--ink2);">Bus<template v-if="mv.flight?.scheduled_at"> {{ formatTime(mv.flight.scheduled_at) }}</template></span>
                   <span v-else-if="(mv.kind === 'arrival' || mv.kind === 'departure') && mv.flight?.scheduled_at">
                     {{ formatTime(mv.flight.scheduled_at) }}
                   </span>
@@ -1593,8 +1043,7 @@
                     color: var(--ink2);
                   "
                 >
-                  <template v-if="isBusMovement(mv)">BUS</template>
-                  <template v-else>{{ formatWindow(mv) }}</template>
+                  {{ formatWindow(mv) }}
                 </div>
                 <div style="font-size: 11px; color: var(--ink2)">
                   {{ mv.vehicle?.code || "-" }}
@@ -1633,12 +1082,6 @@
                       cursor: pointer;
                     "
                     >{{ mv.job_id }}</span
-                  >
-                  <span
-                    v-else-if="isBusMovement(mv)"
-                    title="BUS movement — no reference time, can't generate a job"
-                    style="font-size: 11px; color: var(--ink3); font-style: italic;"
-                    >N/A</span
                   >
                   <div v-else style="display: flex; flex-direction: column; align-items: center; gap: 4px;">
                     <Button
@@ -1948,467 +1391,13 @@
         </transition>
       </div>
 
-      <!-- Checkpoints tab -->
-      <div
-        v-else-if="activeTab === 'checkpoints'"
-        style="
-          flex: 1;
-          overflow: auto;
-          display: grid;
-          grid-template-columns: 1fr 320px;
-          gap: 12px;
-        "
-      >
-        <div class="plan-table-card">
-          <div
-            style="
-              padding: 14px 16px;
-              border-bottom: 1px solid var(--border);
-              display: flex;
-              justify-content: space-between;
-              align-items: center;
-            "
-          >
-            <div>
-              <div
-                style="
-                  font-size: 11px;
-                  letter-spacing: 1px;
-                  text-transform: uppercase;
-                  color: var(--ink3);
-                  font-weight: 700;
-                "
-              >
-                Checkpoint Library
-              </div>
-              <div
-                style="
-                  font-size: 14px;
-                  font-weight: 700;
-                  color: var(--ink);
-                  margin-top: 2px;
-                "
-              >
-                Sequence
-              </div>
-            </div>
-            <Button variant="secondary" size="sm">
-              <template #icon><svg-icon name="plus" :size="14" /></template>
-              Add step
-            </Button>
-          </div>
-          <div style="padding: 14px">
-            <div
-              v-for="c in checkpoints"
-              :key="c.id"
-              style="
-                display: flex;
-                align-items: center;
-                gap: 12px;
-                padding: 10px;
-                margin-bottom: 6px;
-                background: var(--panel);
-                border: 1px solid var(--border);
-                border-radius: 8px;
-                cursor: grab;
-              "
-            >
-              <div
-                style="
-                  font-family: var(--mono);
-                  font-size: 11px;
-                  color: var(--ink4);
-                "
-              >
-                ⋮⋮
-              </div>
-              <div
-                style="
-                  width: 28px;
-                  height: 28px;
-                  border-radius: 999px;
-                  background: var(--ink);
-                  color: #fff;
-                  display: flex;
-                  align-items: center;
-                  justify-content: center;
-                  font-weight: 700;
-                  font-size: 12px;
-                  font-family: var(--mono);
-                "
-              >
-                {{ c.order }}
-              </div>
-              <div style="flex: 1">
-                <div
-                  style="font-size: 13px; font-weight: 600; color: var(--ink)"
-                >
-                  {{ c.name }}
-                </div>
-                <div
-                  style="
-                    font-size: 11px;
-                    color: var(--ink3);
-                    font-family: var(--mono);
-                  "
-                >
-                  {{ c.id }}
-                </div>
-              </div>
-              <status-pill :tone="cpTypeTone[c.type]" size="sm">{{
-                c.type
-              }}</status-pill>
-            </div>
-          </div>
-        </div>
-        <div class="plan-table-card">
-          <div
-            style="padding: 14px 16px; border-bottom: 1px solid var(--border)"
-          >
-            <div
-              style="
-                font-size: 11px;
-                letter-spacing: 1px;
-                text-transform: uppercase;
-                color: var(--ink3);
-                font-weight: 700;
-              "
-            >
-              Configuration
-            </div>
-            <div
-              style="
-                font-size: 14px;
-                font-weight: 700;
-                color: var(--ink);
-                margin-top: 2px;
-              "
-            >
-              Rules
-            </div>
-          </div>
-          <div style="padding: 14px 16px">
-            <div
-              v-for="r in [
-                { label: 'Require photo at handoff', on: true },
-                { label: 'Require supervisor signature', on: true },
-                { label: 'Allow offline capture', on: true },
-                { label: 'Auto-skip if late > 10m', on: false },
-                { label: 'Auto-notify liaison on delay', on: true },
-              ]"
-              :key="r.label"
-              style="
-                display: flex;
-                justify-content: space-between;
-                align-items: center;
-                padding: 8px 0;
-                border-bottom: 1px solid var(--border);
-              "
-            >
-              <span style="font-size: 12px; color: var(--ink)">{{
-                r.label
-              }}</span>
-              <div
-                :style="{
-                  width: '32px',
-                  height: '18px',
-                  borderRadius: '999px',
-                  padding: '2px',
-                  background: r.on ? 'var(--accent)' : 'var(--borderStrong)',
-                  display: 'flex',
-                  alignItems: 'center',
-                }"
-              >
-                <div
-                  :style="{
-                    width: '14px',
-                    height: '14px',
-                    borderRadius: '999px',
-                    background: '#fff',
-                    transform: r.on ? 'translateX(14px)' : 'translateX(0)',
-                    transition: 'transform 0.15s',
-                    boxShadow: '0 1px 2px rgba(0,0,0,0.15)',
-                  }"
-                />
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
       <!-- Conflicts tab -->
-      <div
+      <ConflictsTab
         v-else-if="activeTab === 'conflicts'"
-        style="
-          flex: 1;
-          overflow: auto;
-          display: flex;
-          flex-direction: column;
-          gap: 10px;
-        "
-      >
-        <div
-          v-if="openConflicts.length === 0"
-          style="
-            padding: 12px;
-            background: var(--ok-soft, var(--panel));
-            border: 1px solid var(--ok, var(--border));
-            border-radius: 10px;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-          "
-        >
-          <svg-icon
-            name="check"
-            :size="20"
-            style="color: var(--ok); flex-shrink: 0"
-          />
-          <div style="flex: 1; font-size: 12px; color: var(--ink2)">
-            <b>No conflicts detected</b> — every movement in this event has a
-            valid window, free resources and realistic timings.
-          </div>
-        </div>
-        <div
-          v-else
-          style="
-            padding: 12px;
-            background: var(--warn-soft);
-            border: 1px solid var(--warn);
-            border-radius: 10px;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-          "
-        >
-          <svg-icon
-            name="warn"
-            :size="20"
-            style="color: var(--warn); flex-shrink: 0"
-          />
-          <div style="flex: 1; font-size: 12px; color: #92400e">
-            <b>{{ openConflicts.length }} conflicts detected</b> — review and
-            resolve before generating jobs.
-            {{ openConflicts.filter((c) => c.sev === "high").length }} require
-            immediate attention.
-            <span v-if="conflicts.length > openConflicts.length">
-              {{ conflicts.length - openConflicts.length }} accepted (listed at the bottom).
-            </span>
-          </div>
-        </div>
-        <div v-for="c in conflicts" :key="c.id" class="plan-table-card" :style="c.accepted ? 'opacity: 0.6' : ''">
-          <div
-            style="
-              padding: 14px;
-              display: flex;
-              gap: 12px;
-              align-items: flex-start;
-            "
-          >
-            <div
-              :style="{
-                width: '36px',
-                height: '36px',
-                borderRadius: '8px',
-                flexShrink: 0,
-                background:
-                  c.sev === 'high'
-                    ? 'var(--danger-soft)'
-                    : c.sev === 'medium'
-                    ? 'var(--warn-soft)'
-                    : 'var(--panel)',
-                color:
-                  c.sev === 'high'
-                    ? 'var(--danger)'
-                    : c.sev === 'medium'
-                    ? 'var(--warn)'
-                    : 'var(--ink3)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }"
-            >
-              <svg-icon name="warn" :size="18" />
-            </div>
-            <div style="flex: 1">
-              <div
-                style="
-                  display: flex;
-                  align-items: center;
-                  gap: 8px;
-                  margin-bottom: 4px;
-                "
-              >
-                <status-pill :tone="sevTone[c.sev]" :dot="true" size="sm">{{
-                  c.sev
-                }}</status-pill>
-                <span
-                  style="font-size: 13px; font-weight: 700; color: var(--ink)"
-                  >{{ c.type }}</span
-                >
-                <span
-                  style="
-                    font-size: 11px;
-                    color: var(--ink4);
-                    font-family: var(--mono);
-                  "
-                  >{{ c.id }}</span
-                >
-                <span
-                  v-if="c.when"
-                  style="font-size: 11px; color: var(--ink3)"
-                  >· {{ c.when }}</span
-                >
-                <span
-                  v-if="c.plan"
-                  style="font-size: 11px; color: var(--ink3)"
-                  >· {{ c.plan }}</span
-                >
-              </div>
-              <div
-                style="
-                  font-size: 12px;
-                  color: var(--ink2);
-                  line-height: 1.5;
-                  margin-bottom: 8px;
-                "
-              >
-                {{ c.text }}
-              </div>
-              <div
-                v-if="c.hint"
-                style="
-                  font-size: 11.5px;
-                  color: var(--ink3);
-                  line-height: 1.5;
-                  margin-bottom: 8px;
-                "
-              >
-                <b style="color: var(--ink2)">Suggested fix:</b> {{ c.hint }}
-              </div>
-              <div
-                style="
-                  display: flex;
-                  gap: 6px;
-                  align-items: center;
-                  flex-wrap: wrap;
-                "
-              >
-                <span style="font-size: 11px; color: var(--ink3)"
-                  >Affects:</span
-                >
-                <span
-                  v-for="a in c.affects"
-                  :key="a"
-                  style="
-                    font-family: var(--mono);
-                    font-size: 11px;
-                    padding: 2px 6px;
-                    background: var(--panel);
-                    border: 1px solid var(--border);
-                    border-radius: 4px;
-                    color: var(--ink);
-                  "
-                  >{{ a }}</span
-                >
-              </div>
-              <div v-if="c.accepted" style="margin-top: 6px; font-size: 11.5px; color: var(--ink3)">
-                <b style="color: var(--ink2)">Accepted</b> by {{ c.accepted.by }} · {{ c.accepted.at }} — “{{ c.accepted.reason }}”
-              </div>
-            </div>
-            <div style="display: flex; flex-direction: column; gap: 4px">
-              <Button variant="primary" size="sm" @click="resolvingConflict = c"
-                >{{ c.accepted ? 'Review' : 'Resolve' }}</Button
-              >
-              <Button variant="secondary" size="sm" @click="viewConflict(c)"
-                >View</Button
-              >
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Templates tab -->
-      <div
-        v-else-if="activeTab === 'templates'"
-        style="
-          flex: 1;
-          overflow: auto;
-          display: grid;
-          grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-          gap: 12px;
-          align-content: start;
-        "
-      >
-        <div v-for="t in templates" :key="t.id" class="plan-table-card">
-          <div style="padding: 16px">
-            <div
-              style="
-                display: flex;
-                justify-content: space-between;
-                align-items: flex-start;
-                margin-bottom: 10px;
-              "
-            >
-              <div>
-                <div
-                  style="font-size: 14px; font-weight: 700; color: var(--ink)"
-                >
-                  {{ t.name }}
-                </div>
-                <div
-                  style="
-                    font-size: 11px;
-                    color: var(--ink3);
-                    font-family: var(--mono);
-                    margin-top: 2px;
-                  "
-                >
-                  {{ t.id }}
-                </div>
-              </div>
-              <status-pill tone="neutral" size="sm"
-                >{{ t.legs }} legs</status-pill
-              >
-            </div>
-            <div
-              style="font-size: 12px; color: var(--ink3); margin-bottom: 12px"
-            >
-              Avg duration:
-              <b style="color: var(--ink2); font-family: var(--mono)">{{
-                t.avg
-              }}</b>
-            </div>
-            <div style="display: flex; gap: 6px">
-              <Button
-                variant="secondary"
-                size="sm"
-                style="flex: 1"
-                @click="openPreviewModal(t)"
-                >Preview</Button
-              >
-              <Button variant="primary" size="sm" style="flex: 1">Apply</Button>
-            </div>
-          </div>
-        </div>
-        <div
-          class="plan-table-card"
-          style="
-            border: 2px dashed var(--borderStrong);
-            background: var(--panel);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            min-height: 140px;
-            cursor: pointer;
-          "
-        >
-          <div style="text-align: center; color: var(--ink3)">
-            <div style="font-size: 22px; margin-bottom: 4px">+</div>
-            <div style="font-size: 12px; font-weight: 600">New template</div>
-          </div>
-        </div>
-      </div>
+        :conflicts="conflicts"
+        @resolve="resolvingConflict = $event"
+        @view="viewConflict"
+      />
     </template>
 
     <!-- By Day view -->
@@ -2549,8 +1538,7 @@
                   @click="selectMovement(mv)"
                 >
                   <div class="dv-row-time">
-                    <template v-if="isBusMovement(mv)">BUS</template>
-                    <template v-else>{{ formatWindow(mv) }}</template>
+                    {{ formatWindow(mv) }}
                   </div>
                   <div class="dv-row-main">
                     <div class="dv-row-head">
@@ -2593,7 +1581,6 @@
                       class="dv-job-link"
                       @click="$inertia.visit(`/job/${mv.job_id}`)"
                     >{{ mv.job_id }}</span>
-                    <span v-else-if="isBusMovement(mv)" class="dv-muted" style="font-style: italic">N/A</span>
                     <Button
                       v-else
                       variant="secondary"
@@ -3284,9 +2271,7 @@
                       font-family: var(--font-mono, monospace);
                     "
                   >
-                    <span v-if="isBusMovement(mv)" style="font-weight: 700; color: var(--ink2);">
-                      BUS
-                    </span>
+                    <span v-if="isBusMovement(mv)" style="font-weight: 700; color: var(--ink2);">Bus<template v-if="mv.flight?.scheduled_at"> {{ formatTime(mv.flight.scheduled_at) }}</template></span>
                     <span v-else-if="(mv.kind === 'arrival' || mv.kind === 'departure') && mv.flight?.scheduled_at">
                       {{ formatTime(mv.flight.scheduled_at) }}
                     </span>
@@ -3332,8 +2317,7 @@
                     "
                   >
                     <div style="color: var(--ink3)">
-                      <template v-if="isBusMovement(mv)">BUS</template>
-                      <template v-else>{{ formatWindow(mv) }}</template>
+                      {{ formatWindow(mv) }}
                     </div>
                     <div
                       :style="{
@@ -3661,1570 +2645,15 @@
 
     <!-- New Plan modal -->
     <teleport to="body">
-      <div
+      <NewPlanModal
         v-if="showNewPlan"
-        v-dialog="() => (showNewPlan = false)"
-        class="modal-backdrop"
-        @click.self="showNewPlan = false"
-      >
-        <div class="modal" style="max-width: 580px">
-          <div class="modal-header">
-            <span class="modal-title">New Plan</span>
-            <button class="modal-close" @click="showNewPlan = false">
-              <svg-icon name="x" />
-            </button>
-          </div>
-          <div class="new-plan-body">
-            <div class="modal-body">
-              <div
-                v-if="!activeEvent"
-                style="
-                  margin-bottom: 16px;
-                  padding: 12px;
-                  background: #fef3c7;
-                  border: 1px solid #fcd34d;
-                  border-radius: 6px;
-                  font-size: 12px;
-                  color: #92400e;
-                "
-              >
-                ⚠️ No active event selected. Please select an event from the
-                dropdown above to create plans.
-              </div>
-              <div
-                v-else
-                style="
-                  margin-bottom: 16px;
-                  padding: 10px;
-                  background: var(--panel);
-                  border: 1px solid var(--border);
-                  border-radius: 6px;
-                  font-size: 12px;
-                "
-              >
-                <div
-                  style="
-                    color: var(--ink3);
-                    margin-bottom: 4px;
-                    font-size: 10px;
-                    text-transform: uppercase;
-                    letter-spacing: 0.5px;
-                    font-weight: 600;
-                  "
-                >
-                  Creating plan for:
-                </div>
-                <div style="color: var(--ink); font-weight: 500">
-                  {{ activeEvent.name }}
-                </div>
-              </div>
-
-              <!-- Mode Selector -->
-              <div
-                style="
-                  display: grid;
-                  grid-template-columns: 1fr 1fr 1fr;
-                  gap: 8px;
-                  margin-bottom: 16px;
-                "
-              >
-                <button
-                  class="am-mode-btn"
-                  :class="{ 'am-mode-btn--active': newPlanMode === 'single' }"
-                  @click="newPlanMode = 'single'"
-                >
-                  <div style="font-size: 13px; font-weight: 700">
-                    Single Plan
-                  </div>
-                  <div
-                    style="
-                      font-size: 11px;
-                      color: inherit;
-                      opacity: 0.7;
-                      margin-top: 1px;
-                    "
-                  >
-                    One plan for specific team/date
-                  </div>
-                </button>
-                <button
-                  class="am-mode-btn"
-                  :class="{ 'am-mode-btn--active': newPlanMode === 'bulk' }"
-                  @click="newPlanMode = 'bulk'"
-                >
-                  <div style="display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 700">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                      <path d="M17.8 19.2L16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"/>
-                    </svg>
-                    Bulk by Flights
-                  </div>
-                  <div
-                    style="
-                      font-size: 11px;
-                      color: inherit;
-                      opacity: 0.7;
-                      margin-top: 1px;
-                    "
-                  >
-                    Group by arrival date
-                  </div>
-                </button>
-                <button
-                  class="am-mode-btn"
-                  :class="{ 'am-mode-btn--active': newPlanMode === 'matches' }"
-                  @click="newPlanMode = 'matches'"
-                >
-                  <div style="display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 700">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                      <path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z" />
-                    </svg>
-                    Bulk by Matches
-                  </div>
-                  <div
-                    style="
-                      font-size: 11px;
-                      color: inherit;
-                      opacity: 0.7;
-                      margin-top: 1px;
-                    "
-                  >
-                    5h before each match
-                  </div>
-                </button>
-              </div>
-
-              <!-- Single Plan Mode -->
-              <div v-if="newPlanMode === 'single'">
-                <div class="form-field">
-                  <label>Team</label>
-                  <select
-                    v-model="newPlanTeamId"
-                    :style="
-                      newPlanErrors.team_id ? { borderColor: '#DC2626' } : {}
-                    "
-                    @change="handleTeamChange"
-                  >
-                    <option :value="null">All teams</option>
-                    <option
-                      v-for="team in props.teams"
-                      :key="team.id"
-                      :value="team.id"
-                    >
-                      {{
-                        (team.team_name || team.team || "Unnamed Team") +
-                        (team.code ? ` (${team.code})` : "")
-                      }}
-                    </option>
-                  </select>
-                  <span
-                    v-if="newPlanErrors.team_id"
-                    style="
-                      color: #dc2626;
-                      font-size: 12px;
-                      margin-top: 4px;
-                      display: block;
-                    "
-                    >{{ newPlanErrors.team_id }}</span
-                  >
-                </div>
-
-                <div class="form-field">
-                  <label>Based on template</label>
-                  <select v-model="newPlanTemplate">
-                    <option value="">Blank</option>
-                    <option
-                      v-for="template in props.movementTemplates"
-                      :key="template.id"
-                      :value="template.id"
-                    >
-                      {{ template.name }} ({{ template.code }})
-                    </option>
-                  </select>
-                </div>
-
-                <!-- Movement Reorder - only show if template selected with legs -->
-                <div v-if="selectedNewPlanTemplate?.legs?.length > 0" class="form-field">
-                  <label>Movement Position</label>
-                  <select v-model="newPlanMovementPosition">
-                    <option :value="null">Original order (all movements)</option>
-                    <option
-                      v-for="(leg, index) in selectedNewPlanTemplate.legs"
-                      :key="index"
-                      :value="index"
-                    >
-                      {{ formatMovementCode(nextMovementNumber + index) }}:
-                      <template v-if="leg.from_location && leg.to_location">
-                        {{ leg.from_location }} → {{ leg.to_location }}
-                      </template>
-                      <template v-else-if="leg.checkpoint_template">
-                        {{ leg.checkpoint_template.name }}
-                      </template>
-                      <template v-else>
-                        Movement {{ index + 1 }}
-                      </template>
-                    </option>
-                  </select>
-                  <div style="font-size: 11px; color: var(--ink3); margin-top: 6px;">
-                    <template v-if="newPlanMovementPosition !== null">
-                      Only movement {{ formatMovementCode(nextMovementNumber + newPlanMovementPosition) }} will be created from this template
-                    </template>
-                    <template v-else>
-                      All {{ selectedNewPlanTemplate.legs.length }} movements will be created in order
-                    </template>
-                  </div>
-                </div>
-                
-                <div
-                  style="
-                    display: grid;
-                    grid-template-columns: 1fr 120px;
-                    gap: 12px;
-                  "
-                >
-                  <div class="form-field">
-                    <label>Date <span style="color: #dc2626">*</span></label>
-                    <input
-                      v-model="newPlanDate"
-                      type="date"
-                      :style="
-                        newPlanErrors.date ? { borderColor: '#DC2626' } : {}
-                      "
-                      @input="newPlanErrors.date = ''"
-                    />
-                    <span
-                      v-if="newPlanErrors.date"
-                      style="
-                        color: #dc2626;
-                        font-size: 12px;
-                        margin-top: 4px;
-                        display: block;
-                      "
-                      >{{ newPlanErrors.date }}</span
-                    >
-                  </div>
-                  <div class="form-field">
-                    <label>Start time</label>
-                    <input v-model="newPlanStartTime" type="time" />
-                  </div>
-                </div>
-                <div class="form-field">
-                  <label>Name</label>
-                  <input
-                    v-model="newPlanName"
-                    type="text"
-                    placeholder="e.g., Match Day 4"
-                    :style="
-                      newPlanErrors.name ? { borderColor: '#DC2626' } : {}
-                    "
-                    @input="newPlanErrors.name = ''"
-                  />
-                  <span
-                    v-if="newPlanErrors.name"
-                    style="
-                      color: #dc2626;
-                      font-size: 12px;
-                      margin-top: 4px;
-                      display: block;
-                    "
-                    >{{ newPlanErrors.name }}</span
-                  >
-                </div>
-
-                <!-- Duplicate Checking Loading State -->
-                <div
-                  v-if="duplicateCheckLoading"
-                  style="
-                    padding: 10px 12px;
-                    background: #F3F4F6;
-                    border: 1px solid #D1D5DB;
-                    border-radius: 8px;
-                    margin-bottom: 16px;
-                    font-size: 12px;
-                    color: #6B7280;
-                    display: flex;
-                    align-items: center;
-                    gap: 8px;
-                  "
-                >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="animation: spin 1s linear infinite;">
-                    <line x1="12" y1="2" x2="12" y2="6"></line>
-                    <line x1="12" y1="18" x2="12" y2="22"></line>
-                    <line x1="4.93" y1="4.93" x2="7.76" y2="7.76"></line>
-                    <line x1="16.24" y1="16.24" x2="19.07" y2="19.07"></line>
-                    <line x1="2" y1="12" x2="6" y2="12"></line>
-                    <line x1="18" y1="12" x2="22" y2="12"></line>
-                    <line x1="4.93" y1="19.07" x2="7.76" y2="16.24"></line>
-                    <line x1="16.24" y1="7.76" x2="19.07" y2="4.93"></line>
-                  </svg>
-                  Checking for duplicates...
-                </div>
-
-                <!-- Duplicate Warning/Error -->
-                <div v-if="duplicateCheck?.exists && !duplicateCheckLoading">
-                  <!-- Strict Duplicate (Blocking) -->
-                  <div
-                    v-if="duplicateCheck.strict"
-                    style="
-                      padding: 12px;
-                      background: #FEE2E2;
-                      border: 1px solid #FCA5A5;
-                      border-radius: 8px;
-                      margin-bottom: 16px;
-                      font-size: 12px;
-                    "
-                  >
-                    <div style="display: flex; align-items: flex-start; gap: 10px;">
-                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#DC2626" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; margin-top: 1px;">
-                        <circle cx="12" cy="12" r="10"></circle>
-                        <line x1="15" y1="9" x2="9" y2="15"></line>
-                        <line x1="9" y1="9" x2="15" y2="15"></line>
-                      </svg>
-                      <div style="flex: 1;">
-                        <div style="font-weight: 700; color: #991B1B; margin-bottom: 4px;">Duplicate Movement</div>
-                        <div style="color: #7F1D1D; margin-bottom: 8px;">{{ duplicateCheck.message }}</div>
-                        <a
-                          v-if="duplicateCheck.existing"
-                          :href="`/plans#movement-${duplicateCheck.existing.id}`"
-                          style="
-                            color: #DC2626;
-                            font-weight: 600;
-                            text-decoration: underline;
-                          "
-                        >
-                          View existing: {{ duplicateCheck.existing.code }}
-                          <template v-if="duplicateCheck.existing.plan_name"> ({{ duplicateCheck.existing.plan_name }})</template>
-                        </a>
-                      </div>
-                    </div>
-                  </div>
-
-                  <!-- Soft Warning (Allows with confirmation) -->
-                  <div
-                    v-else
-                    style="
-                      padding: 12px;
-                      background: #FEF3C7;
-                      border: 1px solid #FCD34D;
-                      border-radius: 8px;
-                      margin-bottom: 16px;
-                      font-size: 12px;
-                    "
-                  >
-                    <div style="display: flex; align-items: flex-start; gap: 10px;">
-                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#92400E" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; margin-top: 1px;">
-                        <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
-                        <line x1="12" y1="9" x2="12" y2="13"></line>
-                        <line x1="12" y1="17" x2="12.01" y2="17"></line>
-                      </svg>
-                      <div style="flex: 1;">
-                        <div style="font-weight: 700; color: #78350F; margin-bottom: 4px;">Similar Movement Found</div>
-                        <div style="color: #92400E; margin-bottom: 8px;">{{ duplicateCheck.message }}</div>
-                        <div style="color: #92400E; font-size: 11px; margin-bottom: 8px;">You can proceed, but please confirm this is not a duplicate.</div>
-                        <a
-                          v-if="duplicateCheck.existing"
-                          :href="`/plans#movement-${duplicateCheck.existing.id}`"
-                          target="_blank"
-                          style="
-                            color: #B45309;
-                            font-weight: 600;
-                            text-decoration: underline;
-                          "
-                        >
-                          View similar: {{ duplicateCheck.existing.code }}
-                          <template v-if="duplicateCheck.existing.plan_name"> ({{ duplicateCheck.existing.plan_name }})</template>
-                        </a>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <!-- Flight selector - only show if team has multiple flights -->
-                <div v-if="needsFlightSelection" class="form-field">
-                  <div style="
-                    padding: 10px 12px;
-                    background: #EFF6FF;
-                    border: 1px solid #BFDBFE;
-                    border-radius: 6px;
-                    margin-bottom: 12px;
-                    font-size: 12px;
-                    color: #1E40AF;
-                    display: flex;
-                    align-items: flex-start;
-                    gap: 8px;
-                  ">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; margin-top: 1px;">
-                      <circle cx="12" cy="12" r="10"></circle>
-                      <line x1="12" y1="16" x2="12" y2="12"></line>
-                      <line x1="12" y1="8" x2="12.01" y2="8"></line>
-                    </svg>
-                    <div>
-                      <strong style="display: block; margin-bottom: 2px;">Multiple flights detected</strong>
-                      This team has multiple flights scheduled. Please select which flight this plan is for.
-                    </div>
-                  </div>
-                  <label>Flight <span style="color: #dc2626">*</span></label>
-                  <select
-                    v-model="newPlanFlightId"
-                    :style="
-                      newPlanErrors.flight_id ? { borderColor: '#DC2626' } : {}
-                    "
-                  >
-                    <option :value="null">Select a flight...</option>
-                    <option
-                      v-for="flight in selectedTeamFlights"
-                      :key="flight.id"
-                      :value="flight.id"
-                    >
-                      {{ flight.flight_number || "Flight" }}
-                      <template v-if="flight.origin_airport"
-                        >from
-                        {{
-                          flight.origin_airport.iata ||
-                          flight.origin_airport.name
-                        }}</template
-                      >
-                      <template v-if="flight.scheduled_at">
-                        -
-                        {{
-                          new Date(flight.scheduled_at).toLocaleString(
-                            "en-US",
-                            {
-                              month: "short",
-                              day: "numeric",
-                              hour: "2-digit",
-                              minute: "2-digit",
-                            }
-                          )
-                        }}</template
-                      >
-                      <template v-if="flight.party_size_total">
-                        ({{ flight.party_size_total }} pax)</template
-                      >
-                    </option>
-                  </select>
-                  <span
-                    v-if="newPlanErrors.flight_id"
-                    style="
-                      color: #dc2626;
-                      font-size: 12px;
-                      margin-top: 4px;
-                      display: block;
-                    "
-                    >{{ newPlanErrors.flight_id }}</span
-                  >
-                </div>
-
-                <!-- Template Preview -->
-                <div
-                  v-if="selectedNewPlanTemplate"
-                  style="
-                    margin-top: 16px;
-                    border: 1px solid var(--border);
-                    border-radius: 10px;
-                    overflow: hidden;
-                  "
-                >
-                  <!-- Header -->
-                  <div
-                    style="
-                      padding: 14px 16px;
-                      border-bottom: 1px solid var(--border);
-                      background: var(--panel);
-                      display: flex;
-                      align-items: flex-start;
-                      justify-content: space-between;
-                      gap: 12px;
-                    "
-                  >
-                    <div>
-                      <div
-                        style="
-                          font-size: 14px;
-                          font-weight: 700;
-                          color: var(--ink);
-                          margin-bottom: 4px;
-                        "
-                      >
-                        {{ selectedNewPlanTemplate.name }}
-                      </div>
-                      <div style="font-size: 12px; color: var(--ink3)">
-                        {{ selectedNewPlanTemplate.legs?.length || 0 }} legs
-                        <template
-                          v-if="
-                            selectedNewPlanTemplate.estimated_duration_minutes
-                          "
-                        >
-                          · avg
-                          {{
-                            Math.floor(
-                              selectedNewPlanTemplate.estimated_duration_minutes /
-                                60
-                            )
-                          }}h
-                          {{
-                            selectedNewPlanTemplate.estimated_duration_minutes %
-                            60
-                          }}m
-                        </template>
-                      </div>
-                    </div>
-                    <span
-                      style="
-                        flex-shrink: 0;
-                        padding: 3px 8px;
-                        border-radius: 6px;
-                        font-size: 11px;
-                        font-weight: 700;
-                        font-family: var(--mono);
-                        background: var(--accent-soft);
-                        color: var(--accent);
-                      "
-                      >{{ selectedNewPlanTemplate.code }}</span
-                    >
-                  </div>
-
-                  <!-- Legs -->
-                  <div
-                    v-if="
-                      selectedNewPlanTemplate.legs &&
-                      selectedNewPlanTemplate.legs.length > 0
-                    "
-                    style="max-height: 320px; overflow-y: auto"
-                  >
-                    <div
-                      style="
-                        padding: 7px 16px;
-                        background: var(--panel);
-                        border-bottom: 1px solid var(--border);
-                      "
-                    >
-                      <span
-                        style="
-                          font-size: 10px;
-                          font-weight: 700;
-                          letter-spacing: 1px;
-                          text-transform: uppercase;
-                          color: var(--ink3);
-                        "
-                        >Will generate
-                        {{
-                          selectedNewPlanTemplate.legs.length
-                        }}
-                        movements</span
-                      >
-                    </div>
-                    <div
-                      v-for="(leg, i) in selectedNewPlanTemplate.legs"
-                      :key="i"
-                      :style="{
-                        display: 'grid',
-                        gridTemplateColumns: '40px 90px 1fr auto',
-                        gap: '10px',
-                        padding: '10px 16px',
-                        alignItems: 'center',
-                        borderBottom:
-                          i < selectedNewPlanTemplate.legs.length - 1
-                            ? '1px solid var(--border)'
-                            : 'none',
-                        background: 'var(--surface)',
-                      }"
-                    >
-                      <div
-                        style="
-                          font-family: var(--mono);
-                          font-size: 11px;
-                          font-weight: 700;
-                          color: var(--ink);
-                        "
-                      >
-                        M{{ i + 1 }}
-                      </div>
-                      <Badge
-                        v-if="leg.leg_type"
-                        type="kind"
-                        :variant="leg.leg_type"
-                        >{{ leg.leg_type }}</Badge
-                      >
-                      <span v-else style="font-size: 11px; color: var(--ink3)"
-                        >—</span
-                      >
-                      <div style="display: flex; flex-direction: column; gap: 3px;">
-                        <div
-                          style="
-                            font-size: 12px;
-                            color: var(--ink);
-                            font-weight: 500;
-                          "
-                        >
-                          <template v-if="leg.from_location && leg.to_location">
-                            {{ leg.from_location }} → {{ leg.to_location }}
-                          </template>
-                          <template v-else-if="leg.checkpoint_template">
-                            {{ leg.checkpoint_template.name }}
-                          </template>
-                          <template v-else>
-                            Movement {{ i + 1 }}
-                          </template>
-                        </div>
-                        <div v-if="leg.checkpoint_template" style="font-size: 11px; color: var(--ink3);">
-                          <span style="font-family: var(--mono); font-weight: 600;">{{ leg.checkpoint_template.code }}</span> · {{ leg.checkpoint_template.name }}
-                        </div>
-                      </div>
-                      <div
-                        style="
-                          font-family: var(--mono);
-                          font-size: 11px;
-                          color: var(--ink3);
-                          white-space: nowrap;
-                        "
-                      >
-                        {{ previewLegTime(i, "start") }} →
-                        {{ previewLegTime(i, "end") }}
-                      </div>
-                    </div>
-                  </div>
-
-                  <!-- Heads-up notice -->
-                  <div
-                    style="
-                      background: #fffbeb;
-                      border-top: 1px solid #fde68a;
-                      padding: 10px 14px;
-                      font-size: 12px;
-                      color: #92400e;
-                      display: flex;
-                      gap: 5px;
-                      align-items: baseline;
-                    "
-                  >
-                    <span style="font-weight: 700; white-space: nowrap"
-                      >Heads-up</span
-                    >
-                    <span
-                      >· Vehicles &amp; drivers will be auto-assigned from the
-                      available pool. Conflicts will surface in the Conflicts
-                      tab.</span
-                    >
-                  </div>
-                </div>
-              </div>
-
-              <!-- Bulk Plan Mode -->
-              <div v-else-if="newPlanMode === 'bulk'">
-                <div class="form-field">
-                  <label
-                    >Movement Template
-                    <span style="color: #dc2626">*</span></label
-                  >
-                  <select
-                    v-model="newPlanTemplate"
-                    :style="
-                      newPlanErrors.template ? { borderColor: '#DC2626' } : {}
-                    "
-                  >
-                    <option value="">Select a template...</option>
-                    <option
-                      v-for="template in bulkArrivalMovementTemplates"
-                      :key="template.id"
-                      :value="template.id"
-                    >
-                      {{ template.name }} ({{ template.code }})
-                    </option>
-                  </select>
-                  <span
-                    v-if="newPlanErrors.template"
-                    style="
-                      color: #dc2626;
-                      font-size: 12px;
-                      margin-top: 4px;
-                      display: block;
-                    "
-                    >{{ newPlanErrors.template }}</span
-                  >
-                </div>
-
-                <!-- Bulk Preview -->
-                <div
-                  v-if="newPlanTemplate"
-                  style="
-                    margin-top: 16px;
-                    border: 1px solid var(--border);
-                    border-radius: 10px;
-                    overflow: hidden;
-                  "
-                >
-                  <div
-                    style="
-                      padding: 14px 16px;
-                      border-bottom: 1px solid var(--border);
-                      background: var(--panel);
-                    "
-                  >
-                    <div
-                      style="
-                        font-size: 13px;
-                        font-weight: 700;
-                        color: var(--ink);
-                        margin-bottom: 6px;
-                      "
-                    >
-                      Bulk Creation Preview
-                    </div>
-                    <div style="display: flex; gap: 16px; flex-wrap: wrap">
-                      <div>
-                        <span
-                          v-if="bulkAllowedPreview.plansCount < bulkPreview.plansCount"
-                          style="
-                            font-size: 20px;
-                            font-weight: 700;
-                            color: var(--accent);
-                          "
-                        >
-                          {{ bulkAllowedPreview.plansCount }}
-                          <span style="text-decoration: line-through; opacity: 0.4; margin-left: 4px;">{{ bulkPreview.plansCount }}</span>
-                        </span>
-                        <span
-                          v-else
-                          style="
-                            font-size: 20px;
-                            font-weight: 700;
-                            color: var(--accent);
-                          "
-                          >{{ bulkPreview.plansCount }}</span
-                        >
-                        <span
-                          style="
-                            font-size: 12px;
-                            color: var(--ink3);
-                            margin-left: 4px;
-                          "
-                          >plans</span
-                        >
-                      </div>
-                      <div>
-                        <span
-                          v-if="bulkAllowedPreview.teamsCount < bulkPreview.teamsWithDates"
-                          style="
-                            font-size: 20px;
-                            font-weight: 700;
-                            color: var(--accent);
-                          "
-                        >
-                          {{ bulkAllowedPreview.teamsCount }}
-                          <span style="text-decoration: line-through; opacity: 0.4; margin-left: 4px;">{{ bulkPreview.teamsWithDates }}</span>
-                        </span>
-                        <span
-                          v-else
-                          style="
-                            font-size: 20px;
-                            font-weight: 700;
-                            color: var(--accent);
-                          "
-                          >{{ bulkPreview.teamsWithDates }}</span
-                        >
-                        <span
-                          style="
-                            font-size: 12px;
-                            color: var(--ink3);
-                            margin-left: 4px;
-                          "
-                          >teams</span
-                        >
-                      </div>
-                      <div v-if="bulkPreview.teamsWithoutDates > 0">
-                        <span
-                          style="
-                            font-size: 20px;
-                            font-weight: 700;
-                            color: #dc2626;
-                          "
-                          >{{ bulkPreview.teamsWithoutDates }}</span
-                        >
-                        <span
-                          style="
-                            font-size: 12px;
-                            color: var(--ink3);
-                            margin-left: 4px;
-                          "
-                          >missing dates</span
-                        >
-                      </div>
-                    </div>
-                  </div>
-
-                  <!-- Bulk Duplicate Check Loading State -->
-                  <div
-                    v-if="bulkDuplicateCheckLoading"
-                    style="
-                      padding: 10px 12px;
-                      background: #F3F4F6;
-                      border-bottom: 1px solid #D1D5DB;
-                      font-size: 12px;
-                      color: #6B7280;
-                      display: flex;
-                      align-items: center;
-                      gap: 8px;
-                    "
-                  >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="animation: spin 1s linear infinite;">
-                      <line x1="12" y1="2" x2="12" y2="6"></line>
-                      <line x1="12" y1="18" x2="12" y2="22"></line>
-                      <line x1="4.93" y1="4.93" x2="7.76" y2="7.76"></line>
-                      <line x1="16.24" y1="16.24" x2="19.07" y2="19.07"></line>
-                      <line x1="2" y1="12" x2="6" y2="12"></line>
-                      <line x1="18" y1="12" x2="22" y2="12"></line>
-                      <line x1="4.93" y1="19.07" x2="7.76" y2="16.24"></line>
-                      <line x1="16.24" y1="7.76" x2="19.07" y2="4.93"></line>
-                    </svg>
-                    Checking for duplicates...
-                  </div>
-
-                  <!-- Bulk Duplicate Summary -->
-                  <div
-                    v-else-if="bulkDuplicateChecks.size > 0"
-                    style="
-                      padding: 10px 12px;
-                      border-bottom: 1px solid var(--border);
-                    "
-                  >
-                    <!-- Strict duplicates (blocking) -->
-                    <div
-                      v-if="Array.from(bulkDuplicateChecks.values()).some(c => c.exists && c.strict)"
-                      style="
-                        padding: 10px;
-                        background: #FEE2E2;
-                        border: 1px solid #FCA5A5;
-                        border-radius: 6px;
-                        margin-bottom: 8px;
-                        font-size: 12px;
-                      "
-                    >
-                      <div style="display: flex; align-items: center; gap: 8px; color: #991B1B; font-weight: 700;">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                          <circle cx="12" cy="12" r="10"></circle>
-                          <line x1="15" y1="9" x2="9" y2="15"></line>
-                          <line x1="9" y1="9" x2="15" y2="15"></line>
-                        </svg>
-                        {{ Array.from(bulkDuplicateChecks.values()).filter(c => c.exists && c.strict).length }} 
-                        team(s) have duplicate conflicts (marked with ❌)
-                      </div>
-                      <div style="color: #7F1D1D; margin-top: 4px; font-size: 11px;">
-                        These teams cannot be created. Please resolve the duplicates first.
-                      </div>
-                    </div>
-
-                    <!-- Soft warnings -->
-                    <div
-                      v-if="Array.from(bulkDuplicateChecks.values()).some(c => c.exists && !c.strict)"
-                      style="
-                        padding: 10px;
-                        background: #FEF3C7;
-                        border: 1px solid #FCD34D;
-                        border-radius: 6px;
-                        font-size: 12px;
-                      "
-                    >
-                      <div style="display: flex; align-items: center; gap: 8px; color: #92400E; font-weight: 700;">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                          <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
-                          <line x1="12" y1="9" x2="12" y2="13"></line>
-                          <line x1="12" y1="17" x2="12.01" y2="17"></line>
-                        </svg>
-                        {{ Array.from(bulkDuplicateChecks.values()).filter(c => c.exists && !c.strict).length }}
-                        team(s) have similar movements (marked with ⚠️)
-                      </div>
-                      <div style="color: #92400E; margin-top: 4px; font-size: 11px;">
-                        You can proceed, but please verify these are not duplicates.
-                      </div>
-                    </div>
-                  </div>
-
-                  <!-- Plans List -->
-                  <div
-                    v-if="bulkPreview.plans.length > 0"
-                    style="max-height: 320px; overflow-y: auto"
-                  >
-                    <div
-                      style="
-                        padding: 7px 16px;
-                        background: var(--panel);
-                        border-bottom: 1px solid var(--border);
-                      "
-                    >
-                      <span
-                        style="
-                          font-size: 10px;
-                          font-weight: 700;
-                          letter-spacing: 1px;
-                          text-transform: uppercase;
-                          color: var(--ink3);
-                        "
-                        >Plans to be created</span
-                      >
-                    </div>
-                    <div
-                      v-for="(plan, i) in bulkPreview.plans"
-                      :key="plan.date"
-                      :style="{
-                        padding: '12px 16px',
-                        borderBottom:
-                          i < bulkPreview.plans.length - 1
-                            ? '1px solid var(--border)'
-                            : 'none',
-                        background: 'var(--surface)',
-                      }"
-                    >
-                      <div
-                        style="
-                          display: flex;
-                          justify-content: space-between;
-                          align-items: center;
-                          margin-bottom: 6px;
-                        "
-                      >
-                        <div
-                          style="
-                            font-size: 13px;
-                            font-weight: 600;
-                            color: var(--ink);
-                          "
-                        >
-                          {{ formatDate(plan.date) }}
-                        </div>
-                        <div
-                          style="
-                            font-size: 11px;
-                            color: var(--ink3);
-                            font-weight: 600;
-                          "
-                        >
-                          {{ plan.teams.length }}
-                          {{ plan.teams.length === 1 ? "team" : "teams" }}
-                        </div>
-                      </div>
-                      <div style="display: flex; flex-wrap: wrap; gap: 4px">
-                        <div
-                          v-for="team in plan.teams"
-                          :key="team.id"
-                          style="display: inline-block; position: relative;"
-                        >
-                          <span
-                            @click="team.has_multiple_flights && toggleTeamFlightExpansion(team.id)"
-                            :style="{
-                              fontSize: '10px',
-                              padding: '2px 6px',
-                              background: bulkDuplicateChecks.get(team.id)?.exists && bulkDuplicateChecks.get(team.id)?.strict ? '#FEE2E2' : 
-                                          bulkDuplicateChecks.get(team.id)?.exists ? '#FEF3C7' : 'var(--panel)',
-                              border: bulkDuplicateChecks.get(team.id)?.exists && bulkDuplicateChecks.get(team.id)?.strict ? '1px solid #FCA5A5' :
-                                      bulkDuplicateChecks.get(team.id)?.exists ? '1px solid #FCD34D' : '1px solid var(--border)',
-                              borderRadius: '4px',
-                              color: bulkDuplicateChecks.get(team.id)?.exists && bulkDuplicateChecks.get(team.id)?.strict ? '#991B1B' :
-                                     bulkDuplicateChecks.get(team.id)?.exists ? '#92400E' : 'var(--ink2)',
-                              fontWeight: '600',
-                              cursor: team.has_multiple_flights ? 'pointer' : 'default',
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: '4px',
-                            }"
-                            :title="bulkDuplicateChecks.get(team.id)?.exists ? 
-                                    (bulkDuplicateChecks.get(team.id)?.strict ? '❌ Duplicate (blocked)' : '⚠️ Similar movement found') : 
-                                    (team.has_multiple_flights ? 'Click to select flight' : '')"
-                          >
-                            <!-- Duplicate indicator icon -->
-                            <span v-if="bulkDuplicateChecks.get(team.id)?.exists && bulkDuplicateChecks.get(team.id)?.strict">❌</span>
-                            <span v-else-if="bulkDuplicateChecks.get(team.id)?.exists">⚠️</span>
-                            
-                            {{ team.code }}
-                            <span
-                              v-if="team.has_multiple_flights"
-                              style="
-                                background: #3b82f6;
-                                color: white;
-                                padding: 0 4px;
-                                border-radius: 3px;
-                                font-size: 9px;
-                                font-weight: 700;
-                              "
-                            >
-                              {{ team.flights.length }}
-                            </span>
-                          </span>
-                          
-                          <!-- Flight Selection Dropdown -->
-                          <div
-                            v-if="expandedTeams.has(team.id)"
-                            style="
-                              position: absolute;
-                              margin-top: 2px;
-                              background: var(--surface);
-                              border: 1px solid var(--border);
-                              border-radius: 6px;
-                              box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-                              padding: 8px;
-                              z-index: 1000;
-                              min-width: 200px;
-                            "
-                          >
-                            <div
-                              style="
-                                font-size: 10px;
-                                font-weight: 700;
-                                color: var(--ink3);
-                                margin-bottom: 6px;
-                                text-transform: uppercase;
-                                letter-spacing: 0.5px;
-                              "
-                            >
-                              Select Flight
-                            </div>
-                            <div
-                              v-for="flight in team.flights"
-                              :key="flight.id"
-                              @click="selectTeamFlight(team.id, flight.id)"
-                              :style="{
-                                padding: '6px 8px',
-                                borderRadius: '4px',
-                                cursor: 'pointer',
-                                background: flight.id === team.selected_flight?.id ? '#dbeafe' : 'transparent',
-                                border: flight.id === team.selected_flight?.id ? '1px solid #3b82f6' : '1px solid transparent',
-                                marginBottom: '4px',
-                              }"
-                            >
-                              <div style="font-size: 11px; font-weight: 600; color: var(--ink)">
-                                {{ flight.flight_number || 'N/A' }}
-                              </div>
-                              <div style="font-size: 10px; color: var(--ink3)">
-                                {{ flight.scheduled_time || '—' }}
-                                <span v-if="flight.origin_airport">
-                                  • {{ flight.origin_airport }}
-                                </span>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <!-- Teams Without Dates -->
-                  <div
-                    v-if="bulkPreview.teamsWithoutDates > 0"
-                    style="
-                      background: #fef3c7;
-                      border-top: 1px solid #fcd34d;
-                      padding: 10px 14px;
-                    "
-                  >
-                    <div
-                      style="
-                        font-size: 12px;
-                        color: #92400e;
-                        margin-bottom: 4px;
-                      "
-                    >
-                      <span style="font-weight: 700"
-                        >⚠️ {{ bulkPreview.teamsWithoutDates }} teams missing
-                        {{ bulkPreview.isDepartureTemplate ? 'departure' : 'arrival' }} dates</span
-                      >
-                    </div>
-                    <div style="display: flex; flex-wrap: wrap; gap: 4px">
-                      <span
-                        v-for="team in bulkPreview.teamsWithoutDatesList"
-                        :key="team.id"
-                        style="
-                          font-size: 10px;
-                          padding: 2px 6px;
-                          background: #fffbeb;
-                          border: 1px solid #fcd34d;
-                          border-radius: 4px;
-                          color: #92400e;
-                          font-weight: 600;
-                        "
-                      >
-                        {{ team.code }}
-                      </span>
-                    </div>
-                  </div>
-
-                  <!-- Empty State -->
-                  <div
-                    v-if="bulkPreview.plans.length === 0"
-                    style="
-                      padding: 40px 20px;
-                      text-align: center;
-                      color: var(--ink3);
-                    "
-                  >
-                    <div
-                      style="
-                        font-size: 13px;
-                        font-weight: 600;
-                        margin-bottom: 4px;
-                      "
-                    >
-                      No teams with arrival dates
-                    </div>
-                    <div style="font-size: 12px">
-                      Please set arrival dates for teams first
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <!-- Bulk by Matches Mode -->
-              <div v-else-if="newPlanMode === 'matches'">
-                <div class="form-field">
-                  <label
-                    >Movement Template
-                    <span style="color: #dc2626">*</span></label
-                  >
-                  <select
-                    v-model="newPlanTemplate"
-                    :style="
-                      newPlanErrors.template ? { borderColor: '#DC2626' } : {}
-                    "
-                  >
-                    <option value="">Select a template...</option>
-                    <option
-                      v-for="template in matchDayMovementTemplates"
-                      :key="template.id"
-                      :value="template.id"
-                    >
-                      {{ template.name }} ({{ template.code }})
-                    </option>
-                  </select>
-                  <span
-                    v-if="newPlanErrors.template"
-                    style="
-                      color: #dc2626;
-                      font-size: 12px;
-                      margin-top: 4px;
-                      display: block;
-                    "
-                    >{{ newPlanErrors.template }}</span
-                  >
-                </div>
-
-                <!-- Matches Preview -->
-                <div
-                  v-if="newPlanTemplate"
-                  style="
-                    margin-top: 16px;
-                    border: 1px solid var(--border);
-                    border-radius: 10px;
-                    overflow: hidden;
-                  "
-                >
-                  <div
-                    style="
-                      padding: 14px 16px;
-                      border-bottom: 1px solid var(--border);
-                      background: var(--panel);
-                    "
-                  >
-                    <div
-                      style="
-                        font-size: 13px;
-                        font-weight: 700;
-                        color: var(--ink);
-                        margin-bottom: 6px;
-                      "
-                    >
-                      Match-Day Plans Preview
-                    </div>
-                    <div style="display: flex; gap: 16px; flex-wrap: wrap">
-                      <div>
-                        <span
-                          v-if="matchAllowedPreview.plansCount < matchesPreview.plansCount"
-                          style="
-                            font-size: 20px;
-                            font-weight: 700;
-                            color: var(--accent);
-                          "
-                        >
-                          {{ matchAllowedPreview.plansCount }}
-                          <span style="text-decoration: line-through; opacity: 0.4; margin-left: 4px;">{{ matchesPreview.plansCount }}</span>
-                        </span>
-                        <span
-                          v-else
-                          style="
-                            font-size: 20px;
-                            font-weight: 700;
-                            color: var(--accent);
-                          "
-                          >{{ matchesPreview.plansCount }}</span
-                        >
-                        <span
-                          style="
-                            font-size: 12px;
-                            color: var(--ink3);
-                            margin-left: 4px;
-                          "
-                          >plans</span
-                        >
-                      </div>
-                      <div>
-                        <span
-                          v-if="matchAllowedPreview.teamsCount < matchesPreview.teamsCount"
-                          style="
-                            font-size: 20px;
-                            font-weight: 700;
-                            color: var(--accent);
-                          "
-                        >
-                          {{ matchAllowedPreview.teamsCount }}
-                          <span style="text-decoration: line-through; opacity: 0.4; margin-left: 4px;">{{ matchesPreview.teamsCount }}</span>
-                        </span>
-                        <span
-                          v-else
-                          style="
-                            font-size: 20px;
-                            font-weight: 700;
-                            color: var(--accent);
-                          "
-                          >{{ matchesPreview.teamsCount }}</span
-                        >
-                        <span
-                          style="
-                            font-size: 12px;
-                            color: var(--ink3);
-                            margin-left: 4px;
-                          "
-                          >teams</span
-                        >
-                      </div>
-                      <div>
-                        <span
-                          style="
-                            font-size: 20px;
-                            font-weight: 700;
-                            color: #f59e0b;
-                          "
-                          >{{ matchesPreview.matchesCount }}</span
-                        >
-                        <span
-                          style="
-                            font-size: 12px;
-                            color: var(--ink3);
-                            margin-left: 4px;
-                          "
-                          >matches</span
-                        >
-                      </div>
-                    </div>
-                    <div
-                      v-if="matchesPreview.plans.length > 0"
-                      style="
-                        margin-top: 10px;
-                        padding: 8px 10px;
-                        background: #fef3c7;
-                        border: 1px solid #fbbf24;
-                        border-radius: 6px;
-                        font-size: 11px;
-                        color: #92400e;
-                        display: flex;
-                        align-items: center;
-                        gap: 6px;
-                      "
-                    >
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-                        <path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z" />
-                      </svg>
-                      Plans start {{ describeKickoffOffset(matchStartOffsetMinutes) }}
-                      <span style="opacity: 0.8">· from {{ matchStartOffsetSource }}</span>
-                    </div>
-                  </div>
-
-                  <!-- Match Duplicate Check Loading State -->
-                  <div
-                    v-if="matchDuplicateCheckLoading"
-                    style="
-                      padding: 10px 12px;
-                      background: #F3F4F6;
-                      border-bottom: 1px solid #D1D5DB;
-                      font-size: 12px;
-                      color: #6B7280;
-                      display: flex;
-                      align-items: center;
-                      gap: 8px;
-                    "
-                  >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="animation: spin 1s linear infinite;">
-                      <line x1="12" y1="2" x2="12" y2="6"></line>
-                      <line x1="12" y1="18" x2="12" y2="22"></line>
-                      <line x1="4.93" y1="4.93" x2="7.76" y2="7.76"></line>
-                      <line x1="16.24" y1="16.24" x2="19.07" y2="19.07"></line>
-                      <line x1="2" y1="12" x2="6" y2="12"></line>
-                      <line x1="18" y1="12" x2="22" y2="12"></line>
-                      <line x1="4.93" y1="19.07" x2="7.76" y2="16.24"></line>
-                      <line x1="16.24" y1="7.76" x2="19.07" y2="4.93"></line>
-                    </svg>
-                    Checking for duplicates...
-                  </div>
-
-                  <!-- Match Duplicate Summary -->
-                  <div
-                    v-else-if="matchDuplicateChecks.size > 0"
-                    style="
-                      padding: 10px 12px;
-                      border-bottom: 1px solid var(--border);
-                    "
-                  >
-                    <!-- Strict duplicates (blocking) -->
-                    <div
-                      v-if="Array.from(matchDuplicateChecks.values()).some(c => c.exists && c.strict)"
-                      style="
-                        padding: 10px;
-                        background: #FEE2E2;
-                        border: 1px solid #FCA5A5;
-                        border-radius: 6px;
-                        margin-bottom: 8px;
-                        font-size: 12px;
-                      "
-                    >
-                      <div style="display: flex; align-items: center; gap: 8px; color: #991B1B; font-weight: 700;">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                          <circle cx="12" cy="12" r="10"></circle>
-                          <line x1="15" y1="9" x2="9" y2="15"></line>
-                          <line x1="9" y1="9" x2="15" y2="15"></line>
-                        </svg>
-                        {{ Array.from(matchDuplicateChecks.values()).filter(c => c.exists && c.strict).length }} 
-                        team(s) have duplicate conflicts (marked with ❌)
-                      </div>
-                      <div style="color: #7F1D1D; margin-top: 4px; font-size: 11px;">
-                        These teams cannot be created. Please resolve the duplicates first.
-                      </div>
-                    </div>
-
-                    <!-- Soft warnings -->
-                    <div
-                      v-if="Array.from(matchDuplicateChecks.values()).some(c => c.exists && !c.strict)"
-                      style="
-                        padding: 10px;
-                        background: #FEF3C7;
-                        border: 1px solid #FCD34D;
-                        border-radius: 6px;
-                        font-size: 12px;
-                      "
-                    >
-                      <div style="display: flex; align-items: center; gap: 8px; color: #92400E; font-weight: 700;">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                          <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
-                          <line x1="12" y1="9" x2="12" y2="13"></line>
-                          <line x1="12" y1="17" x2="12.01" y2="17"></line>
-                        </svg>
-                        {{ Array.from(matchDuplicateChecks.values()).filter(c => c.exists && !c.strict).length }}
-                        team(s) have similar movements (marked with ⚠️)
-                      </div>
-                      <div style="color: #92400E; margin-top: 4px; font-size: 11px;">
-                        You can proceed, but please verify these are not duplicates.
-                      </div>
-                    </div>
-                  </div>
-
-                  <!-- Matches List (Grouped by Date) -->
-                  <div
-                    v-if="matchesPreview.plans.length > 0"
-                    style="max-height: 320px; overflow-y: auto"
-                  >
-                    <div
-                      style="
-                        padding: 7px 16px;
-                        background: var(--panel);
-                        border-bottom: 1px solid var(--border);
-                      "
-                    >
-                      <span
-                        style="
-                          font-size: 10px;
-                          font-weight: 700;
-                          letter-spacing: 1px;
-                          text-transform: uppercase;
-                          color: var(--ink3);
-                        "
-                        >Plans to be created</span
-                      >
-                    </div>
-                    <div
-                      v-for="(plan, planIdx) in matchesPreview.plans"
-                      :key="`${plan.date}_${plan.match_id}`"
-                      :style="{
-                        borderBottom:
-                          planIdx < matchesPreview.plans.length - 1
-                            ? '1px solid var(--border)'
-                            : 'none',
-                      }"
-                    >
-                      <!-- Match Header -->
-                      <div
-                        style="
-                          padding: 10px 16px;
-                          background: var(--panel);
-                          border-bottom: 1px solid var(--border);
-                        "
-                      >
-                        <div
-                          style="
-                            font-size: 12px;
-                            font-weight: 700;
-                            color: var(--accent);
-                            display: flex;
-                            align-items: center;
-                            justify-content: space-between;
-                          "
-                        >
-                          <div style="display: flex; align-items: center; gap: 8px;">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-                              <path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z" />
-                            </svg>
-                            {{ plan.match_number }}
-                          </div>
-                          <span
-                            style="
-                              font-size: 11px;
-                              font-weight: 500;
-                              color: var(--ink3);
-                            "
-                          >
-                            {{ formatDate(plan.date) }} • {{ plan.plan_time }}
-                          </span>
-                        </div>
-                        <div style="font-size: 11px; color: var(--ink3); margin-top: 4px;">
-                          📍 {{ plan.venue }} • ⚽ {{ plan.kick_off_time }}
-                        </div>
-                      </div>
-
-                      <!-- Teams in this match -->
-                      <div style="padding: 12px 16px; display: flex; gap: 8px; flex-wrap: wrap; background: var(--surface); border-bottom: 1px solid var(--border);">
-                        <div
-                          v-for="team in plan.teams"
-                          :key="team.team_id"
-                          :style="{
-                            flex: '1',
-                            minWidth: '150px',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '6px',
-                            padding: '6px 10px',
-                            borderRadius: '6px',
-                            border: '1px solid',
-                            background: matchDuplicateChecks.get(matchCheckKey(team))?.exists && matchDuplicateChecks.get(matchCheckKey(team))?.strict ? '#FEE2E2' : 
-                                       matchDuplicateChecks.get(matchCheckKey(team))?.exists ? '#FEF3C7' : '#EFF6FF',
-                            borderColor: matchDuplicateChecks.get(matchCheckKey(team))?.exists && matchDuplicateChecks.get(matchCheckKey(team))?.strict ? '#FCA5A5' :
-                                        matchDuplicateChecks.get(matchCheckKey(team))?.exists ? '#FCD34D' : '#BFDBFE'
-                          }"
-                          :title="matchDuplicateChecks.get(matchCheckKey(team))?.exists ? 
-                                  (matchDuplicateChecks.get(matchCheckKey(team))?.strict ? '❌ Duplicate (blocked)' : '⚠️ Similar movement found') : ''"
-                        >
-                          <span
-                            :style="{
-                              fontSize: '11px',
-                              fontWeight: '700',
-                              fontFamily: 'var(--mono)',
-                              color: matchDuplicateChecks.get(matchCheckKey(team))?.exists && matchDuplicateChecks.get(matchCheckKey(team))?.strict ? '#991B1B' :
-                                     matchDuplicateChecks.get(matchCheckKey(team))?.exists ? '#92400E' : '#1E40AF'
-                            }"
-                          >
-                            <span v-if="matchDuplicateChecks.get(matchCheckKey(team))?.exists && matchDuplicateChecks.get(matchCheckKey(team))?.strict">❌ </span>
-                            <span v-else-if="matchDuplicateChecks.get(matchCheckKey(team))?.exists">⚠️ </span>
-                            {{ team.team_code }}
-                          </span>
-                          <span 
-                            :style="{
-                              fontSize: '11px',
-                              color: matchDuplicateChecks.get(matchCheckKey(team))?.exists && matchDuplicateChecks.get(matchCheckKey(team))?.strict ? '#7F1D1D' :
-                                     matchDuplicateChecks.get(matchCheckKey(team))?.exists ? '#78350F' : '#1E3A8A'
-                            }"
-                          >
-                            {{ team.team_name }}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <!-- Empty State -->
-                  <div
-                    v-if="matchesPreview.plans.length === 0"
-                    style="
-                      padding: 40px 20px;
-                      text-align: center;
-                      color: var(--ink3);
-                    "
-                  >
-                    <div
-                      style="
-                        font-size: 13px;
-                        font-weight: 600;
-                        margin-bottom: 4px;
-                      "
-                    >
-                      No matches found
-                    </div>
-                    <div style="font-size: 12px">
-                      Please create matches for teams first
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-          <div class="modal-footer">
-            <Button
-              variant="ghost"
-              size="sm"
-              @click="showNewPlan = false"
-              :disabled="newPlanProcessing"
-              >Cancel</Button
-            >
-            <Button
-              v-if="newPlanMode === 'single'"
-              variant="primary"
-              size="sm"
-              @click="createPlan"
-              :disabled="newPlanProcessing || duplicateCheckLoading || (duplicateCheck?.exists && duplicateCheck?.strict)"
-            >
-              <span v-if="newPlanProcessing">Creating...</span>
-              <span v-else-if="duplicateCheckLoading">Checking...</span>
-              <span v-else>Create Plan</span>
-            </Button>
-            <Button
-              v-else-if="newPlanMode === 'bulk'"
-              variant="primary"
-              size="sm"
-              @click="createBulkPlans"
-              :disabled="newPlanProcessing || bulkAllowedPreview.plansCount === 0 || bulkDuplicateCheckLoading"
-            >
-              <span v-if="newPlanProcessing">Creating {{ bulkAllowedPreview.plansCount }} Plans...</span>
-              <span v-else-if="bulkDuplicateCheckLoading">Checking...</span>
-              <span v-else-if="bulkAllowedPreview.plansCount === 0 && bulkPreview.plans.length > 0">
-                Cannot Create (all teams have conflicts)
-              </span>
-              <span v-else-if="bulkAllowedPreview.plansCount < bulkPreview.plansCount">
-                Create {{ bulkAllowedPreview.plansCount }} Plans ({{ bulkAllowedPreview.teamsCount }} teams)
-              </span>
-              <span v-else>Create {{ bulkPreview.plansCount }} Plans</span>
-            </Button>
-            <Button
-              v-else-if="newPlanMode === 'matches'"
-              variant="primary"
-              size="sm"
-              @click="createMatchPlans"
-              :disabled="newPlanProcessing || matchAllowedPreview.plansCount === 0 || matchDuplicateCheckLoading"
-            >
-              <span v-if="newPlanProcessing">Creating {{ matchAllowedPreview.plansCount }} Plans...</span>
-              <span v-else-if="matchDuplicateCheckLoading">Checking...</span>
-              <span v-else-if="matchAllowedPreview.plansCount === 0 && matchesPreview.plans.length > 0">
-                Cannot Create (all teams have conflicts)
-              </span>
-              <span v-else-if="matchAllowedPreview.plansCount < matchesPreview.plansCount">
-                Create {{ matchAllowedPreview.plansCount }} Plans ({{ matchAllowedPreview.teamsCount }} teams)
-              </span>
-              <span v-else>Create {{ matchesPreview.plansCount }} Match Plans</span>
-            </Button>
-          </div>
-        </div>
-      </div>
+        :active-event="activeEvent"
+        :teams="props.teams"
+        :movement-templates="props.movementTemplates"
+        :matches="props.matches"
+        :next-movement-number="nextMovementNumber"
+        @close="showNewPlan = false"
+      />
 
       <!-- Edit Plan Modal -->
       <div
@@ -6962,444 +4391,17 @@
 
     <!-- Edit Movement Modal -->
     <teleport to="body">
-      <div
-        v-if="showEditMovement"
-        v-dialog="() => (showEditMovement = false)"
-        class="modal-backdrop"
-        @click.self="showEditMovement = false"
-      >
-        <div class="modal am-modal">
-          <!-- Header -->
-          <div class="modal-header" style="align-items: flex-start">
-            <div>
-              <div class="modal-eyebrow">
-                {{ editingMovement?.code || "Movement" }}
-              </div>
-              <div class="modal-title" style="font-size: 18px">
-                Edit movement
-              </div>
-            </div>
-            <button class="modal-close" @click="showEditMovement = false">
-              <svg-icon name="x" :size="16" />
-            </button>
-          </div>
-
-          <!-- Form body -->
-          <div class="modal-body" style="gap: 12px">
-            <!-- Read-only Flight/Team Info Card -->
-            <div
-              v-if="(editingMovement?.flight || editingMovement?.team) && emKind === 'arrival'"
-              style="
-                padding: 14px;
-                background: var(--panel);
-                border: 1.5px solid var(--border);
-                border-radius: 10px;
-              "
-            >
-              <div
-                style="
-                  font-size: 10px;
-                  font-weight: 700;
-                  letter-spacing: 0.8px;
-                  text-transform: uppercase;
-                  color: var(--ink3);
-                  margin-bottom: 10px;
-                "
-              >
-                📋 MOVEMENT DETAILS
-              </div>
-
-              <div style="display: grid; gap: 12px">
-                <!-- Flight Info (if exists) -->
-                <div
-                  v-if="editingMovement?.flight"
-                  style="
-                    display: grid;
-                    grid-template-columns: repeat(2, 1fr);
-                    gap: 10px;
-                  "
-                >
-                  <div>
-                    <div
-                      style="
-                        font-size: 10px;
-                        font-weight: 600;
-                        text-transform: uppercase;
-                        color: var(--ink3);
-                        margin-bottom: 3px;
-                      "
-                    >
-                      Flight
-                    </div>
-                    <div
-                      style="
-                        font-size: 13px;
-                        font-weight: 600;
-                        color: var(--ink);
-                      "
-                    >
-                      {{ editingMovement.flight.flight_number || "—" }}
-                    </div>
-                  </div>
-                  <div>
-                    <div
-                      style="
-                        font-size: 10px;
-                        font-weight: 600;
-                        text-transform: uppercase;
-                        color: var(--ink3);
-                        margin-bottom: 3px;
-                      "
-                    >
-                      Route
-                    </div>
-                    <div style="font-size: 13px; color: var(--ink)">
-                      {{ editingMovement.flight.origin_airport?.iata || "—" }}
-                      →
-                      {{
-                        editingMovement.flight.destination_airport?.iata || "—"
-                      }}
-                    </div>
-                  </div>
-                  <div>
-                    <div
-                      style="
-                        font-size: 10px;
-                        font-weight: 600;
-                        text-transform: uppercase;
-                        color: var(--ink3);
-                        margin-bottom: 3px;
-                      "
-                    >
-                      Passengers
-                    </div>
-                    <div style="font-size: 13px; color: var(--ink)">
-                      {{ editingMovement.flight.party_size_total || 0 }} pax
-                    </div>
-                  </div>
-                  <div>
-                    <div
-                      style="
-                        font-size: 10px;
-                        font-weight: 600;
-                        text-transform: uppercase;
-                        color: var(--ink3);
-                        margin-bottom: 3px;
-                      "
-                    >
-                      Scheduled
-                    </div>
-                    <div style="font-size: 13px; color: var(--ink)">
-                      {{
-                        editingMovement.flight.scheduled_at
-                          ? formatDateTime(editingMovement.flight.scheduled_at)
-                          : "—"
-                      }}
-                    </div>
-                  </div>
-                </div>
-
-                <!-- Team Info -->
-                <div v-if="editingMovement?.team">
-                  <div
-                    style="
-                      font-size: 10px;
-                      font-weight: 600;
-                      text-transform: uppercase;
-                      color: var(--ink3);
-                      margin-bottom: 3px;
-                    "
-                  >
-                    Team
-                  </div>
-                  <div
-                    style="font-size: 13px; font-weight: 600; color: var(--ink); display: flex; align-items: center; gap: 6px;"
-                  >
-                    <flag-icon :code="editingMovement.team.country_id" />
-                    {{
-                      editingMovement.team.team_name ||
-                      editingMovement.team.team
-                    }}
-                    ({{ editingMovement.team.code }})
-                  </div>
-                </div>
-
-                <!-- Phase and Route -->
-                <div
-                  style="
-                    display: grid;
-                    grid-template-columns: repeat(2, 1fr);
-                    gap: 10px;
-                  "
-                >
-                  <div>
-                    <div
-                      style="
-                        font-size: 10px;
-                        font-weight: 600;
-                        text-transform: uppercase;
-                        color: var(--ink3);
-                        margin-bottom: 3px;
-                      "
-                    >
-                      Phase
-                    </div>
-                    <Badge
-                      v-if="emMatchId"
-                      type="kind"
-                      variant="match"
-                      >Match {{ relevantMatches.find(m => m.id === emMatchId)?.match_number || '' }}</Badge
-                    >
-                    <Badge
-                      v-else-if="emKind"
-                      type="kind"
-                      :variant="emKind"
-                      >{{ emKind }}</Badge
-                    >
-                    <span v-else style="font-size: 13px; color: var(--ink3)"
-                      >—</span
-                    >
-                  </div>
-                  <div>
-                    <div
-                      style="
-                        font-size: 10px;
-                        font-weight: 600;
-                        text-transform: uppercase;
-                        color: var(--ink3);
-                        margin-bottom: 3px;
-                      "
-                    >
-                      Route
-                    </div>
-                    <div style="font-size: 13px; color: var(--ink)">
-                      {{ emFrom || "—" }} → {{ emTo || "—" }}
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div
-                style="
-                  margin-top: 8px;
-                  padding: 8px;
-                  background: var(--surface);
-                  border-radius: 6px;
-                  font-size: 11px;
-                  color: var(--ink3);
-                  display: flex;
-                  align-items: center;
-                  gap: 6px;
-                "
-              >
-                <svg
-                  width="14"
-                  height="14"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2"
-                >
-                  <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-                </svg>
-                Flight and team details are read-only. Adjust operational fields
-                below.
-              </div>
-            </div>
-
-            <!-- Divider -->
-            <div
-              v-if="(editingMovement?.flight || editingMovement?.team) && emKind === 'arrival'"
-              style="height: 1px; background: var(--border); margin: 4px 0"
-            ></div>
-
-            <!-- Operational Fields Header -->
-            <div
-              style="
-                font-size: 10px;
-                font-weight: 700;
-                letter-spacing: 0.8px;
-                text-transform: uppercase;
-                color: var(--ink3);
-                margin-bottom: -4px;
-              "
-            >
-              ⚙️ OPERATIONAL ADJUSTMENTS
-            </div>
-
-            <!-- Editable Operational Fields -->
-            <div
-              style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px"
-            >
-              <div class="form-field">
-                <label>WINDOW START</label>
-                <input type="datetime-local" v-model="emWindowStart" />
-              </div>
-              <div class="form-field">
-                <label>WINDOW END</label>
-                <input type="datetime-local" v-model="emWindowEnd" />
-              </div>
-            </div>
-            <div
-              style="display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px"
-            >
-              <div class="form-field">
-                <label>VEHICLE</label>
-                <select v-model="emVehicleId">
-                  <option value="">Select vehicle...</option>
-                  <option
-                    v-for="vehicle in props.vehicles"
-                    :key="vehicle.id"
-                    :value="vehicle.id"
-                  >
-                    {{ vehicle.code }} - {{ vehicle.vehicle_type }}{{ vehicle.capacity ? ` (${vehicle.capacity} pax)` : '' }}{{ crewNote('vehicles', vehicle.id) }}
-                  </option>
-                </select>
-              </div>
-              <div class="form-field">
-                <label>DRIVER</label>
-                <select v-model="emDriverId">
-                  <option value="">Select driver...</option>
-                  <option
-                    v-for="driver in props.drivers"
-                    :key="driver.id"
-                    :value="driver.id"
-                  >
-                    {{ driver.name }}{{ crewNote('drivers', driver.id) }}
-                  </option>
-                </select>
-              </div>
-            </div>
-            <div v-for="(unit, i) in emUnits" :key="i" class="em-unit">
-              <div class="form-field">
-                <label>VEHICLE {{ i + 2 }}</label>
-                <select v-model="unit.vehicle_id">
-                  <option :value="null">Select vehicle...</option>
-                  <option v-for="vehicle in props.vehicles" :key="vehicle.id" :value="vehicle.id">
-                    {{ vehicle.code }} - {{ vehicle.vehicle_type }}{{ vehicle.capacity ? ` (${vehicle.capacity} pax)` : '' }}{{ crewNote('vehicles', vehicle.id) }}
-                  </option>
-                </select>
-              </div>
-              <div class="form-field">
-                <label>DRIVER {{ i + 2 }}</label>
-                <select v-model="unit.driver_id">
-                  <option :value="null">Select driver...</option>
-                  <option v-for="driver in props.drivers" :key="driver.id" :value="driver.id">{{ driver.name }}{{ crewNote('drivers', driver.id) }}</option>
-                </select>
-              </div>
-              <button type="button" class="em-unit-remove" :aria-label="`Remove vehicle ${i + 2}`" title="Remove this vehicle" @click="emUnits.splice(i, 1)">✕</button>
-            </div>
-            <button type="button" class="em-unit-add" @click="emUnits.push({ vehicle_id: null, driver_id: null })">
-              + Add another vehicle &amp; driver
-            </button>
-            <div class="form-field">
-              <label>FIELD SUPERVISOR</label>
-              <select v-model="emFieldSupervisorId">
-                <option value="">Select supervisor...</option>
-                <option
-                  v-for="supervisor in supervisorOptions"
-                  :key="supervisor.id"
-                  :value="supervisor.id"
-                >
-                  {{ supervisorLabel(supervisor) }}{{ crewNote('supervisors', supervisor.id) }}
-                </option>
-              </select>
-            </div>
-            <div v-for="(_, i) in emSupervisors" :key="`s${i}`" class="em-unit em-unit--single">
-              <div class="form-field">
-                <label>SUPERVISOR {{ i + 2 }}</label>
-                <select v-model="emSupervisors[i]">
-                  <option :value="null">Select supervisor...</option>
-                  <option v-for="supervisor in supervisorOptions" :key="supervisor.id" :value="supervisor.id">{{ supervisorLabel(supervisor) }}{{ crewNote('supervisors', supervisor.id) }}</option>
-                </select>
-              </div>
-              <button type="button" class="em-unit-remove" :aria-label="`Remove supervisor ${i + 2}`" title="Remove this supervisor" @click="emSupervisors.splice(i, 1)">✕</button>
-            </div>
-            <button type="button" class="em-unit-add" @click="emSupervisors.push(null)">
-              + Add another supervisor
-            </button>
-            <div class="form-field">
-              <label>MATCH (OPTIONAL)</label>
-              <select v-model="emMatchId">
-                <option :value="null">None - Regular logistics</option>
-                <option 
-                  v-for="match in relevantMatches" 
-                  :key="match.id" 
-                  :value="match.id"
-                >
-                  {{ match.match_number }} - 
-                  {{ match.team1?.team_name || match.team1?.team }} vs {{ match.team2?.team_name || match.team2?.team }} - 
-                  {{ formatDateTime(match.kick_off) }} @ {{ match.venue?.name }}
-                </option>
-              </select>
-              <div
-                v-if="emMatchId && relevantMatches.length > 0"
-                style="
-                  margin-top: 6px;
-                  padding: 8px;
-                  background: var(--accent-soft);
-                  border-radius: 6px;
-                  font-size: 11px;
-                  color: var(--ink2);
-                  display: flex;
-                  align-items: center;
-                  gap: 6px;
-                "
-              >
-                <svg
-                  width="14"
-                  height="14"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2"
-                >
-                  <path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z" />
-                </svg>
-                This movement is linked to a match. Ideal window should be 2-3h before kick-off.
-              </div>
-            </div>
-            <div class="form-field">
-              <label>NOTES</label>
-              <textarea
-                v-model="emNotes"
-                placeholder="Additional notes..."
-                rows="3"
-                style="
-                  width: 100%;
-                  padding: 8px 12px;
-                  border: 1px solid var(--border);
-                  border-radius: 8px;
-                  font-size: 13px;
-                  font-family: inherit;
-                  resize: vertical;
-                "
-              ></textarea>
-            </div>
-          </div>
-
-          <!-- Footer -->
-          <div class="modal-footer" style="justify-content: flex-end">
-            <div style="display: flex; gap: 8px">
-              <Button
-                variant="secondary"
-                size="sm"
-                @click="showEditMovement = false"
-                :disabled="editMovementProcessing"
-                >Cancel</Button
-              >
-              <Button
-                variant="primary"
-                size="sm"
-                @click="submitEditMovement"
-                :disabled="editMovementProcessing"
-              >
-                {{ editMovementProcessing ? "Updating..." : "Update movement" }}
-              </Button>
-            </div>
-          </div>
-        </div>
-      </div>
+      <EditMovementModal
+        v-if="editingMovement"
+        :key="editingMovement.id"
+        :movement="editingMovement"
+        :plan-date="selectedPlanObj?.date ?? null"
+        :vehicles="props.vehicles"
+        :drivers="props.drivers"
+        :supervisors="props.supervisors"
+        :matches="props.matches"
+        @close="editingMovement = null"
+      />
     </teleport>
 
     <!-- Bulk Delete Plans Modal -->
@@ -7413,7 +4415,7 @@
         <div class="modal">
           <div class="modal-header">
             <span class="modal-title" style="color: #dc2626">
-              Delete {{ selectedVisiblePlans.length }} plan(s)
+              Delete {{ bulkDeletePlans.length }} plan(s)
             </span>
             <button class="modal-close" @click="cancelBulkDeletePlans">
               <svg-icon name="x" />
@@ -7692,14 +4694,20 @@
                   d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
                 />
               </svg>
-              <span class="modal-title">Delete Movement</span>
+              <span class="modal-title">{{ deletingMovement.job_id ? "Cannot Delete Movement" : "Delete Movement" }}</span>
             </div>
             <button class="modal-close" @click="cancelDeleteMovement">
               <svg-icon name="x" />
             </button>
           </div>
           <div class="modal-body">
-            <p style="font-size: 14px; color: var(--ink); margin-bottom: 12px">
+            <div v-if="deletingMovement.job_id" class="delete-blocked">
+              Movement
+              <strong>{{ deletingMovement.code || formatMovementCode(deletingMovement.id) }}</strong>
+              has a generated job, <strong>{{ deletingMovement.job_id }}</strong>, so it can't be deleted.
+              Delete the job in the Jobs Queue first, then delete the movement.
+            </div>
+            <p v-else style="font-size: 14px; color: var(--ink); margin-bottom: 12px">
               Are you sure you want to delete movement
               <strong>{{
                 deletingMovement.code || formatMovementCode(deletingMovement.id)
@@ -7730,7 +4738,7 @@
                 Associated Job: {{ deletingMovement.job_id }}
               </li>
             </ul>
-            <p style="font-size: 13px; color: #dc2626; font-weight: 600">
+            <p v-if="!deletingMovement.job_id" style="font-size: 13px; color: #dc2626; font-weight: 600">
               This action cannot be undone.
             </p>
           </div>
@@ -7740,9 +4748,10 @@
               size="sm"
               @click="cancelDeleteMovement"
               :disabled="deleteMovementProcessing"
-              >Cancel</Button
+              >{{ deletingMovement.job_id ? "Close" : "Cancel" }}</Button
             >
             <Button
+              v-if="!deletingMovement.job_id"
               variant="primary"
               size="sm"
               @click="confirmDeleteMovement"
@@ -7789,15 +4798,35 @@
             </button>
           </div>
           <div class="modal-body">
-            <p style="font-size: 14px; color: var(--ink); margin-bottom: 12px">
+            <p
+              v-if="bulkMovementDelete.deletable.length"
+              style="font-size: 14px; color: var(--ink); margin-bottom: 12px"
+            >
               Are you sure you want to delete
-              <strong>{{ selectedMovementIds.size }}</strong>
-              selected movement{{ selectedMovementIds.size === 1 ? "" : "s" }}?
+              <strong>{{ bulkMovementDelete.deletable.length }}</strong>
+              movement{{ bulkMovementDelete.deletable.length === 1 ? "" : "s" }}?
             </p>
-            <p style="font-size: 12px; color: var(--ink3); margin-bottom: 8px">
-              Movements that already have a generated job will be skipped.
-            </p>
-            <p style="font-size: 13px; color: #dc2626; font-weight: 600">
+            <div v-if="bulkMovementDelete.withJobs.length" class="delete-blocked">
+              <template v-if="bulkMovementDelete.deletable.length">
+                {{ bulkMovementDelete.withJobs.length }} selected movement{{ bulkMovementDelete.withJobs.length === 1 ? " has" : "s have" }}
+                a generated job and will be kept:
+              </template>
+              <template v-else>
+                {{ bulkMovementDelete.withJobs.length === 1 ? "The selected movement has" : "All selected movements have" }}
+                a generated job, so nothing can be deleted:
+              </template>
+              <ul class="delete-blocked__list">
+                <li v-for="mv in bulkMovementDelete.withJobs" :key="mv.id">
+                  <strong>{{ mv.code || formatMovementCode(mv.id) }}</strong>
+                  · {{ mv.team?.team_name || "No team" }} · {{ mv.job_id }}
+                </li>
+              </ul>
+              Delete the job in the Jobs Queue first to remove its movement.
+            </div>
+            <p
+              v-if="bulkMovementDelete.deletable.length"
+              style="font-size: 13px; color: #dc2626; font-weight: 600"
+            >
               This action cannot be undone.
             </p>
           </div>
@@ -7807,9 +4836,10 @@
               size="sm"
               @click="cancelBulkDeleteMovements"
               :disabled="bulkDeletingMovements"
-              >Cancel</Button
+              >{{ bulkMovementDelete.deletable.length ? "Cancel" : "Close" }}</Button
             >
             <Button
+              v-if="bulkMovementDelete.deletable.length"
               variant="primary"
               size="sm"
               @click="confirmDeleteSelectedMovements"
@@ -7819,7 +4849,7 @@
               {{
                 bulkDeletingMovements
                   ? "Deleting..."
-                  : `Delete Selected (${selectedMovementIds.size})`
+                  : `Delete ${bulkMovementDelete.deletable.length} Movement${bulkMovementDelete.deletable.length === 1 ? "" : "s"}`
               }}
             </Button>
           </div>
@@ -7827,201 +4857,7 @@
       </div>
     </teleport>
 
-    <!-- Template Preview modal -->
     <teleport to="body">
-      <div
-        v-if="showPreviewModal && selectedTemplate"
-        v-dialog="() => (showPreviewModal = false)"
-        class="modal-backdrop"
-        @click.self="showPreviewModal = false"
-      >
-        <div class="modal" style="max-width: 720px">
-          <div class="modal-header">
-            <div>
-              <div
-                style="
-                  display: flex;
-                  align-items: center;
-                  gap: 8px;
-                  margin-bottom: 4px;
-                "
-              >
-                <span class="modal-title">{{ selectedTemplate.name }}</span>
-                <status-pill tone="neutral" size="sm"
-                  >{{ selectedTemplate.legs }} legs</status-pill
-                >
-              </div>
-              <div
-                style="
-                  font-size: 11px;
-                  color: var(--ink3);
-                  font-family: var(--mono);
-                "
-              >
-                {{ selectedTemplate.id }}
-              </div>
-            </div>
-            <button class="modal-close" @click="showPreviewModal = false">
-              <svg-icon name="x" />
-            </button>
-          </div>
-          <div class="modal-body" style="padding: 0">
-            <!-- Template info -->
-            <div
-              style="
-                padding: 16px 20px;
-                border-bottom: 1px solid var(--border);
-                background: var(--panel);
-              "
-            >
-              <div
-                style="
-                  font-size: 12px;
-                  color: var(--ink2);
-                  line-height: 1.6;
-                  margin-bottom: 8px;
-                "
-              >
-                {{ selectedTemplate.description }}
-              </div>
-              <div style="display: flex; gap: 16px; font-size: 12px">
-                <div>
-                  <span style="color: var(--ink3)">Avg duration:</span>
-                  <b
-                    style="
-                      color: var(--ink);
-                      font-family: var(--mono);
-                      margin-left: 4px;
-                    "
-                    >{{ selectedTemplate.avg }}</b
-                  >
-                </div>
-                <div>
-                  <span style="color: var(--ink3)">Total legs:</span>
-                  <b
-                    style="
-                      color: var(--ink);
-                      font-family: var(--mono);
-                      margin-left: 4px;
-                    "
-                    >{{ selectedTemplate.legs }}</b
-                  >
-                </div>
-              </div>
-            </div>
-
-            <!-- Movement sequence -->
-            <div style="padding: 16px 20px">
-              <div
-                style="
-                  font-size: 11px;
-                  letter-spacing: 1px;
-                  text-transform: uppercase;
-                  color: var(--ink3);
-                  font-weight: 700;
-                  margin-bottom: 12px;
-                "
-              >
-                Movement Sequence
-              </div>
-              <div style="display: flex; flex-direction: column; gap: 8px">
-                <div
-                  v-for="mv in selectedTemplate.movements"
-                  :key="mv.order"
-                  style="
-                    display: flex;
-                    align-items: flex-start;
-                    gap: 12px;
-                    padding: 12px;
-                    background: var(--panel);
-                    border: 1px solid var(--border);
-                    border-radius: 8px;
-                  "
-                >
-                  <div
-                    style="
-                      width: 32px;
-                      height: 32px;
-                      border-radius: 999px;
-                      background: var(--accent);
-                      color: #fff;
-                      display: flex;
-                      align-items: center;
-                      justify-content: center;
-                      font-weight: 700;
-                      font-size: 13px;
-                      flex-shrink: 0;
-                    "
-                  >
-                    {{ mv.order }}
-                  </div>
-                  <div style="flex: 1">
-                    <div
-                      style="
-                        display: flex;
-                        align-items: center;
-                        gap: 8px;
-                        margin-bottom: 4px;
-                      "
-                    >
-                      <Badge type="kind" :variant="mv.type">{{
-                        mv.type
-                      }}</Badge>
-                      <span
-                        style="
-                          font-size: 13px;
-                          font-weight: 600;
-                          color: var(--ink);
-                        "
-                        >{{ mv.from }} → {{ mv.to }}</span
-                      >
-                    </div>
-                    <div
-                      style="
-                        display: flex;
-                        gap: 12px;
-                        font-size: 11px;
-                        color: var(--ink3);
-                      "
-                    >
-                      <div>
-                        <span style="color: var(--ink4)">Duration:</span>
-                        <b
-                          style="color: var(--ink2); font-family: var(--mono)"
-                          >{{ mv.duration }}</b
-                        >
-                      </div>
-                      <div>
-                        <span style="color: var(--ink4)">Vehicle:</span>
-                        <b style="color: var(--ink2)">{{ mv.vehicle }}</b>
-                      </div>
-                      <div>
-                        <span style="color: var(--ink4)">Pax:</span>
-                        <b
-                          style="color: var(--ink2); font-family: var(--mono)"
-                          >{{ mv.pax }}</b
-                        >
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-          <div class="modal-footer">
-            <Button variant="ghost" size="sm" @click="showPreviewModal = false"
-              >Close</Button
-            >
-            <Button
-              variant="primary"
-              size="sm"
-              @click="applyTemplate(selectedTemplate)"
-              >Apply Template</Button
-            >
-          </div>
-        </div>
-      </div>
-
       <!-- Add Team to Plan Modal -->
       <div
         v-if="showAddTeamModal"
@@ -8259,8 +5095,6 @@
 import { ref, computed, watch, nextTick } from "vue";
 import { router, usePage } from "@inertiajs/vue3";
 import { useToast } from "../Composables/useToast";
-import { useCrewBusy } from "../Composables/useCrewBusy";
-import { supervisorsFor, personLabel } from "../Composables/crewPeople";
 import axios from "axios";
 import AppLayout from "../Components/AppLayout.vue";
 import StatusPill from "../Components/StatusPill.vue";
@@ -8275,6 +5109,11 @@ import ConflictResolvePanel from "../Components/ConflictResolvePanel.vue";
 import InfoIcon from "../Components/InfoIcon.vue";
 import FlagIcon from "../Components/FlagIcon.vue";
 import ConfirmModal from "../Components/ConfirmModal.vue";
+import NewPlanModal from "../Components/Plans/NewPlanModal.vue";
+import EditMovementModal from "../Components/Plans/EditMovementModal.vue";
+import ConflictsTab from "../Components/Plans/ConflictsTab.vue";
+import PlanList from "../Components/Plans/PlanList.vue";
+import { formatDate, formatDateTime, formatMovementCode, legMinutes } from "../Composables/planFormat";
 import FormDateField from "../Components/FormDateField.vue";
 import ColumnFilter from "../Components/ColumnFilter.vue";
 import { useColumnFilters } from "../Composables/useColumnFilters";
@@ -8298,8 +5137,6 @@ const props = defineProps({
   nextMovementNumber: { type: Number, default: 1 },
 });
 
-// Mirrors Movement::formatCode() on the server.
-const formatMovementCode = (n) => `TRP-${String(n).padStart(5, "0")}`;
 
 // A plan can't be built without these, so the New Plan actions stay disabled
 // until they exist. Venues are listed for completeness but aren't required —
@@ -8325,34 +5162,6 @@ const prerequisiteHint = computed(() =>
 
 const view = ref("plan");
 const showNewPlan = ref(false);
-const newPlanMode = ref("single"); // 'single' or 'bulk' or 'matches'
-const newPlanDate = ref("");
-const newPlanStartTime = ref("09:00");
-const newPlanName = ref("");
-const newPlanTeamId = ref(null);
-const newPlanFlightId = ref(null);
-const newPlanAccommodationId = ref(null);
-const newPlanTemplate = ref("");
-const newPlanMovementPosition = ref(null); // Selected movement position from template
-const newPlanProcessing = ref(false);
-const newPlanErrors = ref({});
-const expandedTeams = ref(new Set()); // Track which teams have flight selector expanded
-const teamFlightSelections = ref({}); // Track selected flight per team
-
-// Duplicate checking state
-const duplicateCheck = ref(null); // { exists, strict, message, existing }
-const duplicateCheckLoading = ref(false);
-const duplicateConfirmed = ref(false); // User confirmed they want to create despite warning
-
-// Bulk duplicate checking state
-const bulkDuplicateChecks = ref(new Map()); // Map<team_id, { exists, strict, message, existing }>
-const bulkDuplicateCheckLoading = ref(false);
-
-// Match duplicate checking state
-const matchDuplicateChecks = ref(new Map()); // Map<matchCheckKey, { exists, strict, message, existing }>
-// A team plays several matches, so one match's movements must not block its others.
-const matchCheckKey = (team) => `${team.match_id}:${team.team_id}`;
-const matchDuplicateCheckLoading = ref(false);
 
 // Edit plan state
 const showEditPlan = ref(false);
@@ -8384,16 +5193,8 @@ const deleteNameMatches = computed(
 
 // Bulk plan deletion ("View All Plans")
 const selectedPlanIds = ref(new Set());
-const visiblePlans = computed(() => plansByDate.value.flatMap((group) => group.plans));
-// Only what's on screen counts, so a filter change never deletes hidden plans.
-const selectedVisiblePlans = computed(() =>
-  visiblePlans.value.filter((plan) => selectedPlanIds.value.has(plan.id))
-);
-const allVisiblePlansSelected = computed(
-  () =>
-    visiblePlans.value.length > 0 &&
-    selectedVisiblePlans.value.length === visiblePlans.value.length
-);
+// The plans the bulk-delete dialog acts on: those ticked and on screen when it opened.
+const bulkDeletePlans = ref([]);
 const showBulkDeletePlans = ref(false);
 const bulkDeleteConfirm = ref("");
 const bulkDeleteError = ref("");
@@ -8402,7 +5203,7 @@ const bulkDeleteProcessing = ref(false);
 const planJobCount = (plan) => (plan.movements || []).filter((mv) => mv.job_id).length;
 
 const bulkDeleteSummary = computed(() => {
-  const plans = selectedVisiblePlans.value;
+  const plans = bulkDeletePlans.value;
   const deletable = plans.filter((plan) => planJobCount(plan) === 0);
   return {
     deletable,
@@ -8421,19 +5222,8 @@ const canConfirmBulkDelete = computed(
     (bulkDeleteSummary.value.movements === 0 || bulkDeleteConfirm.value.trim() === "DELETE")
 );
 
-function togglePlanSelection(plan) {
-  const next = new Set(selectedPlanIds.value);
-  next.has(plan.id) ? next.delete(plan.id) : next.add(plan.id);
-  selectedPlanIds.value = next;
-}
-
-function toggleSelectAllPlans() {
-  selectedPlanIds.value = allVisiblePlansSelected.value
-    ? new Set()
-    : new Set(visiblePlans.value.map((plan) => plan.id));
-}
-
-function openBulkDeletePlans() {
+function openBulkDeletePlans(plans) {
+  bulkDeletePlans.value = plans;
   bulkDeleteConfirm.value = "";
   bulkDeleteError.value = "";
   showBulkDeletePlans.value = true;
@@ -8469,10 +5259,8 @@ function confirmBulkDeletePlans() {
   });
 }
 
-// Edit movement state
-const showEditMovement = ref(false);
+// The movement open in the Edit Movement dialog.
 const editingMovement = ref(null);
-const editMovementProcessing = ref(false);
 
 // Delete movement state
 const showDeleteMovementConfirmation = ref(false);
@@ -8484,6 +5272,15 @@ const selectedMovementIds = ref(new Set());
 const showBulkDeleteMovementsConfirmation = ref(false);
 const bulkDeletingMovements = ref(false);
 
+// Movements with a job can't be deleted (deleteMovementsBulk skips them), so the dialog lists them instead.
+const bulkMovementDelete = computed(() => {
+  const selected = selectedPlanMovements.value.filter((mv) => selectedMovementIds.value.has(mv.id));
+  return {
+    deletable: selected.filter((mv) => !mv.job_id),
+    withJobs: selected.filter((mv) => mv.job_id),
+  };
+});
+
 // Selected movement for detail panel
 const selectedMovement = ref(null);
 
@@ -8493,32 +5290,6 @@ const allPlans = computed(() => props.plans || []);
 // Initialize activePlan from backend prop (session-based, shared with Jobs page)
 const activePlan = ref(props.activePlan);
 
-// Handle team selection change. Date/start-time defaulting is handled by
-// the unified watcher below (it needs the selected template too, to know
-// whether to default from the team's arrival, departure, or match).
-function handleTeamChange() {
-  newPlanErrors.value.team_id = "";
-
-  // Reset flight and accommodation selection when team changes
-  newPlanFlightId.value = null;
-  newPlanAccommodationId.value = null;
-
-  if (newPlanTeamId.value && props.teams) {
-    const selectedTeam = props.teams.find((t) => t.id === newPlanTeamId.value);
-
-    if (selectedTeam) {
-      // Auto-select flight if only one exists
-      if (selectedTeam.flights && selectedTeam.flights.length === 1) {
-        newPlanFlightId.value = selectedTeam.flights[0].id;
-      }
-
-      // Auto-select accommodation if team has one
-      if (selectedTeam.stay) {
-        newPlanAccommodationId.value = selectedTeam.stay.id;
-      }
-    }
-  }
-}
 
 // Watch for changes to activePlan and persist to backend session
 watch(activePlan, (newValue) => {
@@ -8539,25 +5310,6 @@ watch(activePlan, (newValue) => {
   });
 });
 
-// Reset all New Plan form state when the modal is closed, so reopening it
-// never shows a stale value from a previous attempt.
-watch(showNewPlan, (isOpen) => {
-  if (!isOpen) {
-    newPlanMode.value = "single";
-    newPlanDate.value = "";
-    newPlanStartTime.value = "09:00";
-    newPlanName.value = "";
-    newPlanTeamId.value = null;
-    newPlanFlightId.value = null;
-    newPlanAccommodationId.value = null;
-    newPlanTemplate.value = "";
-    newPlanMovementPosition.value = null;
-    newPlanProcessing.value = false;
-    newPlanErrors.value = {};
-    expandedTeams.value.clear();
-    teamFlightSelections.value = {};
-  }
-});
 
 // Watch for flash messages from backend
 const page = usePage();
@@ -8576,7 +5328,6 @@ watch(
 
 const showPlanDropdown = ref(false);
 const planDropdownView = ref('list'); // 'list' or 'grid'
-const plansPageView = ref('grid'); // 'table' or 'grid' for main plans overview page
 const planSearchTerm = ref("");
 const selectedTeam = ref("");
 
@@ -8600,105 +5351,6 @@ function movementPhase(mv) {
 }
 const teamMovementKindFilter = ref(null); // null = all, or 'arrival', 'departure', 'transfer', 'match', etc.
 
-// Plan type filter for By Plan view
-const planTypeFilter = ref(null); // null = all, 'arrival', 'match', 'transfer', 'other'
-const emptyPlansOnly = ref(false);
-const planListSearch = ref("");
-
-// Function to detect plan type from plan name
-function detectPlanType(plan) {
-  const nameLower = (plan.name || '').toLowerCase();
-  if (nameLower.includes('arrival') || nameLower.includes('airport to hotel')) {
-    return 'arrival';
-  }
-  if (nameLower.includes('match') || nameLower.includes('stadium')) {
-    return 'match';
-  }
-  if (nameLower.includes('departure') || nameLower.includes('hotel to airport')) {
-    return 'departure';
-  }
-  if (nameLower.includes('transfer') || nameLower.includes('training')) {
-    return 'transfer';
-  }
-  return 'other';
-}
-
-// Grouped and filtered plans by date
-const plansByDate = computed(() => {
-  let filteredPlans = allPlans.value;
-  
-  // Apply type filter
-  if (planTypeFilter.value) {
-    filteredPlans = filteredPlans.filter(plan => detectPlanType(plan) === planTypeFilter.value);
-  }
-  if (emptyPlansOnly.value) {
-    filteredPlans = filteredPlans.filter(plan => !plan.movements_count);
-  }
-  const term = planListSearch.value.trim().toLowerCase();
-  if (term) {
-    filteredPlans = filteredPlans.filter(plan => [
-      plan.code,
-      plan.name,
-      plan.movement_template?.name,
-      ...(plan.movements || []).map(mv => mv.team?.team_name),
-    ].some(text => text?.toLowerCase().includes(term)));
-  }
-  
-  // Group by date
-  const grouped = {};
-  filteredPlans.forEach(plan => {
-    const date = plan.date;
-    // Skip plans without a valid date
-    if (!date) return;
-    
-    if (!grouped[date]) {
-      grouped[date] = {
-        date,
-        plans: []
-      };
-    }
-    grouped[date].plans.push({
-      ...plan,
-      planType: detectPlanType(plan)
-    });
-  });
-  
-  // Dates ascending; within a day, by the plan's first movement time.
-  const firstStart = (plan) => Math.min(
-    ...(plan.movements || []).map((mv) => (mv.window_start ? new Date(mv.window_start).getTime() : Infinity)),
-    Infinity,
-  );
-  Object.values(grouped).forEach((group) => {
-    group.plans.sort((a, b) => firstStart(a) - firstStart(b) || (a.name || '').localeCompare(b.name || ''));
-  });
-
-  return Object.values(grouped).sort((a, b) => {
-    if (!a.date || !b.date) return 0;
-    return a.date.localeCompare(b.date);
-  });
-});
-
-// Count plans by type
-const planTypesCounts = computed(() => {
-  const counts = {
-    all: allPlans.value.length,
-    arrival: 0,
-    match: 0,
-    departure: 0,
-    transfer: 0,
-    other: 0,
-    empty: 0
-  };
-  
-  allPlans.value.forEach(plan => {
-    const type = detectPlanType(plan);
-    counts[type]++;
-    if (!plan.movements_count) counts.empty++;
-  });
-  
-  return counts;
-});
-
 // Add Team to Plan modal state
 const showAddTeamModal = ref(false);
 const addTeamId = ref(null);
@@ -8714,8 +5366,6 @@ const activeTab = ref(
     : "plans"
 );
 
-const showPreviewModal = ref(false);
-const selectedTemplate = ref(null);
 const showJobInfoModal = ref(false);
 const showRefTimeInfoModal = ref(false);
 const showGenerateJobs = ref(false);
@@ -8750,33 +5400,6 @@ const amTemplate = ref("TPL-MATCH");
 const amDate = ref("");
 const amBaseTime = ref("14:00");
 
-// Edit Movement form state
-const emTeamId = ref("");
-const emKind = ref("");
-const emFrom = ref("");
-const emTo = ref("");
-const emWindowStart = ref("");
-const emWindowEnd = ref("");
-const emVehicleId = ref("");
-const emDriverId = ref("");
-const emUnits = ref([]);
-const emSupervisors = ref([]);
-const emFieldSupervisorId = ref("");
-
-// Same people Crew Assignment offers: the movement's provider's, plus whoever is already on it.
-const supervisorOptions = computed(() => {
-  const mv = editingMovement.value;
-  return supervisorsFor(props.supervisors, mv?.fleet_provider_id, [mv?.field_supervisor_id, ...(mv?.extra_supervisors || []).map((s) => s.id)]);
-});
-const supervisorLabel = personLabel;
-
-// Why a vehicle, driver or supervisor is busy for the movement being edited (same checks as the Conflicts tab).
-const { note: crewNote } = useCrewBusy(() => editingMovement.value?.id ?? null);
-const emPassengers = ref("");
-const emFlightNumber = ref("");
-const emNotes = ref("");
-const emMatchId = ref(null);
-
 
 const amTemplateObj = computed(
   () => props.movementTemplates.find((t) => t.id === amTemplate.value) ?? null
@@ -8805,7 +5428,7 @@ const amTemplateLegs = computed(() => {
   let cumulative = 0;
 
   return tpl.legs.map((leg, i) => {
-    const duration = leg.estimated_duration_minutes ?? 30;
+    const duration = legMinutes(tpl, leg);
     const row = {
       phase: leg.leg_type ?? "transfer",
       from: leg.from_location ?? "—",
@@ -8921,20 +5544,17 @@ const checkpointTemplates = [
 ];
 
 // Candidate pool: the tick-box selection when the user has made one, else
-// everything in view. Already-generated and BUS legs can never be candidates.
+// everything in view. Already-generated legs can never be candidates.
 const genMovements = computed(() => {
   const pool = selectedMovementIds.value.size > 0
     ? selectedPlanMovements.value.filter((mv) => selectedMovementIds.value.has(mv.id))
     : selectedPlanMovements.value;
 
-  return pool.filter((mv) => !mv.job_id && !isBusMovement(mv));
+  return pool.filter((mv) => !mv.job_id);
 });
 
 const genAlreadyCount = computed(
   () => selectedPlanMovements.value.filter((mv) => mv.job_id).length
-);
-const genBusCount = computed(
-  () => selectedPlanMovements.value.filter((mv) => !mv.job_id && isBusMovement(mv)).length
 );
 
 /** The subset that can actually be generated right now — fully crewed. */
@@ -8966,9 +5586,7 @@ const genCanGenerateTooltip = computed(() => {
   const scope = selectedMovementIds.value.size > 0 ? 'selected movement(s)' : 'movement(s)';
 
   if (genMovements.value.length === 0) {
-    return genBusCount.value > 0
-      ? `${genBusCount.value} movement(s) are BUS (no flight) and can't generate a job`
-      : `No ${scope} awaiting job generation`;
+    return `No ${scope} awaiting job generation`;
   }
 
   const missingSupervisor = genMovements.value.filter(mv => !mv.field_supervisor_id).length;
@@ -9006,229 +5624,26 @@ const tabs = computed(() => {
       label: "Movements",
       count: selectedPlanMovements.value.length,
     },
-    { id: "checkpoints", label: "Checkpoints", count: 12 },
     {
       id: "conflicts",
       label: "Conflicts",
       count: openConflicts.value.length,
       danger: openConflicts.value.some((c) => c.sev === "high"),
     },
-    { id: "templates", label: "Templates", count: 5 },
   ];
 
-  // If a plan is selected, hide the Plans tab, Checkpoints tab, and Templates tab
+  // A selected plan shows its movements and conflicts; otherwise only the Plans tab.
   if (activePlan.value) {
-    return allTabs.filter((tab) => tab.id !== "plans" && tab.id !== "checkpoints" && tab.id !== "templates");
+    return allTabs.filter((tab) => tab.id !== "plans");
   }
 
-  // If no plan selected, show only Plans tab
   return allTabs.filter((tab) => tab.id === "plans");
 });
-
-// Mock data for tabs
-const checkpoints = [
-  { id: "CP001", order: 1, name: "Vehicle Dispatch", type: "dispatch" },
-  { id: "CP002", order: 2, name: "Team Pickup", type: "boarding" },
-  { id: "CP003", order: 3, name: "Venue Arrival", type: "arrival" },
-  { id: "CP004", order: 4, name: "Security Check", type: "arrival" },
-  { id: "CP005", order: 5, name: "Team Handoff", type: "handoff" },
-];
 
 const conflicts = computed(() => props.conflicts);
 // Accepted conflicts stay listed but no longer count or mark rows.
 const openConflicts = computed(() => conflicts.value.filter((c) => !c.accepted));
 const resolvingConflict = ref(null);
-
-const templates = [
-  {
-    id: "T001",
-    name: "Match Day - Standard",
-    legs: 4,
-    avg: "3h 45m",
-    description:
-      "Standard match day transportation protocol for team movements",
-    movements: [
-      {
-        order: 1,
-        from: "Team Hotel",
-        to: "Stadium",
-        type: "transfer",
-        duration: "45m",
-        vehicle: "Coach",
-        pax: 35,
-      },
-      {
-        order: 2,
-        from: "Stadium",
-        to: "Media Center",
-        type: "transfer",
-        duration: "20m",
-        vehicle: "Van",
-        pax: 8,
-      },
-      {
-        order: 3,
-        from: "Media Center",
-        to: "Stadium",
-        type: "transfer",
-        duration: "15m",
-        vehicle: "Van",
-        pax: 8,
-      },
-      {
-        order: 4,
-        from: "Stadium",
-        to: "Team Hotel",
-        type: "transfer",
-        duration: "50m",
-        vehicle: "Coach",
-        pax: 35,
-      },
-    ],
-  },
-  {
-    id: "T002",
-    name: "Training Session",
-    legs: 2,
-    avg: "2h 15m",
-    description: "Daily training ground transportation routine",
-    movements: [
-      {
-        order: 1,
-        from: "Team Hotel",
-        to: "Training Ground",
-        type: "transfer",
-        duration: "30m",
-        vehicle: "Coach",
-        pax: 35,
-      },
-      {
-        order: 2,
-        from: "Training Ground",
-        to: "Team Hotel",
-        type: "transfer",
-        duration: "30m",
-        vehicle: "Coach",
-        pax: 35,
-      },
-    ],
-  },
-  {
-    id: "T003",
-    name: "Arrival Protocol",
-    legs: 3,
-    avg: "4h 30m",
-    description:
-      "Team arrival at destination city with airport pickup and hotel check-in",
-    movements: [
-      {
-        order: 1,
-        from: "Airport Gate",
-        to: "Airport Arrivals",
-        type: "arrival",
-        duration: "30m",
-        vehicle: "Walk",
-        pax: 35,
-      },
-      {
-        order: 2,
-        from: "Airport Arrivals",
-        to: "Team Hotel",
-        type: "transfer",
-        duration: "45m",
-        vehicle: "Coach",
-        pax: 35,
-      },
-      {
-        order: 3,
-        from: "Team Hotel",
-        to: "Training Ground",
-        type: "transfer",
-        duration: "40m",
-        vehicle: "Coach",
-        pax: 35,
-      },
-    ],
-  },
-  {
-    id: "T004",
-    name: "Departure Protocol",
-    legs: 3,
-    avg: "3h 15m",
-    description:
-      "Team departure from city with hotel checkout and airport drop-off",
-    movements: [
-      {
-        order: 1,
-        from: "Team Hotel",
-        to: "Airport",
-        type: "transfer",
-        duration: "45m",
-        vehicle: "Coach",
-        pax: 35,
-      },
-      {
-        order: 2,
-        from: "Airport Drop-off",
-        to: "Airport Check-in",
-        type: "departure",
-        duration: "20m",
-        vehicle: "Walk",
-        pax: 35,
-      },
-      {
-        order: 3,
-        from: "Airport Check-in",
-        to: "Departure Gate",
-        type: "departure",
-        duration: "40m",
-        vehicle: "Walk",
-        pax: 35,
-      },
-    ],
-  },
-  {
-    id: "T005",
-    name: "Media Day",
-    legs: 2,
-    avg: "1h 45m",
-    description: "Press conference and media obligations transportation",
-    movements: [
-      {
-        order: 1,
-        from: "Team Hotel",
-        to: "Media Center",
-        type: "transfer",
-        duration: "25m",
-        vehicle: "Van",
-        pax: 12,
-      },
-      {
-        order: 2,
-        from: "Media Center",
-        to: "Team Hotel",
-        type: "transfer",
-        duration: "25m",
-        vehicle: "Van",
-        pax: 12,
-      },
-    ],
-  },
-];
-
-const cpTypeTone = {
-  dispatch: "primary",
-  arrival: "ok",
-  boarding: "live",
-  departure: "primary",
-  handoff: "neutral",
-};
-
-const sevTone = {
-  high: "danger",
-  medium: "warn",
-  low: "neutral",
-};
 
 // movement id -> the conflicts it's part of
 const conflictsByMovement = computed(() => {
@@ -9306,17 +5721,6 @@ const filteredTeamMovements = computed(() => {
   }
   return selectedTeamObj.value.items.filter(
     (mv) => mv.kind === teamMovementKindFilter.value
-  );
-});
-
-// Computed property for matches relevant to the movement being edited
-const relevantMatches = computed(() => {
-  if (!props.matches || !editingMovement.value?.team_id) return [];
-  
-  // Show matches where the movement's team is playing
-  const teamId = editingMovement.value.team?.id;
-  return props.matches.filter(match =>
-    match.team1_id === teamId || match.team2_id === teamId
   );
 });
 
@@ -9735,6 +6139,10 @@ const selectedPlanObj = computed(
 );
 // The plans list ("View All Plans"), as opposed to the event-wide movements view.
 const inAllPlansView = computed(() => !selectedPlanObj.value && activeTab.value === 'plans');
+const allPlanOptions = computed(() => [
+  { id: 'plans', label: 'All plans', sub: `The list of the event's ${allPlans.value.length} plans`, active: inAllPlansView.value, select: viewAllPlans },
+  { id: 'movements', label: 'All movements', sub: 'Every movement of every plan', active: activePlan.value === null && !inAllPlansView.value, select: selectAllMovements },
+]);
 const selectedPlanMovements = computed(() => {
   // If no plan is selected, show all movements from all plans
   if (!activePlan.value) {
@@ -9810,7 +6218,6 @@ const prefilteredPlanMovements = computed(() => {
 const wallClock = (value) => (value ? String(value).replace('T', ' ').slice(0, 16) : null);
 
 function movementRefTime(mv) {
-  if (isBusMovement(mv)) return null;
   if ((mv.kind === 'arrival' || mv.kind === 'departure') && mv.flight?.scheduled_at) return wallClock(mv.flight.scheduled_at);
   if (mv.match_id && mv.match?.kick_off) return wallClock(mv.match.kick_off);
   return null;
@@ -9837,10 +6244,10 @@ const movementColumns = useColumnFilters({
   phase: { value: (mv) => phaseLabels[movementPhase(mv)] || movementPhase(mv) || '' },
   ref: { sort: movementRefTime },
   team: { value: (mv) => mv.team?.team_name || '' },
-  window: { sort: (mv) => (isBusMovement(mv) ? null : wallClock(mv.window_start)) },
+  window: { sort: (mv) => wallClock(mv.window_start) },
   vehicle: { value: (mv) => mv.vehicle?.code || '' },
   pax: { sort: (mv) => Number(mv.flight?.party_size_total ?? mv.pax ?? mv.passengers) || null },
-  job: { value: (mv) => (mv.job_id ? 'Generated' : isBusMovement(mv) ? 'N/A (bus)' : 'Not generated') },
+  job: { value: (mv) => (mv.job_id ? 'Generated' : 'Not generated') },
 });
 const movementColumnsActive = movementColumns.active;
 
@@ -9884,7 +6291,7 @@ function movementDayKey(mv) {
 }
 
 function missingCrew(mv) {
-  if (mv.job_id || isBusMovement(mv)) return [];
+  if (mv.job_id) return [];
   return [
     !mv.vehicle_id && "vehicle",
     !mv.driver_id && "driver",
@@ -10120,12 +6527,11 @@ function dateMovementCount(date) {
     .length;
 }
 
-// Ready = not already generated, schedulable (BUS legs have no reference time),
+// Ready = not already generated
 // and fully crewed — vehicle, driver and supervisor all assigned.
 function isReadyForGeneration(mv) {
   return (
     !mv.job_id &&
-    !isBusMovement(mv) &&
     Boolean(mv.vehicle_id) &&
     Boolean(mv.driver_id) &&
     Boolean(mv.field_supervisor_id)
@@ -10149,30 +6555,6 @@ const notReadyForGenerationCount = computed(
   () => selectedPlanMovements.value.length - readyForGenerationCount.value - generatedCount.value
 );
 
-const selectedNewPlanTemplate = computed(() => {
-  if (!newPlanTemplate.value) return null;
-  return props.movementTemplates.find((t) => t.id === newPlanTemplate.value);
-});
-
-// "Bulk by Arrival" groups teams by arrival/departure date, so only templates
-// meant for those movements make sense to offer there.
-const bulkArrivalMovementTemplates = computed(() =>
-  props.movementTemplates.filter((t) => ["arrival_day", "departure_day"].includes(t.scenario_type))
-);
-
-// "Bulk by Matches" schedules a movement ahead of each match, so only
-// match-day templates make sense to offer there.
-const matchDayMovementTemplates = computed(() =>
-  props.movementTemplates.filter((t) => t.scenario_type === "match_day")
-);
-
-// Resolved server-side from Settings (checkpoint override, then event, then global).
-const matchStartOffsetMinutes = computed(
-  () => selectedNewPlanTemplate.value?.match_start_offset?.minutes ?? 0
-);
-const matchStartOffsetSource = computed(
-  () => selectedNewPlanTemplate.value?.match_start_offset?.source ?? "no offset configured yet"
-);
 
 function matchLineup(match) {
   const side = (team) => team?.code || team?.team_name || "TBD";
@@ -10192,331 +6574,6 @@ function phaseLines(mv) {
   return [];
 }
 
-function describeKickoffOffset(minutes) {
-  if (!minutes) return "at kick-off";
-  const abs = Math.abs(minutes);
-  const hours = Math.floor(abs / 60);
-  const mins = abs % 60;
-  const span = [
-    hours ? `${hours} hour${hours === 1 ? "" : "s"}` : "",
-    mins ? `${mins} min` : "",
-  ].filter(Boolean).join(" ");
-  return `${span} ${minutes < 0 ? "before" : "after"} kick-off`;
-}
-
-const selectedNewPlanTeam = computed(() => {
-  if (!newPlanTeamId.value) return null;
-  return props.teams.find((t) => t.id === newPlanTeamId.value);
-});
-
-const selectedTeamFlights = computed(() => {
-  return selectedNewPlanTeam.value?.flights || [];
-});
-
-const needsFlightSelection = computed(() => {
-  return selectedTeamFlights.value.length > 1;
-});
-
-// Find next match for selected team
-const selectedTeamNextMatch = computed(() => {
-  if (!newPlanTeamId.value || !props.matches || props.matches.length === 0) {
-    return null;
-  }
-  
-  const selectedTeam = selectedNewPlanTeam.value;
-  if (!selectedTeam) return null;
-  
-  const teamId = selectedTeam.id;
-  if (!teamId) return null;
-
-  // Find all matches for this team
-  const teamMatches = props.matches.filter(match =>
-    match.team1_id === teamId || match.team2_id === teamId
-  );
-  
-  if (teamMatches.length === 0) return null;
-  
-  // Sort by kick_off date and return the first one (or next upcoming)
-  const sortedMatches = teamMatches.sort((a, b) => 
-    new Date(a.kick_off) - new Date(b.kick_off)
-  );
-  
-  return sortedMatches[0];
-});
-
-// Bulk plan preview - group teams by arrival date (or departure date when a departure template is selected)
-const bulkPreview = computed(() => {
-  const teamsWithDates = [];
-  const teamsWithoutDates = [];
-  const dateGroups = {};
-
-  const template = selectedNewPlanTemplate.value;
-  const templateText = `${template?.scenario_type || ''} ${template?.name || ''} ${template?.code || ''}`.toLowerCase();
-  const isMatchTemplate = templateText.includes('match');
-  const isDepartureTemplate = !isMatchTemplate && templateText.includes('departure');
-
-  // Group teams by arrival date, unless the selected template is a departure
-  // movement, in which case teams must be grouped by their departure date
-  props.teams.forEach((team) => {
-    const flightPool = isDepartureTemplate ? (team.departure_flights || []) : (team.flights || []);
-
-    // Get selected flight or default to first flight
-    const defaultFlightId = isDepartureTemplate ? flightPool[0]?.id : team.selected_flight_id;
-    const selectedFlightId = teamFlightSelections.value[team.id] || defaultFlightId;
-    const selectedFlight = flightPool.find(f => f.id === selectedFlightId) || flightPool[0];
-
-    // Ensure team has valid display properties with fallbacks
-    const normalizedTeam = {
-      ...team,
-      code: team.code || team.team || 'TEAM',
-      team_name: team.team_name || team.team || 'Unnamed Team',
-      flights: flightPool,
-      arrival_date_time: selectedFlight?.scheduled_at || (isDepartureTemplate ? team.departure_date_time : team.arrival_date_time),
-      arrival_date: selectedFlight?.scheduled_date || (isDepartureTemplate ? team.departure_date : team.arrival_date),
-      selected_flight: selectedFlight,
-      has_multiple_flights: flightPool.length > 1,
-    };
-    
-    if (normalizedTeam.arrival_date_time || normalizedTeam.arrival_date) {
-      const arrivalDate = normalizedTeam.arrival_date_time || normalizedTeam.arrival_date;
-      const dateOnly = arrivalDate.split(/[ T]/)[0]; // Extract YYYY-MM-DD
-
-      if (!dateGroups[dateOnly]) {
-        dateGroups[dateOnly] = [];
-      }
-      dateGroups[dateOnly].push(normalizedTeam);
-      teamsWithDates.push(normalizedTeam);
-    } else {
-      teamsWithoutDates.push(normalizedTeam);
-    }
-  });
-
-  // Convert to array of plans sorted by date
-  const plans = Object.entries(dateGroups)
-    .map(([date, teams]) => ({
-      date,
-      teams: teams.sort((a, b) => (a.code || "").localeCompare(b.code || "")),
-    }))
-    .sort((a, b) => a.date.localeCompare(b.date));
-
-  return {
-    plans,
-    plansCount: plans.length,
-    teamsWithDates: teamsWithDates.length,
-    teamsWithoutDates: teamsWithoutDates.length,
-    teamsWithoutDatesList: teamsWithoutDates.sort((a, b) =>
-      (a.code || "").localeCompare(b.code || "")
-    ),
-    isDepartureTemplate,
-  };
-});
-
-// Computed property for bulk plans excluding conflicts
-const bulkAllowedPreview = computed(() => {
-  if (bulkPreview.value.plans.length === 0) {
-    return {
-      plansCount: 0,
-      teamsCount: 0,
-      hasStrictDuplicates: false,
-    };
-  }
-
-  let allowedPlansCount = 0;
-  let allowedTeamsCount = 0;
-  let hasStrictDuplicates = false;
-
-  // For each plan (date group), count teams that don't have strict duplicates
-  bulkPreview.value.plans.forEach((plan) => {
-    const allowedTeamsInPlan = plan.teams.filter((team) => {
-      const check = bulkDuplicateChecks.value.get(team.id);
-      const isBlocked = check?.exists && check?.strict;
-      if (isBlocked) hasStrictDuplicates = true;
-      return !isBlocked;
-    });
-
-    if (allowedTeamsInPlan.length > 0) {
-      allowedPlansCount++;
-      allowedTeamsCount += allowedTeamsInPlan.length;
-    }
-  });
-
-  return {
-    plansCount: allowedPlansCount,
-    teamsCount: allowedTeamsCount,
-    hasStrictDuplicates,
-  };
-});
-
-// Computed property for matches preview
-const matchesPreview = computed(() => {
-  const teamsByMatchTime = {}; // Group teams by match (not just date)
-  
-  if (!props.matches || props.matches.length === 0) {
-    return {
-      plans: [],
-      plansCount: 0,
-      teamsCount: 0,
-      matchesCount: 0,
-    };
-  }
-
-  // For each match, create a separate plan entry
-  props.matches.forEach((match) => {
-    if (!match.kick_off) return;
-
-    const kickOffDate = new Date(match.kick_off);
-    
-    // Use the match date (not the plan start date which could roll back to previous day)
-    const matchDate = kickOffDate.toISOString().split('T')[0];
-    
-    // Calculate plan start time from the template's configured match offset
-    const planStartDate = new Date(kickOffDate.getTime() + matchStartOffsetMinutes.value * 60 * 1000);
-    const planTime = planStartDate.toTimeString().slice(0, 5);
-    
-    // Create a unique key for this match to group its teams together
-    const matchKey = `${matchDate}_${match.id}`;
-
-    // Initialize match group if needed
-    if (!teamsByMatchTime[matchKey]) {
-      teamsByMatchTime[matchKey] = {
-        date: matchDate, // Use match date, not plan start date
-        match_id: match.id,
-        match_number: match.match_number,
-        venue: match.venue?.name || 'TBD',
-        kick_off: match.kick_off,
-        kick_off_time: formatDateTime(match.kick_off),
-        plan_time: planTime,
-        teams: [],
-      };
-    }
-
-    // Add team1
-    if (match.team1_id && match.team1) {
-      teamsByMatchTime[matchKey].teams.push({
-        match_id: match.id,
-        team_id: match.team1.id,
-        team_code: match.team1.code,
-        team_name: match.team1.team_name || match.team1.team,
-        match_number: match.match_number,
-        opponent: match.team2?.team_name || match.team2?.team || 'TBD',
-        venue: match.venue?.name || 'TBD',
-        kick_off_time: formatDateTime(match.kick_off),
-        kick_off_time_only: kickOffDate.toTimeString().slice(0, 5),
-        plan_start_time: formatDateTime(planStartDate.toISOString()),
-        plan_time: planTime,
-      });
-    }
-
-    // Add team2
-    if (match.team2_id && match.team2) {
-      teamsByMatchTime[matchKey].teams.push({
-        match_id: match.id,
-        team_id: match.team2.id,
-        team_code: match.team2.code,
-        team_name: match.team2.team_name || match.team2.team,
-        match_number: match.match_number,
-        opponent: match.team1?.team_name || match.team1?.team || 'TBD',
-        venue: match.venue?.name || 'TBD',
-        kick_off_time: formatDateTime(match.kick_off),
-        kick_off_time_only: kickOffDate.toTimeString().slice(0, 5),
-        plan_start_time: formatDateTime(planStartDate.toISOString()),
-        plan_time: planTime,
-      });
-    }
-  });
-
-  // Convert to array and sort by date and time
-  const plans = Object.values(teamsByMatchTime).sort((a, b) => {
-    const dateCompare = a.date.localeCompare(b.date);
-    if (dateCompare !== 0) return dateCompare;
-    return a.plan_time.localeCompare(b.plan_time);
-  });
-
-  const allTeams = plans.flatMap(p => p.teams);
-  const uniqueTeams = new Set(allTeams.map(t => t.team_id));
-
-  // Debug: Log what matches are in the preview
-  console.log('Matches Preview:', {
-    totalPlans: plans.length,
-    dates: [...new Set(plans.map(p => p.date))].sort(),
-    planDetails: plans.map(p => ({
-      date: p.date,
-      match: p.match_number,
-      teams: p.teams.map(t => t.team_code)
-    }))
-  });
-
-  return {
-    plans,
-    plansCount: plans.length,
-    teamsCount: uniqueTeams.size,
-    matchesCount: props.matches.length,
-  };
-});
-
-// Computed property for matches excluding conflicts
-const matchAllowedPreview = computed(() => {
-  if (matchesPreview.value.plans.length === 0) {
-    return {
-      plansCount: 0,
-      teamsCount: 0,
-      hasStrictDuplicates: false,
-    };
-  }
-
-  let allowedPlansCount = 0;
-  let allowedTeamsCount = 0;
-  let hasStrictDuplicates = false;
-
-  // For each plan (date group), count teams that don't have strict duplicates
-  matchesPreview.value.plans.forEach((plan) => {
-    const allowedTeamsInPlan = plan.teams.filter((team) => {
-      const check = matchDuplicateChecks.value.get(matchCheckKey(team));
-      const isBlocked = check?.exists && check?.strict;
-      if (isBlocked) hasStrictDuplicates = true;
-      return !isBlocked;
-    });
-
-    if (allowedTeamsInPlan.length > 0) {
-      allowedPlansCount++;
-      allowedTeamsCount += allowedTeamsInPlan.length;
-    }
-  });
-
-  return {
-    plansCount: allowedPlansCount,
-    teamsCount: allowedTeamsCount,
-    hasStrictDuplicates,
-  };
-});
-
-function previewLegTime(index, type) {
-  const legs = selectedNewPlanTemplate.value?.legs;
-  if (!legs) return "—";
-  if (!newPlanDate.value) return "—";
-
-  // Parse date and start time
-  const [hours, minutes] = (newPlanStartTime.value || "09:00")
-    .split(":")
-    .map(Number);
-  const base = new Date(newPlanDate.value);
-  if (isNaN(base.getTime())) return "—";
-
-  // Set the start time
-  base.setHours(hours, minutes, 0, 0);
-
-  // Calculate cumulative offset from previous legs
-  let offsetMin = 0;
-  for (let i = 0; i < index; i++)
-    offsetMin += legs[i].estimated_duration_minutes || 0;
-
-  const start = new Date(base.getTime() + offsetMin * 60000);
-  const end = new Date(
-    start.getTime() + (legs[index].estimated_duration_minutes || 0) * 60000
-  );
-  const fmt = (d) => d.toTimeString().slice(0, 5);
-  return type === "start" ? fmt(start) : fmt(end);
-}
 
 const planStatusPillStyle = (status) => {
   const s = PLAN_STATUS_STYLE[status] ?? PLAN_STATUS_STYLE.upcoming;
@@ -10560,100 +6617,7 @@ const allFilteredPlansEmpty = computed(() =>
   groupedFilteredPlans.value.every((g) => g.plans.length === 0)
 );
 
-function formatDateTime(dateString) {
-  if (!dateString) return "";
 
-  // Handle "YYYY-MM-DD HH:mm:ss" format without timezone conversion
-  if (
-    typeof dateString === "string" &&
-    dateString.match(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}/)
-  ) {
-    const [datePart, timePart] = dateString.split(" ");
-    const [year, month, day] = datePart.split("-");
-    const [hour, minute] = timePart.split(":");
-    const monthNames = [
-      "Jan",
-      "Feb",
-      "Mar",
-      "Apr",
-      "May",
-      "Jun",
-      "Jul",
-      "Aug",
-      "Sep",
-      "Oct",
-      "Nov",
-      "Dec",
-    ];
-    return `${day} ${monthNames[parseInt(month) - 1]} ${hour}:${minute}`;
-  }
-
-  // Fallback: just return date for other formats
-  const date = new Date(dateString);
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
-
-function formatDate(dateString) {
-  if (!dateString) return "";
-  
-  // Handle different date formats
-  let date;
-  if (typeof dateString === 'string') {
-    // If already contains time, use as-is
-    if (dateString.includes('T') || dateString.includes(' ')) {
-      date = new Date(dateString);
-    } else {
-      // YYYY-MM-DD format - add time to avoid timezone issues
-      date = new Date(dateString + "T00:00:00");
-    }
-  } else {
-    date = new Date(dateString);
-  }
-  
-  // Check if date is valid
-  if (isNaN(date.getTime())) {
-    return dateString; // Return original if invalid
-  }
-  
-  const monthNames = [
-    "Jan",
-    "Feb",
-    "Mar",
-    "Apr",
-    "May",
-    "Jun",
-    "Jul",
-    "Aug",
-    "Sep",
-    "Oct",
-    "Nov",
-    "Dec",
-  ];
-  const day = date.getDate();
-  const month = monthNames[date.getMonth()];
-  const year = date.getFullYear();
-  return `${day} ${month} ${year}`;
-}
-
-function toggleTeamFlightExpansion(teamId) {
-  if (expandedTeams.value.has(teamId)) {
-    expandedTeams.value.delete(teamId);
-  } else {
-    expandedTeams.value.add(teamId);
-  }
-  // Trigger reactivity
-  expandedTeams.value = new Set(expandedTeams.value);
-}
-
-function selectTeamFlight(teamId, flightId) {
-  teamFlightSelections.value[teamId] = flightId;
-  // Close the expansion after selection
-  expandedTeams.value.delete(teamId);
-  expandedTeams.value = new Set(expandedTeams.value);
-}
 
 function isBusMovement(mv) {
   return (
@@ -10695,11 +6659,12 @@ function selectPlan(planId) {
   activeTab.value = "movements";
 }
 
-function selectAllPlans() {
+// Every plan's movements in one table (each row tagged with its plan code).
+function selectAllMovements() {
   activePlan.value = null;
   planSearchTerm.value = "";
   showPlanDropdown.value = false;
-  // Keep current view and tab - just show all movements
+  activeTab.value = "movements";
 }
 
 function viewAllPlans() {
@@ -10709,650 +6674,6 @@ function viewAllPlans() {
   showPlanDropdown.value = false;
 }
 
-// Check for duplicate movements
-async function checkForDuplicate() {
-  // Reset duplicate state
-  duplicateCheck.value = null;
-  duplicateConfirmed.value = false;
-
-  // Skip if required fields missing
-  if (!newPlanTeamId.value || !newPlanDate.value) {
-    return;
-  }
-
-  // Only check if we're creating from a template (movements will be generated)
-  if (!newPlanTemplate.value) {
-    return;
-  }
-
-  // Determine what to check based on template legs
-  const template = selectedNewPlanTemplate.value;
-  if (!template || !template.legs || template.legs.length === 0) {
-    return;
-  }
-
-  duplicateCheckLoading.value = true;
-
-  try {
-    // Determine which legs to check
-    let legsToCheck = [];
-    
-    if (newPlanMovementPosition.value !== null) {
-      // User selected a specific movement position - check only that leg
-      const selectedLeg = template.legs[newPlanMovementPosition.value];
-      if (selectedLeg) {
-        legsToCheck = [selectedLeg];
-      }
-    } else {
-      // No specific position selected - check all legs
-      legsToCheck = template.legs;
-    }
-
-    // Check each leg for duplicates
-    for (const leg of legsToCheck) {
-      const legType = leg.leg_type?.toLowerCase();
-      
-      // Skip if leg type is not defined or not a duplicate-checkable type
-      if (!legType) continue;
-      
-      let checkData = {
-        team_id: newPlanTeamId.value,
-        window_start: newPlanDate.value + ' ' + (newPlanStartTime.value || '09:00') + ':00',
-        kind: legType,
-      };
-
-      // For arrival/departure legs, check flight duplicates
-      if ((legType === 'arrival' || legType === 'departure') && newPlanFlightId.value) {
-        checkData.flight_id = newPlanFlightId.value;
-        
-        const response = await axios.post('/api/check-duplicate', checkData);
-        
-        if (response.data.exists) {
-          // Found a duplicate - stop checking and show error
-          duplicateCheck.value = response.data;
-          break;
-        }
-      }
-      // For match legs, check match duplicates (if we have match_id in future)
-      else if (legType === 'match') {
-        // Match duplicates would need match_id - skip for now
-        // In the future, we could get match_id from selectedTeamNextMatch
-        continue;
-      }
-      // For transfer/training/daily_ops, check location-based duplicates
-      else if (['transfer', 'training', 'daily_ops'].includes(legType) && leg.from_location && leg.to_location) {
-        checkData.from_location = leg.from_location;
-        checkData.to_location = leg.to_location;
-        
-        const response = await axios.post('/api/check-duplicate', checkData);
-        
-        if (response.data.exists) {
-          // Found a potential duplicate - show warning
-          duplicateCheck.value = response.data;
-          // Don't break - soft warnings allow proceeding
-          break;
-        }
-      }
-    }
-  } catch (error) {
-    console.error('Duplicate check failed:', error);
-  } finally {
-    duplicateCheckLoading.value = false;
-  }
-}
-
-// Check for duplicates in bulk mode (all teams in bulk preview)
-async function checkBulkDuplicates() {
-  // Reset state
-  bulkDuplicateChecks.value = new Map();
-  
-  // Skip if no template selected or not in bulk mode
-  if (!newPlanTemplate.value || newPlanMode.value !== 'bulk') {
-    return;
-  }
-  
-  const template = selectedNewPlanTemplate.value;
-  if (!template || !template.legs || template.legs.length === 0) {
-    return;
-  }
-  
-  // Skip if no teams in preview
-  if (bulkPreview.value.plans.length === 0) {
-    return;
-  }
-  
-  bulkDuplicateCheckLoading.value = true;
-
-  try {
-    // Build one duplicate-check item per (team, leg) and send them all in a
-    // single batched request — with dozens of teams, one request per team
-    // (even fired concurrently) is still bottlenecked by the dev server's
-    // limited worker pool and can take a minute or more.
-    const checks = [];
-    const teamIdByKey = new Map();
-    let seq = 0;
-
-    for (const plan of bulkPreview.value.plans) {
-      for (const team of plan.teams) {
-        for (const leg of template.legs) {
-          const legType = leg.leg_type?.toLowerCase();
-
-          // Skip if leg type is not defined
-          if (!legType) continue;
-
-          // Extract start time from team's arrival_date_time
-          let startTime = '09:00';
-          if (team.arrival_date_time) {
-            const timeMatch = team.arrival_date_time.match(/[T ](\d{2}):(\d{2})/);
-            if (timeMatch) {
-              startTime = `${timeMatch[1]}:${timeMatch[2]}`;
-            }
-          }
-
-          const key = String(seq++);
-          let checkData = {
-            key,
-            team_id: team.id,
-            window_start: plan.date + ' ' + startTime + ':00',
-            kind: legType,
-          };
-
-          // For arrival/departure legs, check flight duplicates
-          if ((legType === 'arrival' || legType === 'departure')) {
-            const flightId = team.selected_flight?.id || team.flights?.[0]?.id;
-            if (flightId) {
-              checkData.flight_id = flightId;
-              checks.push(checkData);
-              teamIdByKey.set(key, team.id);
-            }
-          }
-          // For transfer/training/daily_ops, check location-based duplicates
-          else if (['transfer', 'training', 'daily_ops'].includes(legType) && leg.from_location && leg.to_location) {
-            checkData.from_location = leg.from_location;
-            checkData.to_location = leg.to_location;
-            checks.push(checkData);
-            teamIdByKey.set(key, team.id);
-          }
-        }
-      }
-    }
-
-    if (checks.length > 0) {
-      const response = await axios.post('/api/check-duplicate-bulk', { checks });
-      for (const [key, result] of Object.entries(response.data.results)) {
-        const teamId = teamIdByKey.get(key);
-        if (result.exists && teamId && !bulkDuplicateChecks.value.has(teamId)) {
-          // Store the duplicate check result for this team (first leg to find one wins)
-          bulkDuplicateChecks.value.set(teamId, result);
-        }
-      }
-    }
-  } catch (error) {
-    console.error('Bulk duplicate check failed:', error);
-  } finally {
-    bulkDuplicateCheckLoading.value = false;
-  }
-}
-
-// Check for duplicates in matches mode (all teams in matches preview)
-async function checkMatchDuplicates() {
-  // Reset state
-  matchDuplicateChecks.value = new Map();
-  
-  // Skip if no template selected or not in matches mode
-  if (!newPlanTemplate.value || newPlanMode.value !== 'matches') {
-    return;
-  }
-  
-  const template = selectedNewPlanTemplate.value;
-  if (!template || !template.legs || template.legs.length === 0) {
-    return;
-  }
-  
-  // Skip if no teams in preview
-  if (matchesPreview.value.plans.length === 0) {
-    return;
-  }
-  
-  matchDuplicateCheckLoading.value = true;
-  
-  // Debug: Log what's being checked
-  console.log('Checking match duplicates for:', {
-    totalPlans: matchesPreview.value.plans.length,
-    dates: matchesPreview.value.plans.map(p => p.date),
-    teams: matchesPreview.value.plans.flatMap(p => p.teams.map(t => ({ date: p.date, team: t.team_code, team_id: t.team_id })))
-  });
-  
-  try {
-    // Build one duplicate-check item per (team, leg) and send them all in a
-    // single batched request — with dozens of teams, one request per team
-    // (even fired concurrently) is still bottlenecked by the dev server's
-    // limited worker pool and can take a minute or more.
-    const checks = [];
-    const teamIdByKey = new Map();
-    let seq = 0;
-
-    for (const plan of matchesPreview.value.plans) {
-      for (const team of plan.teams) {
-        for (const leg of template.legs) {
-          const legType = leg.leg_type?.toLowerCase();
-
-          // Skip if leg type is not defined
-          if (!legType) continue;
-
-          const key = String(seq++);
-          let checkData = {
-            key,
-            team_id: team.team_id,
-            window_start: plan.date + ' ' + team.plan_time + ':00',
-            kind: legType,
-          };
-
-          // For match legs, check match duplicates
-          if (legType === 'match' && team.match_id) {
-            checkData.match_id = team.match_id;
-            checkData.checkpoint_template_id = leg.checkpoint_template_id || null;
-            checks.push(checkData);
-            teamIdByKey.set(key, matchCheckKey(team));
-          }
-          // For arrival/departure legs, check flight duplicates if available
-          else if ((legType === 'arrival' || legType === 'departure')) {
-            // For match mode, we might not have flight info readily available
-            // Skip flight-specific checks for now
-            continue;
-          }
-          // For transfer/training/daily_ops, check location-based duplicates
-          else if (['transfer', 'training', 'daily_ops'].includes(legType) && leg.from_location && leg.to_location) {
-            checkData.from_location = leg.from_location;
-            checkData.to_location = leg.to_location;
-            checks.push(checkData);
-            teamIdByKey.set(key, matchCheckKey(team));
-          }
-        }
-      }
-    }
-
-    if (checks.length > 0) {
-      const response = await axios.post('/api/check-duplicate-bulk', { checks });
-      for (const [key, result] of Object.entries(response.data.results)) {
-        const teamId = teamIdByKey.get(key);
-        if (result.exists && teamId && !matchDuplicateChecks.value.has(teamId)) {
-          // Store the duplicate check result for this team (first leg to find one wins)
-          matchDuplicateChecks.value.set(teamId, result);
-        }
-      }
-    }
-  } catch (error) {
-    console.error('Match duplicate check failed:', error);
-  } finally {
-    matchDuplicateCheckLoading.value = false;
-    
-    // Debug: Log duplicate check results
-    console.log('Match duplicate check complete:', {
-      totalChecked: matchesPreview.value.plans.flatMap(p => p.teams).length,
-      duplicatesFound: matchDuplicateChecks.value.size,
-      strictDuplicates: Array.from(matchDuplicateChecks.value.entries())
-        .filter(([_, check]) => check.exists && check.strict)
-        .map(([team_id, check]) => ({ team_id, message: check.message })),
-      softWarnings: Array.from(matchDuplicateChecks.value.entries())
-        .filter(([_, check]) => check.exists && !check.strict)
-        .map(([team_id, check]) => ({ team_id, message: check.message }))
-    });
-  }
-}
-
-// Watch for changes to check duplicates
-watch(
-  [() => newPlanTeamId.value, () => newPlanFlightId.value, () => newPlanTemplate.value, () => newPlanDate.value, () => newPlanStartTime.value, () => newPlanMovementPosition.value],
-  () => {
-    if (newPlanMode.value === 'single') {
-      checkForDuplicate();
-    }
-  },
-  { deep: true }
-);
-
-// Reset duplicate check when modal opens/closes
-watch(() => showNewPlan.value, (isOpen) => {
-  if (!isOpen) {
-    duplicateCheck.value = null;
-    duplicateCheckLoading.value = false;
-    duplicateConfirmed.value = false;
-    bulkDuplicateChecks.value = new Map();
-    bulkDuplicateCheckLoading.value = false;
-    matchDuplicateChecks.value = new Map();
-    matchDuplicateCheckLoading.value = false;
-  }
-});
-
-// Watch for changes to trigger bulk duplicate checks
-watch(
-  [() => newPlanTemplate.value, () => bulkPreview.value.plans, () => teamFlightSelections.value],
-  () => {
-    if (newPlanMode.value === 'bulk') {
-      checkBulkDuplicates();
-    }
-  },
-  { deep: true }
-);
-
-// Watch for changes to trigger match duplicate checks
-watch(
-  [() => newPlanTemplate.value, () => matchesPreview.value.plans],
-  () => {
-    if (newPlanMode.value === 'matches') {
-      checkMatchDuplicates();
-    }
-  },
-  { deep: true }
-);
-
-// Reset movement position when template changes
-watch(() => newPlanTemplate.value, () => {
-  newPlanMovementPosition.value = null;
-});
-
-// Auto-set date/time from the selected team, based on what kind of
-// template is selected: match templates default from the team's next
-// match kick-off, departure templates from the team's departure flight,
-// and everything else (including blank) from the team's arrival flight.
-watch([() => newPlanTemplate.value, () => newPlanTeamId.value], () => {
-  if (!newPlanTeamId.value || !props.teams) {
-    return;
-  }
-  const selectedTeam = props.teams.find((t) => t.id === newPlanTeamId.value);
-  if (!selectedTeam) {
-    return;
-  }
-
-  const template = selectedNewPlanTemplate.value;
-  const templateText = `${template?.scenario_type || ''} ${template?.name || ''} ${template?.code || ''}`.toLowerCase();
-  const isMatchTemplate = templateText.includes('match');
-  const isDepartureTemplate = !isMatchTemplate && templateText.includes('departure');
-
-  newPlanErrors.value.date = "";
-
-  if (isMatchTemplate) {
-    if (!selectedTeamNextMatch.value) return;
-
-    // Set date and time from the match kick-off and the template's configured offset
-    const kickOffDate = new Date(selectedTeamNextMatch.value.kick_off);
-    const planStartDate = new Date(kickOffDate.getTime() + matchStartOffsetMinutes.value * 60 * 1000);
-
-    const year = planStartDate.getFullYear();
-    const month = String(planStartDate.getMonth() + 1).padStart(2, '0');
-    const day = String(planStartDate.getDate()).padStart(2, '0');
-    newPlanDate.value = `${year}-${month}-${day}`;
-
-    const hours = String(planStartDate.getHours()).padStart(2, '0');
-    const minutes = String(planStartDate.getMinutes()).padStart(2, '0');
-    newPlanStartTime.value = `${hours}:${minutes}`;
-    return;
-  }
-
-  if (isDepartureTemplate) {
-    if (!selectedTeam.departure_date_time) {
-      newPlanDate.value = "";
-      newPlanStartTime.value = "";
-      newPlanErrors.value.date = `No departure flight set or created for ${selectedTeam.team_name}.`;
-      return;
-    }
-    const dt = selectedTeam.departure_date_time;
-    const dateMatch = dt.match(/(\d{4}-\d{2}-\d{2})/);
-    if (dateMatch) newPlanDate.value = dateMatch[1];
-    const timeMatch = dt.match(/[T ](\d{2}):(\d{2})/);
-    if (timeMatch) newPlanStartTime.value = `${timeMatch[1]}:${timeMatch[2]}`;
-    return;
-  }
-
-  // Default: arrival-based
-  if (selectedTeam.arrival_date_time) {
-    const dt = selectedTeam.arrival_date_time;
-    const dateMatch = dt.match(/(\d{4}-\d{2}-\d{2})/);
-    if (dateMatch) newPlanDate.value = dateMatch[1];
-    const timeMatch = dt.match(/[T ](\d{2}):(\d{2})/);
-    if (timeMatch) newPlanStartTime.value = `${timeMatch[1]}:${timeMatch[2]}`;
-  }
-});
-
-function createPlan() {
-  // Reset errors
-  newPlanErrors.value = {};
-
-  // Validate required fields
-  if (!newPlanDate.value) {
-    newPlanErrors.value.date = "Date is required";
-    return;
-  }
-
-  // Validate flight selection if team has multiple flights
-  if (needsFlightSelection.value && !newPlanFlightId.value) {
-    newPlanErrors.value.flight_id = "Please select a flight";
-    return;
-  }
-
-  // Check for strict duplicates - block submission
-  if (duplicateCheck.value?.exists && duplicateCheck.value?.strict) {
-    newPlanErrors.value.duplicate = duplicateCheck.value.message;
-    return;
-  }
-
-  // Check for soft warning - require confirmation
-  if (duplicateCheck.value?.exists && !duplicateCheck.value?.strict && !duplicateConfirmed.value) {
-    if (!confirm(duplicateCheck.value.message + '\n\nCreate anyway?')) {
-      return;
-    }
-    duplicateConfirmed.value = true;
-  }
-
-  newPlanProcessing.value = true;
-
-  router.post(
-    "/plans",
-    {
-      date: newPlanDate.value,
-      start_time: newPlanStartTime.value || "09:00",
-      name: newPlanName.value || null,
-      team_id: newPlanTeamId.value || null,
-      flight_id: newPlanFlightId.value || null,
-      accommodation_id: newPlanAccommodationId.value || null,
-      movement_template_id: newPlanTemplate.value || null,
-      movement_position: newPlanMovementPosition.value,
-    },
-    {
-      onSuccess: () => {
-        showNewPlan.value = false;
-        newPlanDate.value = "";
-        newPlanStartTime.value = "09:00";
-        newPlanName.value = "";
-        newPlanTeamId.value = null;
-        newPlanFlightId.value = null;
-        newPlanAccommodationId.value = null;
-        newPlanTemplate.value = "";
-        newPlanMovementPosition.value = null;
-        newPlanErrors.value = {};
-        duplicateCheck.value = null;
-        duplicateCheckLoading.value = false;
-        duplicateConfirmed.value = false;
-      },
-      onError: (errors) => {
-        newPlanErrors.value = errors;
-      },
-      onFinish: () => {
-        newPlanProcessing.value = false;
-      },
-    }
-  );
-}
-
-function createBulkPlans() {
-  // Reset errors
-  newPlanErrors.value = {};
-
-  // Validate movement template selection
-  if (!newPlanTemplate.value) {
-    newPlanErrors.value.template =
-      "Movement template is required for bulk creation";
-    return;
-  }
-
-  // Check if there are plans to create
-  if (bulkPreview.value.plans.length === 0) {
-    newPlanErrors.value.template = "No teams with arrival dates found";
-    return;
-  }
-
-  // Check if there are any allowed plans (excluding strict duplicates)
-  if (bulkAllowedPreview.value.plansCount === 0) {
-    newPlanErrors.value.template = "No teams available to create (all have duplicate conflicts)";
-    return;
-  }
-
-  newPlanProcessing.value = true;
-
-  // Prepare bulk data: one plan per unique arrival date with teams that don't have strict duplicates
-  const bulkData = bulkPreview.value.plans
-    .map((plan) => {
-      // Filter out teams with strict duplicates
-      const allowedTeams = plan.teams
-        .filter((team) => {
-          const check = bulkDuplicateChecks.value.get(team.id);
-          return !(check?.exists && check?.strict);
-        })
-        .map((team) => {
-          let startTime = '09:00'; // fallback
-          if (team.arrival_date_time) {
-            const timeMatch = team.arrival_date_time.match(/[T ](\d{2}):(\d{2})/);
-            if (timeMatch) {
-              startTime = `${timeMatch[1]}:${timeMatch[2]}`;
-            }
-          }
-          
-          return {
-            team_id: team.id,
-            start_time: startTime,
-            flight_id: team.selected_flight?.id || null,
-          };
-        });
-      
-      return {
-        date: plan.date,
-        teams: allowedTeams,
-        movement_template_id: newPlanTemplate.value,
-      };
-    })
-    .filter(plan => plan.teams.length > 0); // Only include plans that have at least one allowed team
-
-  router.post(
-    "/plans/bulk",
-    {
-      plans: bulkData,
-    },
-    {
-      onSuccess: () => {
-        showNewPlan.value = false;
-        newPlanMode.value = "single";
-        newPlanTemplate.value = "";
-        newPlanMovementPosition.value = null;
-        newPlanErrors.value = {};
-      },
-      onError: (errors) => {
-        newPlanErrors.value = errors;
-      },
-      onFinish: () => {
-        newPlanProcessing.value = false;
-      },
-    }
-  );
-}
-
-function createMatchPlans() {
-  // Reset errors
-  newPlanErrors.value = {};
-
-  // Validate movement template selection
-  if (!newPlanTemplate.value) {
-    newPlanErrors.value.template =
-      "Movement template is required for match plan creation";
-    return;
-  }
-
-  // Check if there are plans to create
-  if (matchesPreview.value.plans.length === 0) {
-    newPlanErrors.value.template = "No matches found";
-    return;
-  }
-
-  // Check if there are any allowed plans (excluding strict duplicates)
-  if (matchAllowedPreview.value.plansCount === 0) {
-    newPlanErrors.value.template = "No teams available to create (all have duplicate conflicts)";
-    return;
-  }
-
-  newPlanProcessing.value = true;
-
-  // Prepare match plans data grouped by date, filtering out teams with strict duplicates
-  const matchPlansData = matchesPreview.value.plans
-    .map((plan) => {
-      // Filter out teams with strict duplicates
-      const allowedTeams = plan.teams
-        .filter((team) => {
-          const check = matchDuplicateChecks.value.get(matchCheckKey(team));
-          const isBlocked = check?.exists && check?.strict;
-          
-          // Debug logging
-          if (isBlocked) {
-            console.log(`Team ${team.team_code} on ${plan.date} blocked:`, check);
-          }
-          
-          return !isBlocked;
-        })
-        .map((team) => ({
-          team_id: team.team_id,
-          start_time: team.plan_time,
-          match_id: team.match_id,
-        }));
-
-      // Debug logging for empty plans
-      if (allowedTeams.length === 0) {
-        console.log(`Plan for ${plan.date} (${plan.match_number}) has no allowed teams - will be skipped`);
-      }
-
-      return {
-        date: plan.date,
-        teams: allowedTeams,
-        movement_template_id: newPlanTemplate.value,
-      };
-    })
-    .filter(plan => plan.teams.length > 0); // Only include plans that have at least one allowed team
-
-  // Debug: Log what's being sent to backend
-  console.log('Sending match plans data:', matchPlansData);
-  console.log('Total plans to create:', matchPlansData.length);
-  console.log('Plan dates:', matchPlansData.map(p => p.date));
-
-  router.post(
-    "/plans/bulk-matches",
-    {
-      plans: matchPlansData,
-    },
-    {
-      onSuccess: () => {
-        showNewPlan.value = false;
-        newPlanMode.value = "single";
-        newPlanTemplate.value = "";
-        newPlanMovementPosition.value = null;
-        newPlanErrors.value = {};
-      },
-      onError: (errors) => {
-        newPlanErrors.value = errors;
-      },
-      onFinish: () => {
-        newPlanProcessing.value = false;
-      },
-    }
-  );
-}
 
 function addTeamToPlan() {
   // Reset errors
@@ -11644,97 +6965,6 @@ async function fetchMovementCheckpoints(movement) {
 
 function editMovement(movement) {
   editingMovement.value = movement;
-
-  // Populate form fields - handle both "By Plan" and "By Team" data structures
-  emTeamId.value = movement.team_id || "";
-  emKind.value = movement.kind || "";
-
-  // Handle location properties (By Plan uses from_location/to_location, By Team uses from/to)
-  emFrom.value = movement.from_location || movement.from || "";
-  emTo.value = movement.to_location || movement.to || "";
-
-  // Handle datetime properties
-  // By Plan has window_start/window_end (datetime strings)
-  // By Team has dep/arr (time strings like "14:30") - we need to combine with plan date
-  if (movement.window_start) {
-    emWindowStart.value = formatDateTimeForInput(movement.window_start);
-  } else if (movement.dep && selectedPlanObj.value?.date) {
-    // Construct datetime from plan date and time
-    emWindowStart.value = `${selectedPlanObj.value.date}T${movement.dep}`;
-  } else {
-    emWindowStart.value = "";
-  }
-
-  if (movement.window_end) {
-    emWindowEnd.value = formatDateTimeForInput(movement.window_end);
-  } else if (movement.arr && selectedPlanObj.value?.date) {
-    emWindowEnd.value = `${selectedPlanObj.value.date}T${movement.arr}`;
-  } else {
-    emWindowEnd.value = "";
-  }
-
-  // Handle vehicle/driver/supervisor IDs
-  emVehicleId.value = movement.vehicle_id || "";
-  emDriverId.value = movement.driver_id || "";
-  emFieldSupervisorId.value = movement.field_supervisor_id || "";
-  emUnits.value = (movement.units || []).map((u) => ({ vehicle_id: u.vehicle_id ?? null, driver_id: u.driver_id ?? null }));
-  emSupervisors.value = (movement.extra_supervisors || []).map((s) => s.id);
-
-  // Handle passengers (By Plan uses passengers, By Team uses pax)
-  emPassengers.value = movement.passengers ?? movement.pax ?? "";
-
-  emFlightNumber.value = movement.flight_number || "";
-  emNotes.value = movement.notes || "";
-  emMatchId.value = movement.match_id || null;
-
-  showEditMovement.value = true;
-}
-
-function formatDateTimeForInput(dateTime) {
-  if (!dateTime) return "";
-  // Parse date string directly without timezone conversion
-  // Expected format: "YYYY-MM-DD HH:MM:SS" or "YYYY-MM-DDTHH:MM:SS.sssZ"
-  const match = String(dateTime).match(
-    /(\d{4})-(\d{2})-(\d{2})[\sT](\d{2}):(\d{2})/
-  );
-  if (!match) return "";
-
-  const [, year, month, day, hours, minutes] = match;
-  return `${year}-${month}-${day}T${hours}:${minutes}`;
-}
-
-function submitEditMovement() {
-  if (!editingMovement.value) return;
-
-  editMovementProcessing.value = true;
-
-  // Only send operational fields (not read-only flight/team data)
-  router.put(
-    `/movements/${editingMovement.value.id}`,
-    {
-      window_start: emWindowStart.value || null,
-      window_end: emWindowEnd.value || null,
-      vehicle_id: emVehicleId.value || null,
-      driver_id: emDriverId.value || null,
-      field_supervisor_id: emFieldSupervisorId.value || null,
-      units: emUnits.value.filter((u) => u.vehicle_id || u.driver_id),
-      supervisors: [...new Set(emSupervisors.value.filter(Boolean))],
-      notes: emNotes.value || null,
-      match_id: emMatchId.value || null,
-    },
-    {
-      onSuccess: () => {
-        showEditMovement.value = false;
-        editingMovement.value = null;
-      },
-      onError: (errors) => {
-        console.error("Failed to update movement:", errors);
-      },
-      onFinish: () => {
-        editMovementProcessing.value = false;
-      },
-    }
-  );
 }
 
 function deleteMovement(movement) {
@@ -11767,7 +6997,7 @@ function cancelDeleteMovement() {
 }
 
 function confirmDeleteSelectedMovements() {
-  const ids = Array.from(selectedMovementIds.value);
+  const ids = bulkMovementDelete.value.deletable.map((mv) => mv.id);
   if (ids.length === 0) return;
 
   bulkDeletingMovements.value = true;
@@ -11880,7 +7110,6 @@ function generateJobs() {
     const reasons = [];
     if (missingSupervisor > 0) reasons.push(`${missingSupervisor} movement(s) missing a supervisor`);
     if (missingVehicle > 0) reasons.push(`${missingVehicle} movement(s) missing a vehicle`);
-    if (genBusCount.value > 0) reasons.push(`${genBusCount.value} BUS movement(s) have no reference time`);
 
     genBlockedMessage.value = reasons.length
       ? `No movements are ready for job generation:<br><br>${reasons.map(r => `• ${r}`).join('<br>')}`
@@ -12015,12 +7244,6 @@ function generateSingleJob(movement) {
     return;
   }
 
-  if (isBusMovement(movement)) {
-    genBlockedMessage.value = 'This is a <strong>BUS</strong> movement with no reference time, so a job cannot be generated for it.';
-    showGenerateBlocked.value = true;
-    return;
-  }
-
   if (!movement?.field_supervisor_id) {
     genBlockedMessage.value = 'Assign a <strong>supervisor</strong> to this movement before generating a job.';
     showGenerateBlocked.value = true;
@@ -12055,16 +7278,6 @@ function generateSingleJob(movement) {
       },
     }
   );
-}
-
-function openPreviewModal(template) {
-  selectedTemplate.value = template;
-  showPreviewModal.value = true;
-}
-
-function applyTemplate(template) {
-  console.log("Applying template:", template.id);
-  showPreviewModal.value = false;
 }
 
 function openNewTeamPlan() {
@@ -12156,6 +7369,18 @@ function statusLabel(s) {
 </script>
 
 <style scoped>
+.plan-dd-all {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-left: 3px solid transparent;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+.plan-dd-all:hover { background: #f9fafb; }
+.plan-dd-all--on, .plan-dd-all--on:hover { border-left-color: #3b82f6; background: #eff6ff; }
+.plan-dd-all:focus-visible { outline: 2px solid #3b82f6; outline-offset: -2px; }
 .phase-cell {
   display: flex;
   flex-direction: column;
@@ -12329,6 +7554,21 @@ function statusLabel(s) {
   padding: 0;
 }
 
+.delete-blocked {
+  font-size: 13px;
+  color: #991b1b;
+  background: #fee2e2;
+  border: 1px solid #fca5a5;
+  border-radius: 6px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+}
+.delete-blocked__list {
+  margin: 6px 0 6px 18px;
+  max-height: 160px;
+  overflow-y: auto;
+}
+
 .page-header {
   display: flex;
   align-items: flex-start;
@@ -12358,32 +7598,11 @@ function statusLabel(s) {
     grid-template-columns: 1fr;
   }
 }
-.page-title {
-  font-size: 20px;
-  font-weight: 700;
-  color: var(--ink);
-  margin: 0 0 2px;
-}
-.page-sub {
-  font-size: 13px;
-  color: var(--ink3);
-  margin: 0;
-}
-.page-header-actions {
-  display: flex;
-  gap: 8px;
-  flex-shrink: 0;
-  flex-wrap: wrap;
-  align-items: center;
-}
 
-.plans-empty-state {
-  padding: 60px 40px;
-  text-align: center;
-  background: var(--panel);
-  border-radius: 10px;
-  margin: 20px;
-}
+
+
+
+
 
 .empty-state-full {
   display: flex;
@@ -12420,135 +7639,38 @@ function statusLabel(s) {
   margin: 0 0 8px;
 }
 
-.empty-state-description {
-  font-size: 13px;
-  color: var(--ink3);
-  margin: 0 0 32px;
-  max-width: 480px;
-  margin-left: auto;
-  margin-right: auto;
-  line-height: 1.5;
-}
 
-.plans-instructions {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 16px;
-  max-width: 700px;
-  margin: 0 auto 32px;
-  text-align: left;
-}
 
-.instruction-step {
-  display: flex;
-  gap: 12px;
-  align-items: flex-start;
-  padding: 16px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-}
 
-.step-number {
-  width: 28px;
-  height: 28px;
-  border-radius: 6px;
-  background: var(--accent-soft);
-  color: var(--accent-fg);
-  font-size: 12px;
-  font-weight: 700;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
 
-.step-content {
-  flex: 1;
-}
 
-.step-content strong {
-  display: block;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--ink);
-  margin-bottom: 4px;
-}
 
-.step-content p {
-  font-size: 12px;
-  color: var(--ink3);
-  margin: 0;
-  line-height: 1.5;
-}
 
-.empty-state-actions {
-  display: flex;
-  justify-content: center;
-  gap: 8px;
-  flex-direction: column;
-  align-items: center;
-}
 
-.prereq-blocked {
-  margin: 0;
-  font-size: 12px;
-  color: #b45309;
-}
 
-.prereq-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-}
 
-.prereq-item {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  font-size: 12px;
-}
 
-.prereq-mark {
-  display: grid;
-  place-items: center;
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  flex: 0 0 auto;
-  color: #fff;
-}
-.prereq-mark--ok { background: var(--ok, #16a34a); }
-.prereq-mark--missing { background: var(--danger, #b91c1c); }
-.prereq-mark--optional { background: var(--ink4, #9ca3af); }
 
-.prereq-label {
-  color: var(--ink3);
-  text-decoration: none;
-  border-bottom: 1px dotted var(--border);
-}
-.prereq-label:hover { color: var(--accent); }
-.prereq-label--met { color: var(--ink); }
 
-.prereq-optional {
-  font-size: 10.5px;
-  color: var(--ink4);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
 
-@media (max-width: 768px) {
-  .plans-empty-state {
-    padding: 40px 20px;
-  }
-  
-  .plans-instructions {
-    grid-template-columns: 1fr;
-  }
-}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 .view-toggle {
   display: flex;
@@ -12577,25 +7699,10 @@ function statusLabel(s) {
   color: #fff;
 }
 
-.day-group {
-  margin-bottom: 20px;
-}
-.day-group-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 8px;
-  padding: 0 2px;
-}
-.day-group-date {
-  font-size: 14px;
-  font-weight: 700;
-  color: var(--ink);
-}
-.day-group-count {
-  font-size: 12px;
-  color: var(--ink3);
-}
+
+
+
+
 
 .plan-table-card {
   background: var(--surface);
@@ -12605,81 +7712,28 @@ function statusLabel(s) {
   overflow-x: auto;
 }
 
-.plans-bulk-bar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 14px;
-  border-bottom: 1px solid var(--border);
-  background: var(--panel);
-}
-.plans-bulk-select {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--ink2);
-  cursor: pointer;
-  margin-right: auto;
-}
-.plans-bulk-count {
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--ink);
-}
+
+
+
 
 .plan-table-card :deep(.action-btn--delete) {
   color: #EF4444;
 }
 
-.plan-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 13px;
-}
-.plan-table th {
-  padding: 8px 12px;
-  text-align: left;
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--ink3);
-  border-bottom: 1px solid var(--border);
-  background: var(--panel);
-  white-space: nowrap;
-}
-.plan-table td {
-  padding: 10px 12px;
-  border-bottom: 1px solid var(--border);
-  vertical-align: middle;
-}
-.plan-table tr:last-child td {
-  border-bottom: none;
-}
-.plan-row:hover td {
-  background: var(--panel);
-}
+
+
+
+
+
 
 .mono {
   font-family: var(--font-mono, monospace);
   font-size: 12px;
   color: var(--ink3);
 }
-.job-link {
-  color: var(--accent);
-  cursor: pointer;
-  text-decoration: none;
-}
-.job-link:hover {
-  text-decoration: underline;
-}
-.flex-cell {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
+
+
+
 .team-badge {
   min-width: 34px;
   height: 34px;
@@ -12708,18 +7762,9 @@ function statusLabel(s) {
   align-items: center;
   justify-content: center;
 }
-.route-cell {
-  color: var(--ink3);
-  font-size: 12px;
-}
-.row-link {
-  color: var(--accent);
-  text-decoration: none;
-  font-size: 12px;
-}
-.row-link:hover {
-  text-decoration: underline;
-}
+
+
+
 
 /* Badge styles moved to Badge.vue component */
 
@@ -12786,28 +7831,10 @@ function statusLabel(s) {
   justify-content: space-between;
 }
 
-.em-unit {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
-  gap: 12px;
-  align-items: center;
-}
-.em-unit--single { grid-template-columns: minmax(0, 1fr) auto; }
 .unit-more {
   margin-left: 4px; padding: 0 5px; border-radius: 8px;
   background: var(--accent-soft); color: var(--accent);
   font-size: 10px; font-weight: 700; cursor: help;
-}
-.em-unit-remove {
-  width: 28px; height: 28px; margin-bottom: 16px; margin-top: 18px;
-  border: 1px solid var(--border); border-radius: 6px;
-  background: var(--surface); color: var(--ink3); cursor: pointer;
-}
-.em-unit-remove:hover { color: var(--danger, #b91c1c); border-color: var(--danger, #b91c1c); }
-.em-unit-add {
-  align-self: flex-start; margin: -6px 0 14px; padding: 0;
-  border: none; background: none; cursor: pointer;
-  color: var(--accent); font-size: 12px; font-weight: 600;
 }
 
 .form-field {
@@ -12852,11 +7879,6 @@ function statusLabel(s) {
 /* Generate Jobs Modal */
 .gen-modal {
   max-width: 740px;
-}
-
-.new-plan-body {
-  max-height: 560px;
-  overflow-y: auto;
 }
 
 .modal-eyebrow {
@@ -13032,42 +8054,15 @@ function statusLabel(s) {
   flex-shrink: 0;
 }
 
-/* Templates */
-.gen-templates {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
 
-.gen-tpl-card {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 12px;
-  border-radius: 8px;
-  border: 1.5px solid var(--border);
-  cursor: pointer;
-  background: var(--surface);
-  transition: border-color 0.12s, background 0.12s;
-}
 
-.gen-tpl-card--selected {
-  border-color: var(--accent);
-  background: var(--accent-soft);
-}
 
-.gen-tpl-name {
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--ink);
-  margin-bottom: 2px;
-}
 
-.gen-tpl-meta {
-  font-size: 11px;
-  color: var(--ink3);
-  font-family: var(--mono);
-}
+
+
+
+
+
 
 /* Toggles */
 .gen-options {
@@ -13683,42 +8678,15 @@ function statusLabel(s) {
   color: var(--ink3);
 }
 
-/* Checkpoints timeline */
-.dc-cp-dot {
-  width: 18px;
-  height: 18px;
-  border-radius: 999px;
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 10px;
-  font-weight: 700;
-}
 
-.dc-cp-dot--done {
-  background: var(--ok, #22a06b);
-  border: 2px solid var(--ok, #22a06b);
-  color: #fff;
-}
 
-.dc-cp-dot--active {
-  background: #fff;
-  border: 2px solid var(--accent, #4f46e5);
-  box-shadow: 0 0 0 4px var(--accent-soft, rgba(79, 70, 229, 0.12));
-}
 
-.dc-cp-dot--pending {
-  background: var(--panel);
-  border: 2px solid var(--borderStrong, #d0d5df);
-}
 
-.dc-cp-line {
-  width: 2px;
-  flex: 1;
-  background: var(--borderStrong, #d0d5df);
-  min-height: 20px;
-}
+
+
+
+
+
 
 .detail-card-content {
   flex: 1;
@@ -13779,55 +8747,17 @@ function statusLabel(s) {
   transform: translateX(20px);
 }
 
-/* Filter Chips */
-.filter-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 12px;
-  border-radius: 999px;
-  border: 1px solid var(--border);
-  background: var(--surface);
-  color: var(--ink2);
-  font-size: 11px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.15s;
-  white-space: nowrap;
-}
 
-.filter-chip:hover {
-  background: var(--panel);
-  border-color: var(--ink4);
-}
 
-.filter-chip--active {
-  background: var(--accent);
-  color: white;
-  border-color: var(--accent);
-}
 
-.filter-chip--active:hover {
-  background: var(--accent);
-  border-color: var(--accent);
-}
 
-.filter-chip-count {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 18px;
-  height: 18px;
-  padding: 0 5px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.2);
-  font-size: 10px;
-  font-weight: 700;
-}
 
-.filter-chip--active .filter-chip-count {
-  background: rgba(255, 255, 255, 0.25);
-}
+
+
+
+
+
+
 
 /* Plan type badges moved to Badge.vue component */
 

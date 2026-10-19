@@ -132,6 +132,10 @@
                    style="font-size: 10px; color: var(--ink3); margin-top: 1px;">
                 {{ skipDetail(cp) }}
               </div>
+              <div v-if="getVisualState(cp, idx) === 'done' && noteOf(cp)" class="dc-cp-note">
+                <svg class="dc-cp-note__icon" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                <span><span class="sr-only">Note: </span>{{ noteOf(cp) }}</span>
+              </div>
             </div>
 
             <!-- Time column -->
@@ -256,6 +260,11 @@ function completedBy(cp) {
   return cp.by || cp.completed_by || null;
 }
 
+// The supervisor's note from the mobile app (or the web completion / override reason).
+function noteOf(cp) {
+  return typeof cp.notes === 'string' ? cp.notes.trim() : '';
+}
+
 function bagCountLine(cp) {
   const parts = [];
   if (cp.planned_bags != null) parts.push(`Planned ${cp.planned_bags}`);
@@ -351,6 +360,23 @@ function varianceLabel(v) {
 .dc-cp-diff--late   { background: var(--danger-soft, #fdecec); color: var(--danger-strong, #b91c1c); }
 .dc-cp-diff--early,
 .dc-cp-diff--ontime { background: var(--ok-soft, #e6f6ec); color: var(--ok, #16a34a); }
+
+.dc-cp-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 5px;
+  margin-top: 4px;
+  padding: 4px 8px;
+  border-left: 3px solid var(--border);
+  border-radius: 0 5px 5px 0;
+  background: var(--panel);
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: var(--ink2);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.dc-cp-note__icon { flex-shrink: 0; margin-top: 2px; color: var(--ink3); }
 
 /* Evidence badge hover effect */
 .evidence-badge-clickable:hover {

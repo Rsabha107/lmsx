@@ -187,6 +187,15 @@
                     class="jl-issue-badge"
                     :title="`${openIssueCount(job)} unresolved issue(s) reported from the field`"
                   >⚑ {{ openIssueCount(job) }}</span>
+                  <span
+                    v-if="noteCount(job)"
+                    class="jl-note-badge"
+                    :title="`${noteCount(job)} checkpoint note${noteCount(job) === 1 ? '' : 's'}: open the job to read ${noteCount(job) === 1 ? 'it' : 'them'}`"
+                    :aria-label="`${noteCount(job)} checkpoint note${noteCount(job) === 1 ? '' : 's'}`"
+                  >
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                    {{ noteCount(job) }}
+                  </span>
                 </div>
                 <div class="jl-sub" :title="isFlightJob(job) ? flightTitle(job.flight) : undefined">
                   {{ jobSubtitle(job) }}
@@ -666,6 +675,11 @@ const openIssues = computed(() => jobIssues.value.filter(i => !i.resolved_at));
 
 function openIssueCount(job) {
   return (job.issues ?? []).filter(i => !i.resolved_at).length;
+}
+
+// Completed checkpoints carrying a note (shown under each one in the detail panel).
+function noteCount(job) {
+  return (job.checkpoints ?? []).filter(c => (c.state ?? c.status) === 'done' && typeof c.notes === 'string' && c.notes.trim()).length;
 }
 
 function resolveIssue(issue) {
@@ -1638,6 +1652,18 @@ function reloadSelectedJob() {
   font-weight: 700;
   color: #b91c1c;
   background: rgba(239, 68, 68, 0.12);
+  padding: 1px 5px;
+  border-radius: 3px;
+  letter-spacing: 0.3px;
+}
+.jl-note-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--accent);
+  background: var(--accent-soft);
   padding: 1px 5px;
   border-radius: 3px;
   letter-spacing: 0.3px;

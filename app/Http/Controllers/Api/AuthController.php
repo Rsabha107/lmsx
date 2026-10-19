@@ -87,6 +87,8 @@ class AuthController extends Controller
             'name' => $user->name,
             'email' => $user->email,
             'roles' => $user->getRoleNames(),
+            // The app hides checkpoint and issue actions; the API refuses them anyway.
+            'read_only' => ! $user->can('jobs.work'),
         ];
     }
 }

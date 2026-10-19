@@ -129,7 +129,7 @@ class MobileJobController extends Controller
         JobOperation $job,
         JobCheckpoint $checkpoint
     ): JsonResponse {
-        $this->authorizeJobAccess($request, $job);
+        $this->authorizeJobWork($request, $job);
 
         if ($checkpoint->job_id !== $job->id) {
             return response()->json(
@@ -255,7 +255,7 @@ class MobileJobController extends Controller
      */
     public function reportIssue(Request $request, JobOperation $job): JsonResponse
     {
-        $this->authorizeJobAccess($request, $job);
+        $this->authorizeJobWork($request, $job);
 
         $validated = $request->validate([
             'type' => ['required', Rule::in(array_keys(JobIssue::TYPES))],

@@ -73,9 +73,27 @@ class SettingsService
     private array $localCache = [];
 
     /**
+     * Offset types that fall back to another when nothing is configured for them: a road (BUS)
+     * arrival or departure uses the flight type's offsets until bus-specific ones are set.
+     */
+    public const OFFSET_FALLBACK = [
+        'bus_arrival' => 'arrival',
+        'bus_departure' => 'departure',
+    ];
+
+    /** Every offset type Settings can hold, in display order. */
+    public const OFFSET_TYPES = ['arrival', 'bus_arrival', 'departure', 'bus_departure', 'match', 'transfer', 'training', 'daily_ops'];
+
+    /** The movement kind an offset type applies to (bus_arrival -> arrival). */
+    public static function offsetKind(string $type): string
+    {
+        return self::OFFSET_FALLBACK[$type] ?? $type;
+    }
+
+    /**
      * Get movement time offset with cascading lookup.
      *
-     * @param string $movementType (arrival, departure, match, transfer, training, daily_ops)
+     * @param string $movementType (arrival, bus_arrival, departure, bus_departure, match, transfer, training, daily_ops)
      * @param int|null $eventId
      * @return int Offset in minutes (negative = before reference time, positive = after)
      */
@@ -95,6 +113,10 @@ class SettingsService
         $value = $this->getSetting($key, Setting::SCOPE_GLOBAL);
         if ($value !== null) {
             return (int) $value;
+        }
+
+        if (isset(self::OFFSET_FALLBACK[$movementType])) {
+            return $this->getMovementOffset(self::OFFSET_FALLBACK[$movementType], $eventId);
         }
 
         // No offset configured anywhere — window_start equals the reference
@@ -264,6 +286,10 @@ class SettingsService
             return (int) $value;
         }
 
+        if (isset(self::OFFSET_FALLBACK[$movementType])) {
+            return $this->getCheckpointOffset($checkpointId, self::OFFSET_FALLBACK[$movementType], $eventId);
+        }
+
         return null;
     }
 
@@ -308,7 +334,13 @@ class SettingsService
             return 'event';
         }
 
-        return $lookup(Setting::SCOPE_GLOBAL, null) !== null ? 'global' : null;
+        if ($lookup(Setting::SCOPE_GLOBAL, null) !== null) {
+            return 'global';
+        }
+
+        return isset(self::OFFSET_FALLBACK[$movementType])
+            ? $this->offsetScope(self::OFFSET_FALLBACK[$movementType], $eventId, $checkpointId)
+            : null;
     }
     
     /**

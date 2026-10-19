@@ -1,0 +1,101 @@
+<script setup>
+import { computed, reactive, ref } from 'vue';
+import { router } from '@inertiajs/vue3';
+import Badge from '../Badge.vue';
+import Button from '../Button.vue';
+import FlagIcon from '../FlagIcon.vue';
+import SvgIcon from '../SvgIcon.vue';
+import CrewFields from './CrewFields.vue';
+import { formatDateTime } from '../../Composables/planFormat';
+import { supervisorsFor } from '../../Composables/crewPeople';
+import { useCrewBusy } from '../../Composables/useCrewBusy';
+
+// Mounted per movement (v-if + key), so the form starts from the movement each time.
+const props = defineProps({
+  movement: { type: Object, required: true },
+  // Date of the open plan, for By Team rows that only carry times.
+  planDate: { type: String, default: null },
+  vehicles: { type: Array, default: () => [] },
+  drivers: { type: Array, default: () => [] },
+  supervisors: { type: Array, default: () => [] },
+  matches: { type: Array, default: () => [] },
+});
+
+const emit = defineEmits(['close']);
+
+// "YYYY-MM-DD HH:MM[:SS]" or ISO -> datetime-local value, without timezone conversion.
+function formatDateTimeForInput(dateTime) {
+  const match = String(dateTime ?? '').match(/(\d{4})-(\d{2})-(\d{2})[\sT](\d{2}):(\d{2})/);
+  if (!match) return '';
+  const [, year, month, day, hours, minutes] = match;
+  return `${year}-${month}-${day}T${hours}:${minutes}`;
+}
+
+// By Plan rows carry window_start/window_end; By Team rows only dep/arr times.
+function windowValue(full, time) {
+  if (full) return formatDateTimeForInput(full);
+  return time && props.planDate ? `${props.planDate}T${time}` : '';
+}
+
+const mv = props.movement;
+const emKind = mv.kind || '';
+const emFrom = mv.from_location || mv.from || '';
+const emTo = mv.to_location || mv.to || '';
+const emWindowStart = ref(windowValue(mv.window_start, mv.dep));
+const emWindowEnd = ref(windowValue(mv.window_end, mv.arr));
+const emNotes = ref(mv.notes || '');
+const emMatchId = ref(mv.match_id || null);
+const crew = reactive({
+  vehicle_id: mv.vehicle_id || null,
+  driver_id: mv.driver_id || null,
+  field_supervisor_id: mv.field_supervisor_id || null,
+  units: (mv.units || []).map((u) => ({ vehicle_id: u.vehicle_id ?? null, driver_id: u.driver_id ?? null })),
+  supervisors: (mv.extra_supervisors || []).map((s) => s.id),
+});
+const editMovementProcessing = ref(false);
+
+// Same people Crew Assignment offers: the movement's provider's, plus whoever is already on it.
+const supervisorOptions = computed(() =>
+  supervisorsFor(props.supervisors, mv.fleet_provider_id, [mv.field_supervisor_id, ...(mv.extra_supervisors || []).map((s) => s.id)]));
+
+// Why a vehicle, driver or supervisor is busy for this movement (same checks as the Conflicts tab).
+const { note: crewNote } = useCrewBusy(() => mv.id ?? null);
+
+// Matches the movement's team plays in.
+const relevantMatches = computed(() => {
+  if (!mv.team_id) return [];
+  const teamId = mv.team?.id;
+  return props.matches.filter((match) => match.team1_id === teamId || match.team2_id === teamId);
+});
+
+function submitEditMovement() {
+  editMovementProcessing.value = true;
+
+  // Only operational fields; flight and team data are read-only here.
+  router.put(
+    `/movements/${mv.id}`,
+    {
+      window_start: emWindowStart.value || null,
+      window_end: emWindowEnd.value || null,
+      vehicle_id: crew.vehicle_id || null,
+      driver_id: crew.driver_id || null,
+      field_supervisor_id: crew.field_supervisor_id || null,
+      units: crew.units.filter((u) => u.vehicle_id || u.driver_id),
+      supervisors: [...new Set(crew.supervisors.filter(Boolean))],
+      notes: emNotes.value || null,
+      match_id: emMatchId.value || null,
+    },
+    {
+      onSuccess: () => emit('close'),
+      onError: (errors) => {
+        console.error('Failed to update movement:', errors);
+      },
+      onFinish: () => {
+        editMovementProcessing.value = false;
+      },
+    },
+  );
+}
+</script>
+
+<style scoped src="./planDialog.css"></style>

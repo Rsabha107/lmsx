@@ -250,8 +250,8 @@ class JobLifecycleService
     }
 
     /**
-     * Mark a checkpoint as no longer applicable. Skipped checkpoints stay in the
-     * denominator, so the parent job never auto-completes off the back of one.
+     * Mark a checkpoint as no longer applicable. Skipping the last outstanding step
+     * completes the job (see syncJobProgress); its end time stays on the last done step.
      */
     public function skipCheckpoint(
         JobCheckpoint $checkpoint,
@@ -275,7 +275,7 @@ class JobLifecycleService
                 'notes' => $notes,
             ]);
 
-            $this->syncJobProgress($checkpoint->job, autoComplete: false);
+            $this->syncJobProgress($checkpoint->job);
 
             AuditLog::record(
                 action: 'Checkpoint skipped',
@@ -368,8 +368,7 @@ class JobLifecycleService
 
                 $checkpoint->update($attrs);
 
-                // A forced skip must not tip the job into completed on its own.
-                $this->syncJobProgress($checkpoint->job, autoComplete: $state === 'done');
+                $this->syncJobProgress($checkpoint->job);
 
                 AuditLog::record(
                     action: 'Checkpoint overridden',
@@ -483,7 +482,7 @@ class JobLifecycleService
             throw new \RuntimeException('Only a job with no checkpoint started can be synced with the offsets.');
         }
 
-        if (! $job->movement || $job->movement->isBusMovement()) {
+        if (! $job->movement) {
             throw new \RuntimeException("This job's times do not come from the offsets.");
         }
 
@@ -771,9 +770,11 @@ class JobLifecycleService
     }
 
     /**
-     * Recount progress and move the job along if the checkpoints imply it.
+     * Recount progress and move the job along if the checkpoints imply it: started on
+     * the first resolved step, completed once every step is done or skipped (at least
+     * one done, so a job that never happened isn't reported as finished).
      */
-    public function syncJobProgress(?JobOperation $job, bool $autoComplete = true): void
+    public function syncJobProgress(?JobOperation $job): void
     {
         if (! $job) {
             return;
@@ -784,10 +785,12 @@ class JobLifecycleService
 
         if ($job->status === 'pending' || $job->status === 'dispatched') {
             $this->silentlyTransition($job, 'in-progress');
-        } elseif ($autoComplete
-            && $job->status === 'in-progress'
-            && $job->checkpoints_total > 0
-            && $job->checkpoints_completed === $job->checkpoints_total) {
+            $job->refresh();
+        }
+
+        if ($job->status === 'in-progress'
+            && $job->checkpoints_completed > 0
+            && ! $job->checkpoints()->whereNotIn('state', self::RESOLVED_STATES)->exists()) {
             $this->silentlyTransition($job, 'completed');
         }
 

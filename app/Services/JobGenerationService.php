@@ -14,6 +14,7 @@ use App\Models\Team;
 use App\Models\User;
 use App\Models\Vehicle;
 use Carbon\Carbon;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -42,14 +43,8 @@ class JobGenerationService
      */
     public function generateJobFromMovement(Movement $movement, ?array $options = []): JobOperation
     {
-        if ($movement->isBusMovement()) {
-            throw new \RuntimeException('Cannot generate a job for a BUS movement — it has no reference time to schedule against.');
-        }
-
         return DB::transaction(function () use ($movement, $options) {
-            // Create the job
-            $job = JobOperation::create([
-                'job_id' => $this->generateJobId(),
+            $attributes = [
                 'event_id' => $movement->event_id,
                 'movement_id' => $movement->id,
                 'plan_id' => $movement->plan_id,
@@ -59,7 +54,19 @@ class JobGenerationService
                 'driver_id' => $movement->driver_id,
                 'vehicle_id' => $movement->vehicle_id,
                 'status' => 'pending',
-            ]);
+            ];
+
+            // Someone generating at the same moment can take the number first; take the next one.
+            for ($attempt = 1; ; $attempt++) {
+                try {
+                    $job = JobOperation::create(['job_id' => $this->generateJobId(), ...$attributes]);
+                    break;
+                } catch (UniqueConstraintViolationException $e) {
+                    if ($attempt >= 3) {
+                        throw $e;
+                    }
+                }
+            }
 
             // Snapshot checkpoints from the checkpoint template
             if ($movement->checkpointTemplate) {
@@ -83,14 +90,10 @@ class JobGenerationService
     {
         $jobs = [];
 
-        // BUS movements (flight_number === 'BUS') are silently skipped
-        // rather than blocking the whole batch — they have no reference
-        // time to generate a job against.
         $movements = Movement::with(['checkpointTemplate.checkpoints', 'flight'])
             ->whereIn('id', $movementIds)
             ->whereNull('job_id')
-            ->get()
-            ->reject(fn (Movement $movement) => $movement->isBusMovement());
+            ->get();
 
         foreach ($movements as $movement) {
             $jobs[] = $this->generateJobFromMovement($movement, $options);
@@ -148,19 +151,23 @@ class JobGenerationService
     }
 
     /**
-     * Generate a unique job ID.
+     * Next job number for today: one past the highest in use. Not a count, because deleted
+     * jobs leave gaps, and not provider-scoped, because the number is unique across all jobs.
      */
     protected function generateJobId(): string
     {
-        $date = now()->format('Ymd');
-        $count = JobOperation::whereDate('created_at', now())->count() + 1;
-        
-        return sprintf('JOB-%s-%04d', $date, $count);
+        $prefix = 'JOB-'.now()->format('Ymd').'-';
+        $last = JobOperation::withoutGlobalScopes()
+            ->where('job_id', 'like', $prefix.'%')
+            ->selectRaw('MAX(CAST(SUBSTRING(job_id, ?) AS UNSIGNED)) AS last_number', [strlen($prefix) + 1])
+            ->value('last_number');
+
+        return $prefix.sprintf('%04d', (int) $last + 1);
     }
 
     /**
      * Recompute a single movement's window from the current effective
-     * settings offset, with its length taken from its template leg (or its
+     * settings offset, with its length from its movement template (or its
      * existing length when the leg has none). No-ops (returns
      * false) for movements that already have a job, kinds that aren't
      * offset-driven (training/daily_ops), or movements with no resolvable
@@ -185,7 +192,7 @@ class JobGenerationService
     public function rescheduleJob(JobOperation $job): int
     {
         $movement = $job->movement;
-        if (!$movement || $movement->isBusMovement()) {
+        if (!$movement) {
             return 0;
         }
 
@@ -242,7 +249,7 @@ class JobGenerationService
     public function previewReschedule(JobOperation $job): array
     {
         $movement = $job->movement;
-        if (!$movement || $movement->isBusMovement()) {
+        if (!$movement) {
             return ['window' => null, 'checkpoints' => []];
         }
 
@@ -279,10 +286,6 @@ class JobGenerationService
             return null;
         }
 
-        if ($movement->isBusMovement()) {
-            return null;
-        }
-
         $referenceTime = $this->resolveReferenceTime($movement);
 
         if (!$referenceTime) {
@@ -290,9 +293,9 @@ class JobGenerationService
         }
 
         $firstCheckpoint = $movement->checkpointTemplate?->checkpoints->first();
-        $offsetMinutes = $this->resolveOffsetMinutes($firstCheckpoint, $movement->kind, $movement->event_id);
+        $offsetMinutes = $this->resolveOffsetMinutes($firstCheckpoint, $movement->offsetType(), $movement->event_id);
 
-        $durationMinutes = $this->templateLeg($movement)?->estimated_duration_minutes
+        $durationMinutes = $movement->plan?->movementTemplate?->estimatedLegMinutes($this->templateLeg($movement))
             ?? (($movement->window_start && $movement->window_end)
                 ? $movement->window_start->diffInMinutes($movement->window_end)
                 : 30);
@@ -313,8 +316,9 @@ class JobGenerationService
             return 0;
         }
 
+        // A bus offset type covers the road legs of its kind; recomputing the others is a no-op.
         $movements = Movement::where('event_id', $eventId)
-            ->where('kind', $movementType)
+            ->where('kind', SettingsService::offsetKind($movementType))
             ->withoutJob()
             ->with(['flight', 'match', 'plan.movementTemplate.legs', 'checkpointTemplate.checkpoints'])
             ->get();
@@ -343,12 +347,13 @@ class JobGenerationService
     }
 
     /**
-     * After a template's leg durations change, re-end the windows of its
+     * After a template's durations change, re-end the windows of its
      * not-yet-generated movements. Start times are left alone, so a
      * hand-adjusted start survives. Returns how many windows changed.
      */
     public function applyTemplateDurations(\App\Models\MovementTemplate $template): int
     {
+        $template->load('legs');
         $movements = Movement::withoutJob()
             ->whereNotNull('window_start')
             ->whereHas('plan', fn ($q) => $q->where('movement_template_id', $template->id))
@@ -358,7 +363,7 @@ class JobGenerationService
         $updated = 0;
 
         foreach ($movements as $movement) {
-            $minutes = $this->templateLeg($movement)?->estimated_duration_minutes;
+            $minutes = $template->estimatedLegMinutes($this->templateLeg($movement));
             if (!$minutes) {
                 continue;
             }
@@ -395,6 +400,12 @@ class JobGenerationService
                 ->first()?->training_start_at,
             default => null,
         };
+    }
+
+    /** bus_arrival / bus_departure when the team travels this leg by road, else the leg's own type. */
+    private function flightOffsetType(\App\Models\TeamFlight $flight, string $direction): string
+    {
+        return $flight->flight_number === 'BUS' ? 'bus_'.$direction : $direction;
     }
 
     /**
@@ -472,7 +483,7 @@ class JobGenerationService
             return null;
         }
 
-        $checkpointOffset = $this->settingsService->getCheckpointOffset($checkpoint->id, $movement->kind, $movement->event_id);
+        $checkpointOffset = $this->settingsService->getCheckpointOffset($checkpoint->id, $movement->offsetType(), $movement->event_id);
         if ($checkpointOffset === null) {
             return null;
         }
@@ -487,10 +498,6 @@ class JobGenerationService
      */
     public function estimateCheckpointSchedule(Movement $movement): array
     {
-        if ($movement->isBusMovement()) {
-            return [];
-        }
-
         $checkpoints = $movement->checkpointTemplate?->checkpoints;
         if (!$checkpoints || $checkpoints->isEmpty()) {
             return [];
@@ -521,10 +528,6 @@ class JobGenerationService
      */
     public function buildCheckpointsPayload(Movement $movement): array
     {
-        if ($movement->isBusMovement()) {
-            return [];
-        }
-
         $checkpoints = $movement->checkpointTemplate?->checkpoints;
         if (!$checkpoints || $checkpoints->isEmpty()) {
             return [];
@@ -663,12 +666,6 @@ class JobGenerationService
                     foreach ($legs as $leg) {
                         $scheduledDeparture = null;
                         $scheduledArrival = null;
-                        // A 'BUS' flight_number is a placeholder meaning the
-                        // team travels by road, not an actual flight — no
-                        // real reference time exists, so the window stays
-                        // null and the sequential-timing fallback below must
-                        // not kick in for this leg.
-                        $isBusLeg = false;
 
                         // Smart timing for arrival legs
                         if ($leg->leg_type === 'arrival' && $plan->event_id) {
@@ -677,12 +674,10 @@ class JobGenerationService
                                 ->where('direction', 'arrival')
                                 ->first();
 
-                            if ($arrivalFlight && $arrivalFlight->flight_number === 'BUS') {
-                                $isBusLeg = true;
-                            } elseif ($arrivalFlight && $arrivalFlight->scheduled_at) {
-                                $offsetMinutes = $this->resolveOffsetMinutes($leg->checkpointTemplate?->checkpoints->first(), 'arrival', $plan->event_id);
+                            if ($arrivalFlight && $arrivalFlight->scheduled_at) {
+                                $offsetMinutes = $this->resolveOffsetMinutes($leg->checkpointTemplate?->checkpoints->first(), $this->flightOffsetType($arrivalFlight, 'arrival'), $plan->event_id);
                                 $scheduledDeparture = $arrivalFlight->scheduled_at->copy()->addMinutes($offsetMinutes);
-                                $scheduledArrival = $scheduledDeparture->copy()->addMinutes($leg->estimated_duration_minutes ?? 30);
+                                $scheduledArrival = $scheduledDeparture->copy()->addMinutes($template->legMinutes($leg));
                             }
                         } elseif ($leg->leg_type === 'departure' && $plan->event_id) {
                             $departureFlight = \App\Models\TeamFlight::where('event_id', $plan->event_id)
@@ -690,12 +685,10 @@ class JobGenerationService
                                 ->where('direction', 'departure')
                                 ->first();
 
-                            if ($departureFlight && $departureFlight->flight_number === 'BUS') {
-                                $isBusLeg = true;
-                            } elseif ($departureFlight && $departureFlight->scheduled_at) {
-                                $offsetMinutes = $this->resolveOffsetMinutes($leg->checkpointTemplate?->checkpoints->first(), 'departure', $plan->event_id);
+                            if ($departureFlight && $departureFlight->scheduled_at) {
+                                $offsetMinutes = $this->resolveOffsetMinutes($leg->checkpointTemplate?->checkpoints->first(), $this->flightOffsetType($departureFlight, 'departure'), $plan->event_id);
                                 $scheduledDeparture = $departureFlight->scheduled_at->copy()->addMinutes($offsetMinutes);
-                                $scheduledArrival = $scheduledDeparture->copy()->addMinutes($leg->estimated_duration_minutes ?? 30);
+                                $scheduledArrival = $scheduledDeparture->copy()->addMinutes($template->legMinutes($leg));
                             }
                         } elseif ($leg->leg_type === 'match' && $plan->event_id) {
                             // If we have a specific match_id for this team, use it
@@ -716,7 +709,7 @@ class JobGenerationService
                             if ($match && $match->kick_off) {
                                 $offsetMinutes = $this->resolveOffsetMinutes($leg->checkpointTemplate?->checkpoints->first(), 'match', $plan->event_id);
                                 $scheduledDeparture = $match->kick_off->copy()->addMinutes($offsetMinutes);
-                                $scheduledArrival = $scheduledDeparture->copy()->addMinutes($leg->estimated_duration_minutes ?? 30);
+                                $scheduledArrival = $scheduledDeparture->copy()->addMinutes($template->legMinutes($leg));
                             }
                         } elseif ($leg->leg_type === 'transfer' && $plan->event_id) {
                             $arrivalFlight = \App\Models\TeamFlight::where('event_id', $plan->event_id)
@@ -727,7 +720,7 @@ class JobGenerationService
                             if ($arrivalFlight && $arrivalFlight->scheduled_at) {
                                 $offsetMinutes = $this->resolveOffsetMinutes($leg->checkpointTemplate?->checkpoints->first(), 'transfer', $plan->event_id);
                                 $scheduledDeparture = $arrivalFlight->scheduled_at->copy()->addMinutes($offsetMinutes);
-                                $scheduledArrival = $scheduledDeparture->copy()->addMinutes($leg->estimated_duration_minutes ?? 30);
+                                $scheduledArrival = $scheduledDeparture->copy()->addMinutes($template->legMinutes($leg));
                             }
                         }
                         
@@ -737,13 +730,11 @@ class JobGenerationService
                         }
 
                         // Fallback to team start time if smart timing not available
-                        if (!$isBusLeg && (!$scheduledDeparture || !$scheduledArrival)) {
+                        if ((!$scheduledDeparture || !$scheduledArrival)) {
                             $scheduledDeparture = $teamCurrentTime->copy();
-                            $scheduledArrival = $scheduledDeparture->copy()->addMinutes($leg->estimated_duration_minutes ?? 30);
+                            $scheduledArrival = $scheduledDeparture->copy()->addMinutes($template->legMinutes($leg));
                         }
 
-                        // Update current time for next leg (BUS legs have no
-                        // window, so they don't shift subsequent legs' timing)
                         if ($scheduledArrival) {
                             $teamCurrentTime = $scheduledArrival->copy();
                         }
@@ -841,12 +832,6 @@ class JobGenerationService
                     foreach ($legs as $leg) {
                         $scheduledDeparture = null;
                         $scheduledArrival = null;
-                        // A 'BUS' flight_number is a placeholder meaning the
-                        // team travels by road, not an actual flight — no
-                        // real reference time exists, so the window stays
-                        // null and the sequential-timing fallback below must
-                        // not kick in for this leg.
-                        $isBusLeg = false;
 
                         // Smart timing based on leg type and team data
                         if ($leg->leg_type === 'arrival' && $plan->event_id) {
@@ -855,12 +840,10 @@ class JobGenerationService
                                 ->where('direction', 'arrival')
                                 ->first();
 
-                            if ($arrivalFlight && $arrivalFlight->flight_number === 'BUS') {
-                                $isBusLeg = true;
-                            } elseif ($arrivalFlight && $arrivalFlight->scheduled_at) {
-                                $offsetMinutes = $this->resolveOffsetMinutes($leg->checkpointTemplate?->checkpoints->first(), 'arrival', $plan->event_id);
+                            if ($arrivalFlight && $arrivalFlight->scheduled_at) {
+                                $offsetMinutes = $this->resolveOffsetMinutes($leg->checkpointTemplate?->checkpoints->first(), $this->flightOffsetType($arrivalFlight, 'arrival'), $plan->event_id);
                                 $scheduledDeparture = $arrivalFlight->scheduled_at->copy()->addMinutes($offsetMinutes);
-                                $scheduledArrival = $scheduledDeparture->copy()->addMinutes($leg->estimated_duration_minutes ?? 30);
+                                $scheduledArrival = $scheduledDeparture->copy()->addMinutes($template->legMinutes($leg));
                             }
                         } elseif ($leg->leg_type === 'departure' && $plan->event_id) {
                             $departureFlight = \App\Models\TeamFlight::where('event_id', $plan->event_id)
@@ -868,12 +851,10 @@ class JobGenerationService
                                 ->where('direction', 'departure')
                                 ->first();
 
-                            if ($departureFlight && $departureFlight->flight_number === 'BUS') {
-                                $isBusLeg = true;
-                            } elseif ($departureFlight && $departureFlight->scheduled_at) {
-                                $offsetMinutes = $this->resolveOffsetMinutes($leg->checkpointTemplate?->checkpoints->first(), 'departure', $plan->event_id);
+                            if ($departureFlight && $departureFlight->scheduled_at) {
+                                $offsetMinutes = $this->resolveOffsetMinutes($leg->checkpointTemplate?->checkpoints->first(), $this->flightOffsetType($departureFlight, 'departure'), $plan->event_id);
                                 $scheduledDeparture = $departureFlight->scheduled_at->copy()->addMinutes($offsetMinutes);
-                                $scheduledArrival = $scheduledDeparture->copy()->addMinutes($leg->estimated_duration_minutes ?? 30);
+                                $scheduledArrival = $scheduledDeparture->copy()->addMinutes($template->legMinutes($leg));
                             }
                         } elseif ($leg->leg_type === 'match' && $plan->event_id) {
                             // If we have a specific match_id for this team, use it
@@ -894,7 +875,7 @@ class JobGenerationService
                             if ($match && $match->kick_off) {
                                 $offsetMinutes = $this->resolveOffsetMinutes($leg->checkpointTemplate?->checkpoints->first(), 'match', $plan->event_id);
                                 $scheduledDeparture = $match->kick_off->copy()->addMinutes($offsetMinutes);
-                                $scheduledArrival = $scheduledDeparture->copy()->addMinutes($leg->estimated_duration_minutes ?? 30);
+                                $scheduledArrival = $scheduledDeparture->copy()->addMinutes($template->legMinutes($leg));
                             }
                         } elseif ($leg->leg_type === 'transfer' && $plan->event_id) {
                             $arrivalFlight = \App\Models\TeamFlight::where('event_id', $plan->event_id)
@@ -905,7 +886,7 @@ class JobGenerationService
                             if ($arrivalFlight && $arrivalFlight->scheduled_at) {
                                 $offsetMinutes = $this->resolveOffsetMinutes($leg->checkpointTemplate?->checkpoints->first(), 'transfer', $plan->event_id);
                                 $scheduledDeparture = $arrivalFlight->scheduled_at->copy()->addMinutes($offsetMinutes);
-                                $scheduledArrival = $scheduledDeparture->copy()->addMinutes($leg->estimated_duration_minutes ?? 30);
+                                $scheduledArrival = $scheduledDeparture->copy()->addMinutes($template->legMinutes($leg));
                             }
                         }
 
@@ -916,13 +897,11 @@ class JobGenerationService
                         }
 
                         // Fallback to sequential timing if smart timing not available
-                        if (!$isBusLeg && (!$scheduledDeparture || !$scheduledArrival)) {
+                        if ((!$scheduledDeparture || !$scheduledArrival)) {
                             $scheduledDeparture = $teamCurrentTime->copy();
-                            $scheduledArrival = $scheduledDeparture->copy()->addMinutes($leg->estimated_duration_minutes ?? 30);
+                            $scheduledArrival = $scheduledDeparture->copy()->addMinutes($template->legMinutes($leg));
                         }
 
-                        // Update team's current time for next leg (BUS legs
-                        // have no window, so they don't shift subsequent legs)
                         if ($scheduledArrival) {
                             $teamCurrentTime = $scheduledArrival->copy();
                         }
@@ -1001,11 +980,6 @@ class JobGenerationService
                     $team = Team::find($teamId);
                     $scheduledDeparture = null;
                     $scheduledArrival = null;
-                    // A 'BUS' flight_number is a placeholder meaning the
-                    // team travels by road, not an actual flight — no real
-                    // reference time exists, so the window stays null and
-                    // the sequential-timing fallback below must not kick in.
-                    $isBusLeg = false;
 
                     // Smart timing based on leg type and team data — mirrors
                     // the bulk-mode loops so a departure leg always uses the
@@ -1016,12 +990,10 @@ class JobGenerationService
                             ->where('direction', 'arrival')
                             ->first();
 
-                        if ($arrivalFlight && $arrivalFlight->flight_number === 'BUS') {
-                            $isBusLeg = true;
-                        } elseif ($arrivalFlight && $arrivalFlight->scheduled_at) {
-                            $offsetMinutes = $this->resolveOffsetMinutes($leg->checkpointTemplate?->checkpoints->first(), 'arrival', $plan->event_id);
+                        if ($arrivalFlight && $arrivalFlight->scheduled_at) {
+                            $offsetMinutes = $this->resolveOffsetMinutes($leg->checkpointTemplate?->checkpoints->first(), $this->flightOffsetType($arrivalFlight, 'arrival'), $plan->event_id);
                             $scheduledDeparture = $arrivalFlight->scheduled_at->copy()->addMinutes($offsetMinutes);
-                            $scheduledArrival = $scheduledDeparture->copy()->addMinutes($leg->estimated_duration_minutes ?? 30);
+                            $scheduledArrival = $scheduledDeparture->copy()->addMinutes($template->legMinutes($leg));
                         }
                     } elseif ($leg->leg_type === 'departure' && $plan->event_id) {
                         $departureFlight = \App\Models\TeamFlight::where('event_id', $plan->event_id)
@@ -1029,12 +1001,10 @@ class JobGenerationService
                             ->where('direction', 'departure')
                             ->first();
 
-                        if ($departureFlight && $departureFlight->flight_number === 'BUS') {
-                            $isBusLeg = true;
-                        } elseif ($departureFlight && $departureFlight->scheduled_at) {
-                            $offsetMinutes = $this->resolveOffsetMinutes($leg->checkpointTemplate?->checkpoints->first(), 'departure', $plan->event_id);
+                        if ($departureFlight && $departureFlight->scheduled_at) {
+                            $offsetMinutes = $this->resolveOffsetMinutes($leg->checkpointTemplate?->checkpoints->first(), $this->flightOffsetType($departureFlight, 'departure'), $plan->event_id);
                             $scheduledDeparture = $departureFlight->scheduled_at->copy()->addMinutes($offsetMinutes);
-                            $scheduledArrival = $scheduledDeparture->copy()->addMinutes($leg->estimated_duration_minutes ?? 30);
+                            $scheduledArrival = $scheduledDeparture->copy()->addMinutes($template->legMinutes($leg));
                         }
                     } elseif ($leg->leg_type === 'match' && $plan->event_id) {
                         $match = \App\Models\GameMatch::where('event_id', $plan->event_id)
@@ -1048,7 +1018,7 @@ class JobGenerationService
                         if ($match && $match->kick_off) {
                             $offsetMinutes = $this->resolveOffsetMinutes($leg->checkpointTemplate?->checkpoints->first(), 'match', $plan->event_id);
                             $scheduledDeparture = $match->kick_off->copy()->addMinutes($offsetMinutes);
-                            $scheduledArrival = $scheduledDeparture->copy()->addMinutes($leg->estimated_duration_minutes ?? 30);
+                            $scheduledArrival = $scheduledDeparture->copy()->addMinutes($template->legMinutes($leg));
                         }
                     } elseif ($leg->leg_type === 'transfer' && $plan->event_id) {
                         $arrivalFlight = \App\Models\TeamFlight::where('event_id', $plan->event_id)
@@ -1059,18 +1029,16 @@ class JobGenerationService
                         if ($arrivalFlight && $arrivalFlight->scheduled_at) {
                             $offsetMinutes = $this->resolveOffsetMinutes($leg->checkpointTemplate?->checkpoints->first(), 'transfer', $plan->event_id);
                             $scheduledDeparture = $arrivalFlight->scheduled_at->copy()->addMinutes($offsetMinutes);
-                            $scheduledArrival = $scheduledDeparture->copy()->addMinutes($leg->estimated_duration_minutes ?? 30);
+                            $scheduledArrival = $scheduledDeparture->copy()->addMinutes($template->legMinutes($leg));
                         }
                     }
 
                     // Fallback to sequential timing if smart timing not available
-                    if (!$isBusLeg && (!$scheduledDeparture || !$scheduledArrival)) {
+                    if ((!$scheduledDeparture || !$scheduledArrival)) {
                         $scheduledDeparture = $currentTime->copy();
-                        $scheduledArrival = $scheduledDeparture->copy()->addMinutes($leg->estimated_duration_minutes ?? 30);
+                        $scheduledArrival = $scheduledDeparture->copy()->addMinutes($template->legMinutes($leg));
                     }
 
-                    // BUS legs have no window, so they don't shift subsequent
-                    // legs' sequential timing.
                     if ($scheduledArrival) {
                         $currentTime = $scheduledArrival->copy();
                     }

@@ -60,6 +60,7 @@ class JobOperationController extends Controller
     public function quickCompleteCheckpoint(Request $request, JobCheckpoint $checkpoint)
     {
         $this->authorizeCheckpointAccess($request, $checkpoint);
+        $this->authorizeJobWork($request, $checkpoint->job);
 
         $validated = $request->validate([
             'photo' => 'nullable|image|max:5120',

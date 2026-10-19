@@ -11,6 +11,7 @@ use App\Models\User;
 use App\Services\JobGenerationService;
 use App\Services\SettingsService;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 
 class SettingsController extends Controller
@@ -32,7 +33,7 @@ class SettingsController extends Controller
         $activeEventId = $request->session()->get('active_event_id');
         $activeEvent = $activeEventId ? Event::find($activeEventId) : null;
 
-        $movementTypes = ['arrival', 'departure', 'match', 'transfer', 'training', 'daily_ops'];
+        $movementTypes = SettingsService::OFFSET_TYPES;
 
         // Get all events for dropdown
         $events = Event::select('id', 'name', 'start_date', 'end_date')
@@ -170,7 +171,7 @@ class SettingsController extends Controller
     {
         $validated = $request->validate([
             'id' => 'nullable|integer|exists:pma_settings,id',
-            'movement_type' => 'required|in:arrival,departure,match,transfer,training,daily_ops',
+            'movement_type' => ['required', Rule::in(SettingsService::OFFSET_TYPES)],
             'value' => 'required|integer|min:-999|max:999',
             'description' => 'nullable|string|max:255',
             'checkpoint_id' => 'nullable|integer|exists:checkpoints,id',
@@ -248,7 +249,7 @@ class SettingsController extends Controller
         $validated = $request->validate([
             'id' => 'nullable|integer|exists:pma_settings,id',
             'event_id' => 'required|exists:events,id',
-            'movement_type' => 'required|in:arrival,departure,match,transfer,training,daily_ops',
+            'movement_type' => ['required', Rule::in(SettingsService::OFFSET_TYPES)],
             'value' => 'required|integer|min:-999|max:999',
             'description' => 'nullable|string|max:255',
             'checkpoint_id' => 'nullable|integer|exists:checkpoints,id',
@@ -371,7 +372,7 @@ class SettingsController extends Controller
     public function preview(Request $request)
     {
         $validated = $request->validate([
-            'movement_type' => 'required|in:arrival,departure,match,transfer,training,daily_ops',
+            'movement_type' => ['required', Rule::in(SettingsService::OFFSET_TYPES)],
             'event_id' => 'nullable|exists:events,id',
         ]);
 
@@ -407,7 +408,7 @@ class SettingsController extends Controller
     public function previewImpact(Request $request)
     {
         $validated = $request->validate([
-            'movement_type' => 'required|in:arrival,departure,match,transfer,training,daily_ops',
+            'movement_type' => ['required', Rule::in(SettingsService::OFFSET_TYPES)],
             'scope' => 'required|in:global,event',
             'event_id' => 'required_if:scope,event|nullable|exists:events,id',
         ]);
@@ -424,9 +425,15 @@ class SettingsController extends Controller
             return response()->json(['count' => 0, 'no_active_event' => true]);
         }
 
+        // A bus type covers only the road legs of its kind; a flight type is recomputed for every
+        // movement of its kind (road legs follow it until they have bus offsets of their own).
+        $type = $validated['movement_type'];
         $count = Movement::where('event_id', $targetEventId)
-            ->where('kind', $validated['movement_type'])
+            ->where('kind', SettingsService::offsetKind($type))
             ->withoutJob()
+            ->with('flight:id,flight_number')
+            ->get()
+            ->filter(fn (Movement $movement) => !isset(SettingsService::OFFSET_FALLBACK[$type]) || $movement->offsetType() === $type)
             ->count();
 
         return response()->json(['count' => $count]);

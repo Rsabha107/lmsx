@@ -56,6 +56,29 @@ class MovementTemplate extends Model
     }
 
     /**
+     * Window length of a movement built from one of this template's legs: the template's
+     * estimated duration for a one-leg template, else the leg's own or an even share of the
+     * template's, else 30 minutes.
+     */
+    public function legMinutes(?MovementTemplateLeg $leg): int
+    {
+        return $this->estimatedLegMinutes($leg) ?? 30;
+    }
+
+    /** As legMinutes, but null when neither the template nor the leg has a duration. */
+    public function estimatedLegMinutes(?MovementTemplateLeg $leg): ?int
+    {
+        $count = max(1, $this->legs->count());
+
+        if ($count === 1 && $this->estimated_duration_minutes) {
+            return $this->estimated_duration_minutes;
+        }
+
+        return $leg?->estimated_duration_minutes
+            ?: ($this->estimated_duration_minutes ? (int) round($this->estimated_duration_minutes / $count) : null);
+    }
+
+    /**
      * Scope for active templates only.
      */
     public function scopeActive($query)

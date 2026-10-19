@@ -42,12 +42,12 @@ class JobOperationPolicy
     }
 
     /**
-     * Acting on a job (status changes, checkpoint completion) is scoped exactly like reading it:
-     * same active event, same functional area, and a field supervisor's own jobs.
+     * Acting on a job (status changes, checkpoint completion, resolving issues) is scoped exactly like
+     * reading it (same active event, same functional area, a field supervisor's own jobs) and needs jobs.work.
      */
     public function update(User $user, JobOperation $job): bool
     {
-        return $this->view($user, $job);
+        return $this->view($user, $job) && $user->can('jobs.work');
     }
 
     /**

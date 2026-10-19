@@ -287,6 +287,7 @@ const filteredEvents = computed(() => {
 const ROLE_HINTS = {
   admin: 'Full access, including setups',
   ground_control: 'All jobs and movements',
+  mobile_viewer: 'Mobile app, view jobs only',
   transport: 'Jobs in their functional area',
   team_services: 'Jobs in their functional area',
   venue_ops: 'Jobs in their functional area',

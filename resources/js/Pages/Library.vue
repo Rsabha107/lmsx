@@ -855,6 +855,7 @@
           <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px; color: var(--ink);">Estimated Duration (minutes)</label>
           <input v-model.number="newMovementTemplate.estimated_duration_minutes" type="number" min="1" placeholder="180" style="width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px;" />
           <div v-if="hoursPart(newMovementTemplate.estimated_duration_minutes)" style="font-size: 11px; color: var(--ink3); margin-top: 4px;">= {{ hoursPart(newMovementTemplate.estimated_duration_minutes) }}</div>
+          <div style="font-size: 11px; color: var(--ink3); margin-top: 4px;">Length of each planned movement's window (one-leg templates; with several legs, legs without their own time share it).</div>
         </div>
         
         <!-- Leg Builder -->
@@ -1012,6 +1013,7 @@
           <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px; color: var(--ink);">Estimated Duration (minutes)</label>
           <input v-model.number="editingMovementTemplate.estimated_duration_minutes" type="number" min="1" style="width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px;" />
           <div v-if="hoursPart(editingMovementTemplate.estimated_duration_minutes)" style="font-size: 11px; color: var(--ink3); margin-top: 4px;">= {{ hoursPart(editingMovementTemplate.estimated_duration_minutes) }}</div>
+          <div style="font-size: 11px; color: var(--ink3); margin-top: 4px;">Length of each planned movement's window (one-leg templates; with several legs, legs without their own time share it). Saving re-times movements that have no job yet.</div>
         </div>
         
         <!-- Leg Builder -->

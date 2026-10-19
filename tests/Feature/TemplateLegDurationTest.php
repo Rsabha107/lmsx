@@ -15,14 +15,14 @@ class TemplateLegDurationTest extends TestCase
 {
     use RefreshDatabase, CreatesOperationsFixtures;
 
-    private function matchTemplate(int $eventId, ?int $minutes): MovementTemplate
+    private function matchTemplate(int $eventId, ?int $minutes, string $code = 'MD'): MovementTemplate
     {
         $sequence = CheckpointTemplate::create([
-            'event_id' => $eventId, 'code' => 'CT-MD', 'name' => 'Match day sequence', 'movement_type' => 'match', 'is_active' => true,
+            'event_id' => $eventId, 'code' => "CT-$code", 'name' => "Match day sequence $code", 'movement_type' => 'match', 'is_active' => true,
         ]);
 
         $template = MovementTemplate::create([
-            'event_id' => $eventId, 'code' => 'MVT-MD', 'name' => 'Team Match Day',
+            'event_id' => $eventId, 'code' => "MVT-$code", 'name' => "Team Match Day $code",
             'scenario_type' => 'match_day', 'is_active' => true,
         ]);
         $template->legs()->create([
@@ -89,5 +89,59 @@ class TemplateLegDurationTest extends TestCase
 
         $this->assertSame(0, app(JobGenerationService::class)->applyTemplateDurations($template));
         $this->assertSame('12:45', $movement->refresh()->window_end->format('H:i'));
+    }
+
+    public function test_a_new_plan_sizes_its_movement_from_the_template_duration(): void
+    {
+        $event = $this->createEvent();
+        $team = $this->createTeam($event);
+        $template = $this->matchTemplate($event->id, null);
+        $template->legs()->update(['leg_type' => 'transfer', 'from_location' => 'Hotel', 'to_location' => 'Training site']);
+        $template->update(['estimated_duration_minutes' => 155]);
+
+        $plan = app(JobGenerationService::class)->createPlanFromTemplate($template, [
+            'name' => 'Transfer', 'date' => '2026-11-27', 'event_id' => $event->id,
+            'base_time' => Carbon::parse('2026-11-27 10:00'),
+        ], ['default' => $team->id]);
+
+        $movement = $plan->movements()->sole();
+        $this->assertSame('10:00', $movement->window_start->format('H:i'));
+        $this->assertSame('12:35', $movement->window_end->format('H:i'));
+    }
+
+    public function test_the_template_duration_wins_over_the_leg_for_a_one_leg_template(): void
+    {
+        $event = $this->createEvent();
+        $team = $this->createTeam($event);
+        $template = $this->matchTemplate($event->id, 120);
+        $template->update(['estimated_duration_minutes' => 90]);
+        $plan = $this->createPlan($event);
+        $plan->update(['movement_template_id' => $template->id]);
+
+        $movement = $this->createMovement($event, $plan, $team, [
+            'kind' => 'match', 'window_start' => '2026-11-27 12:00', 'window_end' => '2026-11-27 12:30',
+        ]);
+
+        $this->assertSame(1, app(JobGenerationService::class)->applyTemplateDurations($template));
+        $this->assertSame('13:30', $movement->refresh()->window_end->format('H:i'));
+    }
+
+    public function test_legs_of_a_multi_leg_template_keep_their_own_time_or_share_the_template_duration(): void
+    {
+        $event = $this->createEvent();
+        $template = $this->matchTemplate($event->id, null);
+        $template->update(['estimated_duration_minutes' => 100]);
+        $second = $template->legs()->create([
+            'order' => 2, 'leg_type' => 'match', 'checkpoint_template_id' => $template->legs()->first()->checkpoint_template_id,
+            'estimated_duration_minutes' => 40,
+        ]);
+        $template->load('legs');
+
+        $this->assertSame(50, $template->legMinutes($template->legs->first()));
+        $this->assertSame(40, $template->legMinutes($second));
+
+        $bare = $this->matchTemplate($event->id, null, 'BARE');
+        $this->assertSame(30, $bare->legMinutes($bare->legs->first()));
+        $this->assertNull($bare->estimatedLegMinutes($bare->legs->first()));
     }
 }

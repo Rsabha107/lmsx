@@ -2,14 +2,17 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\AuditLog;
 use App\Models\Team;
 use App\Models\TeamFlight;
 use App\Services\FlightAiLookupService;
+use App\Services\FlightMovementSync;
 use App\Services\FlightSyncService;
 use App\Services\OagScheduleService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class TeamFlightsController extends Controller
@@ -39,9 +42,9 @@ class TeamFlightsController extends Controller
         return redirect()->back()->with('success', 'Flight added.');
     }
 
-    public function update(Request $request, int $eventId, int $flightId): RedirectResponse
+    public function update(Request $request, FlightMovementSync $movementSync, int $eventId, int $flightId): RedirectResponse
     {
-        $flight    = TeamFlight::where('event_id', $eventId)->findOrFail($flightId);
+        $flight    = TeamFlight::with('team:id,code')->where('event_id', $eventId)->findOrFail($flightId);
         $validated = $request->validate([
             'direction'              => 'required|in:arrival,departure',
             'flight_number'          => 'nullable|string|max:20',
@@ -57,9 +60,59 @@ class TeamFlightsController extends Controller
             'notes'                  => 'nullable|string',
         ]);
 
-        $flight->update($validated);
+        $before = FlightMovementSync::before($flight);
+        $original = $flight->getOriginal();
 
-        return redirect()->back()->with('success', 'Flight updated.');
+        // The flight and the plans that follow it change together or not at all.
+        $change = DB::transaction(function () use ($flight, $validated, $before, $movementSync) {
+            $flight->fill($validated);
+            $flight->fill(FlightMovementSync::staleTracking($flight, $before));
+            $flight->save();
+
+            return FlightMovementSync::changed($flight, $before)
+                ? $movementSync->sync($flight, $before, $flight->team?->code ?? '')
+                : null;
+        });
+
+        $this->audit($flight, $original, $change);
+
+        return redirect()->back()
+            ->with('success', $this->summary($change))
+            ->with('flight_change', $change && $change['movements'] ? $change : null);
+    }
+
+    /** "Flight updated." plus what happened to the plans built on it. */
+    private function summary(?array $change): string
+    {
+        $movements = collect($change['movements'] ?? []);
+        $updated = $movements->where('status', 'updated')->count();
+        $review = $movements->where('status', 'needs_review')->count();
+
+        return trim(implode(' ', array_filter([
+            'Flight updated.',
+            $updated ? "{$updated} planned ".($updated === 1 ? 'movement' : 'movements').' synced.' : null,
+            $review ? "{$review} ".($review === 1 ? 'movement already has a job' : 'movements already have jobs').' and must be updated by hand.' : null,
+        ])));
+    }
+
+    private function audit(TeamFlight $flight, array $original, ?array $change): void
+    {
+        $diff = AuditLog::changes($flight, $original);
+        if ($diff['to'] === []) {
+            return;
+        }
+
+        $movements = collect($change['movements'] ?? []);
+        AuditLog::change(
+            'Flight updated',
+            trim(($flight->team?->code ?? '').' '.$flight->direction.' '.($flight->flight_number ?? '')),
+            $diff + [
+                'movements_synced' => $movements->where('status', 'updated')->pluck('code')->values()->all(),
+                'movements_to_review' => $movements->where('status', 'needs_review')->pluck('code')->values()->all(),
+            ],
+            $flight,
+            $flight->event_id,
+        );
     }
 
     public function destroy(int $eventId, int $flightId): RedirectResponse
@@ -69,7 +122,7 @@ class TeamFlightsController extends Controller
         return redirect()->back()->with('success', 'Flight removed.');
     }
 
-    public function sync(FlightSyncService $service, OagScheduleService $oagService, FlightAiLookupService $aiLookup, int $eventId, int $flightId): JsonResponse
+    public function sync(FlightSyncService $service, OagScheduleService $oagService, FlightAiLookupService $aiLookup, FlightMovementSync $movementSync, int $eventId, int $flightId): JsonResponse
     {
         $teamFlight = TeamFlight::where('event_id', $eventId)
                                 ->with(['originAirport', 'destinationAirport'])
@@ -99,15 +152,24 @@ class TeamFlightsController extends Controller
                 $leg = $teamFlight->direction === 'arrival' ? $oagArr : $oagDep;
 
                 $scheduledAt = null;
+                $change = null;
                 if (!empty($leg['date']['local']) && !empty($leg['time']['local'])) {
                     $scheduledAt = \Carbon\Carbon::parse("{$leg['date']['local']} {$leg['time']['local']}");
-                    $teamFlight->update(['scheduled_at' => $scheduledAt, 'flight_synced_at' => now()]);
+                    $before = FlightMovementSync::before($teamFlight);
+                    $change = DB::transaction(function () use ($teamFlight, $scheduledAt, $before, $movementSync) {
+                        $teamFlight->update(['scheduled_at' => $scheduledAt, 'flight_synced_at' => now()]);
+
+                        return FlightMovementSync::changed($teamFlight, $before)
+                            ? $movementSync->sync($teamFlight->loadMissing('team:id,code'), $before, $teamFlight->team?->code ?? '')
+                            : null;
+                    });
                 }
 
                 return response()->json([
                     'success'       => true,
                     'source'        => 'oag',
                     'saved'         => (bool) $scheduledAt,
+                    'flight_change' => $change && $change['movements'] ? $change : null,
                     'flight_number' => $teamFlight->flight_number,
                     'departure'     => [
                         'iata'      => $oagDep['airport']['iata'] ?? null,

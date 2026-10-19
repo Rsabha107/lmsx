@@ -140,6 +140,14 @@ trait ScopesMobileAccess
         $this->authorizeJobAccess($request, $job);
     }
 
+    /** Acting on a job (completing checkpoints, reporting issues) needs jobs.work on top of seeing it. */
+    protected function authorizeJobWork(Request $request, JobOperation $job): void
+    {
+        $this->authorizeJobAccess($request, $job);
+
+        abort_unless($request->user()->can('jobs.work'), 403, 'Your account can view jobs but not act on them.');
+    }
+
     protected function assertCanViewJobs(Request $request): void
     {
         abort_unless($request->user()->can('jobs.view'), 403, 'You do not have access to jobs.');

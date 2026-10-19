@@ -568,6 +568,10 @@ class ConflictDetectionService
 
     private function anchorLabel(Movement $m): string
     {
+        if ($m->isBusMovement()) {
+            return $m->kind === 'arrival' ? 'bus arrival' : 'bus departure';
+        }
+
         return match ($m->kind) {
             'arrival' => $m->flight?->flight_number ? $m->flight->flight_number . ' landing' : 'landing',
             'departure' => $m->flight?->flight_number ? $m->flight->flight_number . ' departure' : 'departure',
@@ -587,16 +591,18 @@ class ConflictDetectionService
     {
         $firstCheckpoint = $m->checkpointTemplate?->checkpoints->first();
 
+        $type = $m->offsetType();
+
         if ($firstCheckpoint) {
-            $override = $this->settings->getCheckpointOffset($firstCheckpoint->id, (string) $m->kind, $eventId);
+            $override = $this->settings->getCheckpointOffset($firstCheckpoint->id, $type, $eventId);
             if ($override !== null) {
                 return [$override, sprintf('"%s" checkpoint override', $firstCheckpoint->name)];
             }
         }
 
         return [
-            $this->settings->getMovementOffset((string) $m->kind, $eventId),
-            sprintf('%s movement default', $m->kind),
+            $this->settings->getMovementOffset($type, $eventId),
+            sprintf('%s movement default', str_replace('_', ' ', $type)),
         ];
     }
 

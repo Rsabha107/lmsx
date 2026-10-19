@@ -155,6 +155,10 @@
             </section>
 
             <div v-if="!groups.length" class="st-empty">No global offsets configured{{ filter === 'all' ? '' : ' for this movement type' }} yet.</div>
+            <div v-if="BUS_FALLBACK[filter] || filter === 'all'" class="st-note">
+              <strong>Bus Arrival</strong> and <strong>Bus Departure</strong> time the legs a team travels by road (flight number <code>BUS</code>) from the bus's date and time.
+              Until you add offsets for them, they use the <strong>Arrival</strong> and <strong>Departure</strong> offsets, checkpoint by checkpoint.
+            </div>
           </div>
 
           <!-- Event overrides -->
@@ -398,13 +402,17 @@ const view = computed(() => VIEWS[section.value]);
 
 const TYPE_META = {
   arrival: { color: '#2F5BD3', soft: '#DCE5FB', ref: 'Flight lands' },
+  bus_arrival: { color: '#1E3A8A', soft: '#D6DEF5', ref: 'Bus arrives' },
   departure: { color: '#C2410C', soft: '#FBE1D3', ref: 'Flight departs' },
+  bus_departure: { color: '#9A3412', soft: '#F6DCCB', ref: 'Bus departs' },
   match: { color: '#15803D', soft: '#D5EFDD', ref: 'Kick-off' },
   transfer: { color: '#7C3AED', soft: '#E9E0FB', ref: 'Transfer time' },
   training: { color: '#0E7490', soft: '#D3EEF3', ref: 'Training start' },
   daily_ops: { color: '#6B655D', soft: '#E9E6E1', ref: 'Reference time' },
 };
 const meta = (type) => TYPE_META[type] ?? TYPE_META.daily_ops;
+// Road legs use the flight type's offsets until bus-specific ones are set (SettingsService::OFFSET_FALLBACK).
+const BUS_FALLBACK = { bus_arrival: 'arrival', bus_departure: 'departure' };
 
 const RANGE = 300;
 const pct = (m) => ((Math.max(-RANGE, Math.min(RANGE, m)) + RANGE) / (2 * RANGE)) * 100;
@@ -935,6 +943,8 @@ function getCheckpointName(checkpointId) {
 .st-body { padding: 20px 28px; display: flex; flex-direction: column; gap: 20px; }
 .st-dim { font-size: 12px; color: var(--ink3); line-height: 1.4; }
 .st-empty { padding: 32px; text-align: center; border: 1px dashed var(--border); border-radius: 12px; font-size: 14px; color: var(--ink3); }
+.st-note { margin-top: 12px; padding: 10px 14px; border-radius: 10px; background: var(--panel); font-size: 12.5px; line-height: 1.5; color: var(--ink2); }
+.st-note code { font-family: var(--mono); font-size: 12px; }
 .st-error { font-size: 12.5px; color: var(--danger, #b91c1c); }
 
 /* Add panel */

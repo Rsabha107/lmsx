@@ -33,6 +33,8 @@ class HandleInertiaRequests extends Middleware
                 'error'   => $request->session()->get('error'),
                 'warning' => $request->session()->get('warning'),
                 'status'  => $request->session()->get('status'),
+                // Movements a flight edit re-timed or flagged (Event Teams shows them in a dialog).
+                'flight_change' => $request->session()->get('flight_change'),
             ],
             // Offering an event the user would be 403'd on is worse than hiding it.
             'eventList'     => $request->user()
@@ -97,7 +99,7 @@ class HandleInertiaRequests extends Middleware
         }
 
         $can['setups'] = (bool) $user?->hasRole('admin');
-        $can['mobileApp.download'] = (bool) $user?->hasAnyRole(['admin', 'agency', 'ground_control', 'transport']);
+        $can['mobileApp.download'] = (bool) $user?->hasAnyRole(['admin', 'agency', 'ground_control', 'transport', 'mobile_viewer']);
         $can['dayBoard.view'] = $can['jobs.view'] || (bool) $user?->hasRole('agency');
 
         return $can;

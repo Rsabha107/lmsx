@@ -61,6 +61,28 @@ class JobDetailTest extends TestCase
                 ->where('checkpoints.1.status', 'active'));
     }
 
+    public function test_a_completed_checkpoint_shows_its_notes(): void
+    {
+        $event = $this->createEvent();
+        $team = $this->createTeam($event);
+        $job = $this->createJob($event, $this->createMovement($event, $this->createPlan($event), $team), $team);
+        $this->createCheckpoint($event, $job, ['order' => 1, 'name' => 'Pickup', 'state' => 'done',
+            'completed_at' => '2026-11-24 08:12', 'notes' => "  Team delayed at immigration, 20 min.\n2 bags missing.  "]);
+        $this->createCheckpoint($event, $job, ['order' => 2, 'name' => 'Loaded', 'state' => 'done', 'notes' => '   ']);
+        $this->createCheckpoint($event, $job, ['order' => 3, 'name' => 'Drop', 'notes' => 'left from a reset']);
+
+        $admin = User::factory()->create();
+        $admin->assignRole('admin');
+
+        $this->actingAs($admin)->withSession(['active_event_id' => $event->id])
+            ->get("/job/{$job->id}")
+            ->assertOk()
+            ->assertInertia(fn (AssertableInertia $page) => $page
+                ->where('checkpoints.0.notes', "Team delayed at immigration, 20 min.\n2 bags missing.")
+                ->where('checkpoints.1.notes', null)
+                ->where('checkpoints.2.notes', null));
+    }
+
     public function test_the_override_gets_the_arrival_flight(): void
     {
         $event = $this->createEvent();

@@ -1,0 +1,137 @@
+/* Shared look of the Planning dialogs (formerly Plans.vue's scoped styles). Use as <style scoped src>. */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  padding: 16px;
+}
+.modal {
+  background: var(--surface);
+  border-radius: 12px;
+  width: 100%;
+  max-width: 460px;
+  border: 1px solid var(--border);
+  animation: slideIn 0.2s ease;
+}
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+}
+.modal-eyebrow {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: var(--ink3);
+  margin-bottom: 3px;
+}
+.modal-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--ink);
+}
+.modal-close {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--ink3);
+  padding: 4px;
+  display: flex;
+  border-radius: 5px;
+}
+.modal-close:hover {
+  background: var(--panel);
+  color: var(--ink);
+}
+.modal-body {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.modal-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 14px 20px;
+  border-top: 1px solid var(--border);
+}
+.am-modal {
+  max-width: 520px;
+  max-height: calc(100vh - 32px);
+  display: flex;
+  flex-direction: column;
+}
+.am-modal .modal-header,
+.am-modal .modal-footer {
+  flex-shrink: 0;
+}
+.am-modal .modal-body {
+  overflow-y: auto;
+  flex: 1;
+}
+.new-plan-body {
+  max-height: 560px;
+  overflow-y: auto;
+}
+
+.form-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-bottom: 16px;
+  min-width: 0;
+}
+.form-field label {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ink2);
+}
+.form-field input,
+.form-field select {
+  padding: 8px 10px;
+  border-radius: 7px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 13.5px;
+  font-family: inherit;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+.form-field select { text-overflow: ellipsis; }
+.form-field input:focus,
+.form-field select:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-ring);
+}
+
+.am-mode-btn {
+  padding: 10px 14px;
+  border: 1.5px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  cursor: pointer;
+  text-align: left;
+  color: var(--ink);
+  font-family: inherit;
+  transition: border-color 0.12s, background 0.12s;
+}
+.am-mode-btn:hover {
+  background: var(--panel);
+}
+.am-mode-btn--active {
+  border-color: var(--accent);
+  background: var(--accent-soft, #eef2ff);
+  color: var(--accent);
+}

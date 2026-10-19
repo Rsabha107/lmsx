@@ -13,7 +13,7 @@ class RolePermissionSeeder extends Seeder
      * plus admin/oversight — not an aspirational role list with no basis in
      * this codebase's data model.
      */
-    private const ROLES = ['admin', 'ground_control', 'transport', 'team_services', 'venue_ops', 'agency', 'SecurityRole'];
+    private const ROLES = ['admin', 'ground_control', 'transport', 'team_services', 'venue_ops', 'agency', 'SecurityRole', 'mobile_viewer'];
 
     private const PERMISSIONS = [
         'movements.view',
@@ -22,6 +22,8 @@ class RolePermissionSeeder extends Seeder
         'jobs.view-all-functional-areas',
         // In the mobile app, see and work jobs supervised by someone else.
         'jobs.view-unassigned',
+        // Act on a job it can see: complete checkpoints, report and resolve issues, change its status.
+        'jobs.work',
         // Forging a completion record is an oversight action, not a field one.
         'jobs.override',
         // Reach events the user is not assigned to.
@@ -52,11 +54,18 @@ class RolePermissionSeeder extends Seeder
         'movements.view',
         'jobs.view',
         'jobs.view-unassigned',
+        'jobs.work',
         'events.view',
         'fleet.view',
         'plans.view',
         'console.view',
         'ai.use',
+    ];
+
+    private const MOBILE_VIEWER_PERMISSIONS = [
+        'jobs.view',
+        'jobs.view-unassigned',
+        'jobs.view-all-functional-areas',
     ];
 
     public function run(): void
@@ -78,7 +87,12 @@ class RolePermissionSeeder extends Seeder
         Role::findByName('ground_control')->syncPermissions([
             'jobs.view',
             'jobs.view-all-functional-areas',
+            'jobs.work',
         ]);
+
+        // Read-only mobile app users: every job of their events (their provider's only, when linked
+        // to one), with no jobs.work, so they follow checkpoint progress but never act on it.
+        Role::findByName('mobile_viewer')->syncPermissions(self::MOBILE_VIEWER_PERMISSIONS);
 
         // transport/team_services/venue_ops are scoped to their functional
         // area via the user_functional_areas pivot table, not by permission
@@ -88,7 +102,7 @@ class RolePermissionSeeder extends Seeder
         }
 
         // The outside crew agency: sees everything, changes only crew, vehicles, drivers and providers. No
-        // jobs.view, because the job policy treats it as a grant to act on jobs.
+        // jobs.view: it reads jobs only through the Day Board (JobOperationPolicy::read).
         // RestrictAgencyToCrewAssignment closes the write routes guarded only by a view permission.
         Role::findByName('agency')->syncPermissions([
             'movements.view',

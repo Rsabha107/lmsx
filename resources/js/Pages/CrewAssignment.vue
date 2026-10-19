@@ -241,6 +241,7 @@ import CrewWeek from '../Components/CrewWeek.vue';
 import { useToast } from '../Composables/useToast';
 import { useStatusLabels } from '../Composables/useStatusLabels';
 import { ROLES, minutesFrom, clockLabel, duration } from '../Composables/useCrewRoster';
+import { crewOptions } from '../Composables/crewPeople';
 
 const props = defineProps({
   movements: { type: Array, default: () => [] },
@@ -475,14 +476,7 @@ const resourcesFor = (key) => ({ driver: props.drivers, vehicle: props.vehicles,
 
 // A movement belongs to one provider, so only that provider's people and fleet are offered (plus whoever is already on it).
 function optionsFor(key, mv) {
-  const list = resourcesFor(key);
-  if (!mv?.fleet_provider_id) return list;
-  const field = key === 'supervisor' ? 'fleet_provider_id' : 'provider_id';
-  const idField = ROLES[key].idField;
-  const current = key === 'supervisor'
-    ? [mv[idField], ...(mv.extra_supervisors ?? []).map((s) => s.id)]
-    : [mv[idField], ...(mv.units ?? []).map((u) => u[idField])];
-  return list.filter((o) => o[field] === mv.fleet_provider_id || current.includes(o.id));
+  return crewOptions(resourcesFor(key), key, mv);
 }
 
 function setProvider(mv, value) {

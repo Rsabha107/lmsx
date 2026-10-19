@@ -53,7 +53,7 @@ class LmsController extends Controller
         if (! $request->user()->can('console.view')) {
             $mobileViewOn = app(SettingsService::class)->getGlobalFlag(SettingsService::FLAG_JOBS_MOBILE_MENU);
 
-            if (! $mobileViewOn && $request->user()->hasAnyRole(['ground_control', 'transport'])) {
+            if (! $mobileViewOn && $request->user()->hasAnyRole(['ground_control', 'transport', 'mobile_viewer'])) {
                 return redirect()->route('get-app');
             }
 
@@ -257,7 +257,7 @@ class LmsController extends Controller
                 $team = $movement?->team;
                 // Checkpoints of a flight job are re-timed from these when the flight moves.
                 $offsetOf = fn ($cp) => $movement?->flight && $cp->checkpoint_id && in_array($movement->kind, ['arrival', 'departure'], true)
-                    ? $settings->getCheckpointOffset($cp->checkpoint_id, $movement->kind, $movement->event_id)
+                    ? $settings->getCheckpointOffset($cp->checkpoint_id, $movement->offsetType(), $movement->event_id)
                     : null;
 
                 return [
@@ -743,6 +743,8 @@ class LmsController extends Controller
                 'delay' => $cp->delay_minutes,
                 'by' => $cp->completedBy?->name,
                 'was_overridden' => (bool) $cp->was_overridden,
+                // What the supervisor typed when completing it (or the reason given on the web / in an override).
+                'notes' => $cp->state === 'done' ? (trim((string) $cp->notes) ?: null) : null,
                 'skip_reason' => $cp->skip_reason,
                 'skipped_at' => $cp->skipped_at?->format('H:i'),
                 'skipped_by' => $cp->skippedBy?->name,

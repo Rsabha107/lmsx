@@ -67,15 +67,10 @@ class PlanManagementController extends Controller
      * Lightweight checkpoint progress for a movement, without loading any
      * checkpoint rows: real counts from the job's own maintained
      * `checkpoints_total`/`checkpoints_completed` columns once a job
-     * exists, otherwise the template's total with 0 completed. BUS
-     * movements never get checkpoints regardless of their template.
+     * exists, otherwise the template's total with 0 completed.
      */
     protected function checkpointProgress(Movement $movement, array $templateCounts): array
     {
-        if ($movement->isBusMovement()) {
-            return ['checkpoints_total' => 0, 'checkpoints_completed' => 0];
-        }
-
         if ($movement->job) {
             return [
                 'checkpoints_total' => $movement->job->checkpoints_total ?? 0,
@@ -1046,8 +1041,6 @@ class PlanManagementController extends Controller
             return back()->with('error', 'No valid movements to generate jobs from');
         }
 
-        // Generate jobs (BUS movements are silently skipped internally —
-        // they have no reference time to schedule against)
         $jobs = $this->jobService->generateJobsFromMovements(
             $movements->pluck('id')->toArray(),
             [
@@ -1055,17 +1048,11 @@ class PlanManagementController extends Controller
             ]
         );
 
-        $skipped = $movements->count() - count($jobs);
-        $message = count($jobs) . ' jobs generated successfully';
-        if ($skipped > 0) {
-            $message .= ". {$skipped} skipped (BUS movement, no reference time).";
-        }
-
         if (count($jobs) === 0) {
-            return back()->with('error', $skipped > 0 ? "No jobs generated. {$skipped} movement(s) skipped (BUS movement, no reference time)." : 'No jobs generated.');
+            return back()->with('error', 'No jobs generated.');
         }
 
-        return redirect()->back()->with('success', $message);
+        return redirect()->back()->with('success', count($jobs) . ' jobs generated successfully');
     }
 
     /**
@@ -1108,7 +1095,7 @@ class PlanManagementController extends Controller
 
             foreach ($template->legs as $leg) {
                 $scheduledDeparture = $baseTime->copy()->addMinutes($cumulativeMinutes);
-                $scheduledArrival = $scheduledDeparture->copy()->addMinutes($leg->estimated_duration_minutes ?? 30);
+                $scheduledArrival = $scheduledDeparture->copy()->addMinutes($template->legMinutes($leg));
 
                 Movement::create([
                     'code' => $this->generateMovementCode($plan),
@@ -1127,7 +1114,7 @@ class PlanManagementController extends Controller
                     'source' => 'template',
                 ]);
 
-                $cumulativeMinutes += $leg->estimated_duration_minutes ?? 30;
+                $cumulativeMinutes += $template->legMinutes($leg);
                 $movementsCreated++;
             }
 

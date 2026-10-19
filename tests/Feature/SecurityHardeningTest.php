@@ -35,7 +35,8 @@ class SecurityHardeningTest extends TestCase
         $event = $this->createEvent();
         Permission::firstOrCreate(['name' => 'jobs.view', 'guard_name' => 'web']);
         Permission::firstOrCreate(['name' => 'jobs.view-all-functional-areas', 'guard_name' => 'web']);
-        Role::firstOrCreate(['name' => 'ground_control', 'guard_name' => 'web'])->syncPermissions(['jobs.view', 'jobs.view-all-functional-areas']);
+        Permission::firstOrCreate(['name' => 'jobs.work', 'guard_name' => 'web']);
+        Role::firstOrCreate(['name' => 'ground_control', 'guard_name' => 'web'])->syncPermissions(['jobs.view', 'jobs.view-all-functional-areas', 'jobs.work']);
 
         $me = User::factory()->create();
         $me->assignRole('ground_control');

@@ -18,11 +18,11 @@ class MobileOfflineReplayTest extends TestCase
 
     private function fieldSupervisor(Event $event): User
     {
-        foreach (['jobs.view', 'jobs.view-all-functional-areas'] as $name) {
+        foreach (['jobs.view', 'jobs.view-all-functional-areas', 'jobs.work'] as $name) {
             Permission::firstOrCreate(['name' => $name, 'guard_name' => 'web']);
         }
         Role::firstOrCreate(['name' => 'ground_control', 'guard_name' => 'web'])
-            ->syncPermissions(['jobs.view', 'jobs.view-all-functional-areas']);
+            ->syncPermissions(['jobs.view', 'jobs.view-all-functional-areas', 'jobs.work']);
 
         $user = User::factory()->create();
         $user->assignRole('ground_control');

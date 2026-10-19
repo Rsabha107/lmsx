@@ -134,6 +134,10 @@
                 <div v-else-if="cp.status === 'done' && (cp.by || cp.was_overridden)" style="font-size: 12px; color: var(--ink3); margin-top: 2px;">
                   {{ cp.was_overridden ? 'Overridden' : 'Completed' }}<template v-if="cp.by"> by {{ cp.by }}</template>
                 </div>
+                <div v-if="cp.status === 'done' && cp.notes" class="cp-note">
+                  <svg class="cp-note__icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                  <span><span class="sr-only">Note: </span>{{ cp.notes }}</span>
+                </div>
                 <div v-else-if="cp.status === 'skipped'" style="font-size: 12px; color: #b45309; margin-top: 2px;">
                   Skipped<template v-if="cp.skipped_by"> by {{ cp.skipped_by }}</template><template v-if="cp.skip_reason"> · {{ cp.skip_reason }}</template>
                 </div>
@@ -579,6 +583,22 @@ async function explainDelay() {
 .info-mono { font-family: var(--mono, ui-monospace, monospace); font-size: 11.5px; }
 .info-muted { color: var(--ink3); }
 .info-notes { white-space: pre-wrap; }
+.cp-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin-top: 6px;
+  padding: 6px 9px;
+  border-left: 3px solid var(--border);
+  border-radius: 0 6px 6px 0;
+  background: var(--panel);
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--ink2);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.cp-note__icon { flex-shrink: 0; margin-top: 2px; color: var(--ink3); }
 
 .detail-meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .detail-event-badge {

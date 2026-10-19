@@ -207,6 +207,7 @@ class MobileFeedController extends Controller
                 'name' => $user->name,
                 'email' => $user->email,
                 'roles' => $user->getRoleNames(),
+                'read_only' => ! $user->can('jobs.work'),
             ],
             'event' => $event?->only(['id', 'name']),
             'stats' => [

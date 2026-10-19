@@ -234,15 +234,22 @@ class Movement extends Model
     }
 
     /**
-     * A 'BUS' flight_number is a placeholder meaning the team travels by
-     * road for this leg, not an actual flight — there's no real reference
-     * time to schedule against, so these movements get no window, no
-     * checkpoints, and can't be turned into jobs.
+     * A 'BUS' flight_number means the team travels by road for this leg (for example crossing a
+     * land border). The bus's date and time are its reference time, like a flight's.
      */
     public function isBusMovement(): bool
     {
         return in_array($this->kind, ['arrival', 'departure'], true)
             && $this->flight?->flight_number === 'BUS';
+    }
+
+    /**
+     * The Settings offset type this movement is timed with: bus_arrival / bus_departure for a road
+     * leg (falling back to the flight type when not configured), otherwise its own kind.
+     */
+    public function offsetType(): string
+    {
+        return $this->isBusMovement() ? 'bus_'.$this->kind : (string) $this->kind;
     }
 
     /**

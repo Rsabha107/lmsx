@@ -1,6 +1,7 @@
 <template>
   <app-layout>
-    <div class="db-page">
+    <NoActiveEvent v-if="!hasActiveEvent" what="the day board" />
+    <div v-else class="db-page">
       <!-- Header -->
       <header class="db-head">
         <div>
@@ -82,9 +83,7 @@
         <button v-if="!isToday" type="button" class="db-strip-today" @click="goDay(todayKey())">Today</button>
       </nav>
 
-      <div v-if="!hasActiveEvent" class="db-empty">Select an event to see its day board.</div>
-
-      <template v-else-if="view === 'board'">
+      <template v-if="view === 'board'">
         <!-- Summary tiles double as filters -->
         <div class="db-tiles" role="tablist">
           <button
@@ -244,6 +243,7 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { router, usePage } from '@inertiajs/vue3';
 import AppLayout from '../Components/AppLayout.vue';
+import NoActiveEvent from '../Components/NoActiveEvent.vue';
 import StatusPill from '../Components/StatusPill.vue';
 import SvgIcon from '../Components/SvgIcon.vue';
 import FlagIcon from '../Components/FlagIcon.vue';

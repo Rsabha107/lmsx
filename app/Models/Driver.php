@@ -18,9 +18,10 @@ class Driver extends Model
     }
 
     /** Drivers put forward for an event; only they are offered for its movements. */
-    public function scopeInEventPool($query, ?int $eventId)
+    /** @param int|array<int>|null $eventId one event or several (the union of their pools) */
+    public function scopeInEventPool($query, int|array|null $eventId)
     {
-        return $query->whereIn('drivers.id', DB::table('event_driver')->where('event_id', $eventId)->select('driver_id'));
+        return $query->whereIn('drivers.id', DB::table('event_driver')->whereIn('event_id', (array) $eventId)->select('driver_id'));
     }
 
     public function events(): BelongsToMany

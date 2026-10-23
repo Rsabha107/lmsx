@@ -1,13 +1,6 @@
 <template>
   <app-layout>
-    <!-- No Active Event State -->
-    <div v-if="!hasActiveEvent" class="empty-state-full">
-      <div class="empty-state-icon">📅</div>
-      <h2 class="empty-state-title">No Active Event</h2>
-      <p class="empty-state-text">
-        Please select an event from the dropdown above to view the jobs queue.
-      </p>
-    </div>
+    <NoActiveEvent v-if="!hasActiveEvent" what="the jobs queue" />
 
     <!-- Active Event Content -->
     <div v-else class="jobs-page">
@@ -558,7 +551,7 @@
         />
       </div>
       <p v-if="deleteError" style="margin: 8px 0 0; color: var(--danger); font-size: 12px;">{{ deleteError }}</p>
-      <p style="margin: 12px 0 0; color: var(--ink3); font-size: 13px;">This action cannot be undone.</p>
+      <p style="margin: 12px 0 0; color: var(--ink3); font-size: 13px;">You can restore them from Setups → Recycle bin for {{ deletionRules.keepDays ?? 30 }} days.</p>
       <template #footer>
         <Button variant="secondary" size="sm" :disabled="deletingJobs" @click="closeDeleteJobs">Cancel</Button>
         <Button
@@ -623,6 +616,7 @@ import { useStatusLabels } from '../Composables/useStatusLabels';
 import { ref, computed, nextTick, watch, onMounted, onUnmounted } from 'vue';
 import { router, usePage } from '@inertiajs/vue3';
 import AppLayout from '../Components/AppLayout.vue';
+import NoActiveEvent from '../Components/NoActiveEvent.vue';
 import StatusPill from '../Components/StatusPill.vue';
 import SvgIcon from '../Components/SvgIcon.vue';
 import RefreshButton from '../Components/RefreshButton.vue';
@@ -1242,12 +1236,16 @@ const deleteMessage = computed(() => {
     ? `job <strong>${escapeHtml(jobs[0].id)}</strong>`
     : `<strong>${jobs.length}</strong> jobs`;
 
-  return `This will permanently delete ${subject} together with their checkpoints, captured photos/signatures and field issues.<br><br>`
+  return `This moves ${subject} to the recycle bin, with their checkpoints, photos/signatures and field issues.<br><br>`
     + 'The movements are kept and jobs can be generated for them again.'
     + (started
-      ? `<br><br><strong>${started} ${started === 1 ? 'job is' : 'jobs are'} in progress or completed</strong> — their field records will be lost.`
+      ? `<br><br><strong>${started} ${started === 1 ? 'job is' : 'jobs are'} in progress or completed.</strong>`
+      : '')
+    + (jobs.length > (deletionRules.value.approveOver?.jobs ?? Infinity)
+      ? `<br><br><strong>More than ${deletionRules.value.approveOver.jobs} jobs:</strong> another admin has to approve before they are deleted.`
       : '');
 });
+const deletionRules = computed(() => page.props.deletionRules ?? {});
 
 function confirmDeleteJobs() {
   const ids = (pendingDelete.value || []).map(j => j.db_id);
@@ -1416,19 +1414,6 @@ function reloadSelectedJob() {
 </script>
 
 <style scoped>
-.empty-state-full {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  min-height: 60vh;
-  text-align: center;
-}
-.empty-state-text {
-  font-size: 14px;
-  color: var(--ink3);
-  max-width: 400px;
-}
 
 .page-header {
   display: flex; align-items: flex-start; justify-content: space-between;

@@ -251,6 +251,12 @@ class SettingsService
         return $value === null ? $default : filter_var($value, FILTER_VALIDATE_BOOLEAN);
     }
 
+    /** A plain value stored for one event (no global fallback), or null. */
+    public function getEventValue(string $key, int $eventId): ?string
+    {
+        return $this->getSetting($key, Setting::SCOPE_EVENT, $eventId);
+    }
+
     /** A conflict-check limit: the saved value, else the built-in default. */
     public function getThreshold(string $name): int
     {

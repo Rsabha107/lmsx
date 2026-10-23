@@ -239,7 +239,7 @@ function build(row) {
       showSub: s.end - s.start >= 60,
       sub: `${clockLabel(s.start)}–${clockLabel(s.end)} · ${s.mv.team_code ?? s.mv.team ?? ''}`,
       title: [
-        `${s.mv.code} · ${s.mv.team ?? ''} · ${clockLabel(s.start)}–${clockLabel(s.end)}${s.start < 0 ? ' (from the day before)' : ''}`,
+        `${s.mv.code}${s.mv.event ? ` (${s.mv.event})` : ''} · ${s.mv.team ?? ''} · ${clockLabel(s.start)}–${clockLabel(s.end)}${s.start < 0 ? ' (from the day before)' : ''}`,
         `${s.mv.from ?? ''} → ${s.mv.to ?? ''}`,
         ...others,
         ...(clash ? s.mv.clashes[r.clashKey] : []),

@@ -20,6 +20,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
@@ -40,6 +41,7 @@ class MovementCrewController extends Controller
     {
         $eventId = $request->session()->get('active_event_id');
         $user = $request->user();
+        $eventIds = $this->crewEventIds($request);
 
         try {
             $date = Carbon::parse($request->query('date', now()->toDateString()))->toDateString();
@@ -48,16 +50,21 @@ class MovementCrewController extends Controller
         }
         $day = Carbon::parse($date)->startOfDay();
 
-        $scoped = fn () => Movement::where('event_id', $eventId)
+        $scoped = fn () => Movement::whereIn('event_id', $eventIds)
             ->when(
                 ! $user->can('movements.view-all-functional-areas'),
                 fn ($q) => $q->whereIn('functional_area', $user->functionalAreaCodes()),
             );
         $crew = ['vehicle:id,code,plate_number,vehicle_type', 'driver:id,name', 'fieldSupervisor:id,name', 'units.vehicle:id,code,plate_number,vehicle_type', 'units.driver:id,name', 'extraSupervisors:id,name'];
         $providerNames = FleetProvider::withoutGlobalScopes()->pluck('name', 'id');
+        $eventLabels = Event::whereIn('id', $eventIds)->get(['id', 'name', 'short_name'])
+            ->mapWithKeys(fn (Event $e) => [$e->id => $e->short_name ?: $e->name]);
 
-        // Same spans and double-booking rules as Planning's Conflicts tab.
-        $schedule = $eventId ? $conflicts->crewSchedule((int) $eventId) : [];
+        // Same spans and double-booking rules as Planning's Conflicts tab (which also checks other events).
+        $schedule = [];
+        foreach ($eventIds as $id) {
+            $schedule += $conflicts->crewSchedule((int) $id);
+        }
         $spanOf = fn (Movement $m) => [
             $schedule[$m->id]['start'] ?? $m->window_start,
             $schedule[$m->id]['end'] ?? $m->window_end ?? $m->window_start?->copy()->addMinutes(30),
@@ -73,12 +80,12 @@ class MovementCrewController extends Controller
 
         // The day's movements, plus last night's that are still running after midnight.
         $movements = $scoped()
-            ->with(['team:id,code,team_name', 'job:id,movement_id,job_id,status', ...$crew])
+            ->with(['team:id,code,team_name', 'job:id,movement_id,job_id,status,completed_at', ...$crew])
             ->where('window_start', '>=', $day->copy()->subDay())
             ->where('window_start', '<', $day->copy()->addDay())
             ->orderBy('window_start')
             ->get()
-            ->map(function (Movement $m) use ($day, $spanOf, $schedule, $vehicleLabel, $unitsOf, $extraSupervisorsOf, $providerNames) {
+            ->map(function (Movement $m) use ($day, $spanOf, $schedule, $vehicleLabel, $unitsOf, $extraSupervisorsOf, $providerNames, $eventLabels) {
                 [$start, $end] = $spanOf($m);
                 $carryOver = $m->window_start->lt($day);
                 if ($carryOver && ! $end?->gt($day)) {
@@ -88,6 +95,8 @@ class MovementCrewController extends Controller
                 return [
                     'id' => $m->id,
                     'code' => $m->code,
+                    'event_id' => $m->event_id,
+                    'event' => count($eventLabels) > 1 ? ($eventLabels[$m->event_id] ?? null) : null,
                     'kind' => $m->kind,
                     'team' => $m->team?->team_name,
                     'team_code' => $m->team?->code,
@@ -110,6 +119,7 @@ class MovementCrewController extends Controller
                     'extra_supervisors' => $extraSupervisorsOf($m),
                     'job_id' => $m->job?->job_id,
                     'job_status' => $m->job?->status,
+                    'job_done_at' => $m->job?->status === 'completed' ? $m->job->completed_at?->format('H:i') : null,
                     'span_start' => $start?->format('Y-m-d H:i'),
                     'span_end' => $end?->format('Y-m-d H:i'),
                     'carry_over' => $carryOver,
@@ -165,12 +175,59 @@ class MovementCrewController extends Controller
             'date' => $date,
             'days' => $days,
             'week' => ['start' => $weekStart->toDateString(), 'slots' => $week],
-            'vehicles' => Vehicle::inEventPool($eventId)->select('id', 'code', 'plate_number', 'vehicle_type', 'capacity', 'provider_id')->orderBy('code')->get(),
-            'drivers' => Driver::inEventPool($eventId)->select('id', 'name', 'phone', 'provider_id')->orderBy('name')->get(),
+            // Each vehicle and driver says which chosen events' pools it is in: a movement may only take its own event's.
+            'vehicles' => $this->withPoolEvents(
+                Vehicle::inEventPool($eventIds)->select('id', 'code', 'plate_number', 'vehicle_type', 'capacity', 'provider_id')->orderBy('code')->get(),
+                'event_vehicle', 'vehicle_id', $eventIds,
+            ),
+            'drivers' => $this->withPoolEvents(
+                Driver::inEventPool($eventIds)->select('id', 'name', 'phone', 'provider_id')->orderBy('name')->get(),
+                'event_driver', 'driver_id', $eventIds,
+            ),
             'supervisors' => $this->supervisors()->select('id', 'name', 'job_title', 'fleet_provider_id')->orderBy('name')->get(),
             // Only people who can re-home a movement are offered the provider switch.
             'providers' => $user->can('plans.manage') ? FleetProvider::orderBy('name')->get(['id', 'name']) : [],
+            'eventIds' => $eventIds,
+            // Events that can be shown alongside the active one (orWhere only after accessibleTo's own filter).
+            'events' => Event::accessibleTo($user)
+                ->when(! $user->canAccessAllEvents() && $eventId, fn ($q) => $q->orWhere('id', $eventId))
+                ->orderBy('name')->get(['id', 'name', 'short_name'])
+                ->map(fn (Event $e) => ['id' => $e->id, 'name' => $e->name, 'short' => $e->short_name ?: $e->name]),
         ]);
+    }
+
+    /**
+     * The active event plus the other events picked on Crew Assignment (?events[]=, remembered in
+     * the session), limited to events the user may open.
+     *
+     * @return array<int, int>
+     */
+    private function crewEventIds(Request $request): array
+    {
+        $active = (int) $request->session()->get('active_event_id');
+        if ($request->has('events')) {
+            $picked = array_map('intval', array_filter((array) $request->query('events'), 'is_numeric'));
+            $request->session()->put('crew_event_ids', $picked);
+        } else {
+            $picked = (array) $request->session()->get('crew_event_ids', []);
+        }
+
+        $others = $picked
+            ? Event::accessibleTo($request->user())->whereIn('id', array_diff($picked, [$active]))->orderBy('name')->pluck('id')->all()
+            : [];
+
+        return array_values(array_filter([$active ?: null, ...$others]));
+    }
+
+    /** Adds `event_ids`: which of the chosen events' pools each vehicle or driver belongs to. */
+    private function withPoolEvents($items, string $table, string $column, array $eventIds)
+    {
+        $pools = \Illuminate\Support\Facades\DB::table($table)->whereIn('event_id', $eventIds)
+            ->whereIn($column, $items->pluck('id'))->get([$column, 'event_id'])->groupBy($column);
+
+        return $items->each(fn ($item) => $item->setAttribute(
+            'event_ids', ($pools[$item->id] ?? collect())->pluck('event_id')->map(fn ($id) => (int) $id)->values()->all(),
+        ));
     }
 
     /** One day's resource allocation sheet for the service provider. */
@@ -178,6 +235,8 @@ class MovementCrewController extends Controller
     {
         $eventId = $request->session()->get('active_event_id');
         $user = $request->user();
+        $eventIds = $this->crewEventIds($request);
+        $multiEvent = count($eventIds) > 1;
 
         try {
             $day = Carbon::parse($request->query('date', now()->toDateString()))->startOfDay();
@@ -185,7 +244,7 @@ class MovementCrewController extends Controller
             $day = now()->startOfDay();
         }
 
-        $movements = Movement::where('event_id', $eventId)
+        $movements = Movement::whereIn('event_id', $eventIds)
             ->when(
                 ! $user->can('movements.view-all-functional-areas'),
                 fn ($q) => $q->whereIn('functional_area', $user->functionalAreaCodes()),
@@ -225,8 +284,16 @@ class MovementCrewController extends Controller
         $sheet->getStyle('A1')->getFont()->setBold(true)->setSize(14);
 
         $headers = ['Job ID', 'Activity Type', 'PMA', 'Arrival Date', 'Arrival Time', 'First Checkpoint', 'First Checkpoint Time', 'Match KO time', 'Truck Report', 'FROM (VENUE)', 'TO (VENUE)', 'Driver', 'Supervisor', 'Crew', 'Truck Plate #', 'Status', 'Notes'];
+        // Several events in one sheet: say which event each row belongs to.
+        $eventNames = $multiEvent
+            ? Event::whereIn('id', $eventIds)->get(['id', 'name', 'short_name'])->mapWithKeys(fn (Event $e) => [$e->id => $e->short_name ?: $e->name])
+            : collect();
+        if ($multiEvent) {
+            $headers[] = 'Event';
+        }
+        $lastCol = $multiEvent ? 'R' : 'Q';
         $sheet->fromArray($headers, null, 'A3');
-        $head = $sheet->getStyle('A3:Q3');
+        $head = $sheet->getStyle("A3:{$lastCol}3");
         $head->getFont()->setBold(true)->getColor()->setRGB('FFFFFF');
         $head->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('1F4E79');
         $head->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER)->setVertical(Alignment::VERTICAL_CENTER)->setWrapText(true);
@@ -255,19 +322,21 @@ class MovementCrewController extends Controller
                 $names([$plates($m->vehicle), ...$m->units->map(fn ($u) => $plates($u->vehicle))->all()]),
                 $m->job ? JobOperation::statusLabel($m->job->status) : 'Pending',
                 $m->notes,
+                ...($multiEvent ? [$eventNames[$m->event_id] ?? null] : []),
             ], null, 'A' . $row);
             $row++;
         }
 
-        foreach (range('A', 'Q') as $col) {
+        foreach (range('A', $lastCol) as $col) {
             $sheet->getColumnDimension($col)->setAutoSize(true);
         }
         $sheet->freezePane('A4');
 
-        $code = $eventId ? Event::find($eventId)?->short_name : null;
+        $codes = Event::whereIn('id', $eventIds)->orderByRaw('id = ? desc', [$eventId])->pluck('short_name')->filter()
+            ->map(fn ($code) => preg_replace('/[^A-Za-z0-9]/', '', $code))->implode('-');
         $filename = implode('_', array_filter([
             'PMA',
-            $code ? preg_replace('/[^A-Za-z0-9]/', '', $code) : null,
+            $codes ?: null,
             $day->format('dmY'),
             'RESOURCE_ALLOCATION',
         ])) . '.xlsx';
@@ -280,7 +349,7 @@ class MovementCrewController extends Controller
 
     public function update(Request $request, Movement $movement, JobLifecycleService $lifecycle, ConflictDetectionService $conflicts): RedirectResponse
     {
-        $this->authorize('view', $movement);
+        $this->authorize('assignCrew', $movement);
 
         $validated = $request->validate($this->crewRules($movement));
 
@@ -317,7 +386,7 @@ class MovementCrewController extends Controller
 
         foreach ($request->input('movements') as $item) {
             $movement = Movement::find($item['id']);
-            if (! $movement || $request->user()->cannot('view', $movement)) {
+            if (! $movement || $request->user()->cannot('assignCrew', $movement)) {
                 $failed[] = "#{$item['id']}: not available to you";
 
                 continue;
@@ -331,14 +400,20 @@ class MovementCrewController extends Controller
             }
 
             $data = $validator->validated();
-            $changed = $lifecycle->assignMovementCrew(
-                $movement,
-                $data['vehicle_id'] ?? null,
-                $data['driver_id'] ?? null,
-                $data['field_supervisor_id'] ?? null,
-                array_key_exists('units', $data) ? $data['units'] : null,
-                array_key_exists('supervisors', $data) ? $data['supervisors'] : null,
-            );
+            try {
+                $changed = $lifecycle->assignMovementCrew(
+                    $movement,
+                    $data['vehicle_id'] ?? null,
+                    $data['driver_id'] ?? null,
+                    $data['field_supervisor_id'] ?? null,
+                    array_key_exists('units', $data) ? $data['units'] : null,
+                    array_key_exists('supervisors', $data) ? $data['supervisors'] : null,
+                );
+            } catch (ValidationException $e) {
+                $failed[] = collect($e->errors())->flatten()->first();
+
+                continue;
+            }
 
             if ($changed) {
                 $saved->push($movement);
@@ -406,7 +481,7 @@ class MovementCrewController extends Controller
     /** Hands a movement to another provider; its crew stays until that provider reassigns it. */
     public function updateProvider(Request $request, Movement $movement): RedirectResponse
     {
-        $this->authorize('view', $movement);
+        $this->authorize('assignCrew', $movement);
 
         $validated = $request->validate([
             'fleet_provider_id' => ['present', 'nullable', 'integer', Rule::exists('fleet_providers', 'id')],

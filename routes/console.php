@@ -10,3 +10,5 @@ Artisan::command('inspire', function () {
 
 Schedule::command('flights:sync')->everyThirtyMinutes();
 Schedule::command('push:job-reminders')->everyMinute()->withoutOverlapping();
+// Empty the recycle bin of what is past its 30 days, at night Doha time.
+Schedule::command('deletions:purge --apply')->dailyAt('03:30')->withoutOverlapping();

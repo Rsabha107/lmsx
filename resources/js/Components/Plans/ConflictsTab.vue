@@ -8,6 +8,14 @@
       gap: 10px;
     "
   >
+    <div v-if="planMovementIds" class="ct-scope" role="group" aria-label="Conflicts shown">
+      <button type="button" :class="['ct-scope-btn', { 'ct-scope-btn--on': scope === 'plan' }]" @click="scope = 'plan'">
+        This plan <span>{{ planOpenCount }}</span>
+      </button>
+      <button type="button" :class="['ct-scope-btn', { 'ct-scope-btn--on': scope === 'event' }]" @click="scope = 'event'">
+        Whole event <span>{{ props.conflicts.filter((c) => !c.accepted).length }}</span>
+      </button>
+    </div>
     <div
       v-if="openConflicts.length === 0"
       style="
@@ -26,7 +34,7 @@
         style="color: var(--ok); flex-shrink: 0"
       />
       <div style="flex: 1; font-size: 12px; color: var(--ink2)">
-        <b>No conflicts detected</b> — every movement in this event has a
+        <b>No conflicts detected</b> — every movement in this {{ scoped ? 'plan' : 'event' }} has a
         valid window, free resources and realistic timings.
       </div>
     </div>
@@ -52,12 +60,12 @@
         resolve before generating jobs.
         {{ openConflicts.filter((c) => c.sev === "high").length }} require
         immediate attention.
-        <span v-if="conflicts.length > openConflicts.length">
-          {{ conflicts.length - openConflicts.length }} accepted (listed at the bottom).
+        <span v-if="shown.length > openConflicts.length">
+          {{ shown.length - openConflicts.length }} accepted (listed at the bottom).
         </span>
       </div>
     </div>
-    <div v-for="c in conflicts" :key="c.id" class="plan-table-card" :style="c.accepted ? 'opacity: 0.6' : ''">
+    <div v-for="c in shown" :key="c.id" class="plan-table-card" :style="c.accepted ? 'opacity: 0.6' : ''">
       <div
         style="
           padding: 14px;
@@ -199,11 +207,18 @@ import SvgIcon from '../SvgIcon.vue';
 // All of the event's conflicts; accepted ones stay listed but don't count.
 const props = defineProps({
   conflicts: { type: Array, default: () => [] },
+  // With a plan open: its movement ids, to offer a "This plan" filter.
+  planMovementIds: { type: Array, default: null },
 });
+const scope = defineModel('scope', { type: String, default: 'event' });
 
 const emit = defineEmits(['resolve', 'view']);
 
-const openConflicts = computed(() => props.conflicts.filter((c) => !c.accepted));
+const touchesPlan = (c) => (c.movement_ids ?? []).some((id) => props.planMovementIds.includes(id));
+const scoped = computed(() => !!props.planMovementIds && scope.value === 'plan');
+const shown = computed(() => (scoped.value ? props.conflicts.filter(touchesPlan) : props.conflicts));
+const openConflicts = computed(() => shown.value.filter((c) => !c.accepted));
+const planOpenCount = computed(() => (props.planMovementIds ? props.conflicts.filter((c) => !c.accepted && touchesPlan(c)).length : 0));
 
 const sevTone = {
   high: 'danger',
@@ -213,6 +228,13 @@ const sevTone = {
 </script>
 
 <style scoped>
+.ct-scope { display: inline-flex; align-self: flex-start; gap: 2px; padding: 3px; border-radius: 9px; background: var(--panel); }
+.ct-scope-btn {
+  height: 28px; padding: 0 12px; border: 0; border-radius: 6px; background: transparent;
+  color: var(--ink3); font-size: 12px; font-weight: 500; cursor: pointer;
+}
+.ct-scope-btn span { margin-left: 4px; opacity: 0.7; }
+.ct-scope-btn--on { background: var(--surface); color: var(--ink); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1); }
 .plan-table-card {
   background: var(--surface);
   border: 1px solid var(--border);

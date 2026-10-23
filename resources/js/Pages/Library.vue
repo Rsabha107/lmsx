@@ -159,13 +159,7 @@
 
     <!-- Checkpoint Templates Tab -->
     <div v-if="activeTab === 'checkpoint-templates'" style="flex: 1; overflow: auto;">
-      <div v-if="!hasActiveEvent" class="empty-state-full">
-        <div class="empty-state-icon">📅</div>
-        <h2 class="empty-state-title">No Active Event</h2>
-        <p class="empty-state-text">
-          Please select an event from the dropdown above to view checkpoint templates.
-        </p>
-      </div>
+      <NoActiveEvent v-if="!hasActiveEvent" what="checkpoint templates" compact />
       <div v-else class="plan-table-card">
         <div style="padding: 14px 16px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center;">
           <div>
@@ -239,13 +233,7 @@
 
     <!-- Movement Templates Tab -->
     <div v-if="activeTab === 'movement-templates'" style="flex: 1; overflow: hidden; display: flex; gap: 12px;">
-      <div v-if="!hasActiveEvent" class="empty-state-full" style="width: 100%;">
-        <div class="empty-state-icon">📅</div>
-        <h2 class="empty-state-title">No Active Event</h2>
-        <p class="empty-state-text">
-          Please select an event from the dropdown above to view movement templates.
-        </p>
-      </div>
+      <NoActiveEvent v-if="!hasActiveEvent" what="movement templates" compact />
       <template v-else>
       <!-- Templates List -->
       <div class="plan-table-card" style="flex: 1; display: flex; flex-direction: column; overflow: hidden;">
@@ -1166,7 +1154,10 @@
         <p style="font-size: 14px; color: var(--ink); margin-bottom: 12px;">
           Are you sure you want to delete <strong>{{ deleteTarget.name }}</strong>?
         </p>
-        <p style="font-size: 13px; color: var(--ink2);">
+        <p v-if="deleteTarget.type === 'movement-template'" style="font-size: 13px; color: var(--ink2);">
+          It moves to Setups → Recycle bin and can be restored for 30 days. If plans use it, another admin has to approve first.
+        </p>
+        <p v-else style="font-size: 13px; color: var(--ink2);">
           This action cannot be undone.
         </p>
       </div>
@@ -1281,6 +1272,7 @@ import { ref, computed, watch } from 'vue';
 import { router, usePage } from '@inertiajs/vue3';
 import axios from 'axios';
 import AppLayout from '../Components/AppLayout.vue';
+import NoActiveEvent from '../Components/NoActiveEvent.vue';
 import Button from '../Components/Button.vue';
 import Modal from '../Components/Modal.vue';
 import SvgIcon from '../Components/SvgIcon.vue';
@@ -2253,7 +2245,7 @@ function confirmDelete() {
       }
       showDeleteConfirmation.value = false;
       deleteTarget.value = null;
-      showSuccessToast('Deleted successfully');
+      showSuccessToast(flash?.success || 'Deleted successfully', 8000);
     },
     onError: () => {
       // Keep modal open on error so user can see the error message
@@ -2338,29 +2330,6 @@ function movementTypePillStyle(type) {
 </script>
 
 <style scoped>
-.empty-state-full {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  min-height: 60vh;
-  text-align: center;
-}
-.empty-state-icon {
-  font-size: 64px;
-  margin-bottom: 16px;
-}
-.empty-state-title {
-  font-size: 24px;
-  font-weight: 700;
-  color: var(--ink);
-  margin-bottom: 8px;
-}
-.empty-state-text {
-  font-size: 14px;
-  color: var(--ink3);
-  max-width: 400px;
-}
 
 .page-header {
   display: flex;

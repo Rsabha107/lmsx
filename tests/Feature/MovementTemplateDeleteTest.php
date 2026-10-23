@@ -12,7 +12,7 @@ class MovementTemplateDeleteTest extends TestCase
     use CreatesOperationsFixtures;
     use RefreshDatabase;
 
-    public function test_a_template_in_use_is_kept_and_the_error_counts_plans_without_movements(): void
+    public function test_a_template_in_use_waits_for_another_admins_approval(): void
     {
         $event = $this->createEvent();
         $template = MovementTemplate::create(['event_id' => $event->id, 'code' => 'MVT-T', 'name' => 'Match Day to Hotel']);
@@ -20,16 +20,21 @@ class MovementTemplateDeleteTest extends TestCase
         $withMovement = $this->createPlan($event);
         $withMovement->update(['movement_template_id' => $template->id]);
         $this->createMovement($event, $withMovement, $this->createTeam($event));
-        $this->createPlan($event)->update(['movement_template_id' => $template->id]);
+        // A plan already in the recycle bin still counts as using it.
+        $deletedPlan = $this->createPlan($event);
+        $deletedPlan->update(['movement_template_id' => $template->id]);
+        $deletedPlan->delete();
+        $withMovement->forceFill(['movement_template_id' => null])->save();
 
         $this->actingAs($this->createUserWithRole('admin'))
             ->delete("/admin/movement-templates/{$template->id}")
-            ->assertSessionHas('error', 'Cannot delete template. It is used in 2 plan(s). 1 of them have no movements.');
+            ->assertSessionHas('success', fn ($message) => str_starts_with($message, 'Sent for approval: 1 movement template.'));
 
-        $this->assertModelExists($template);
+        $this->assertNotSoftDeleted($template);
+        $this->assertDatabaseHas('deletions', ['kind' => 'movement_templates', 'status' => 'pending', 'trigger' => 'in_use']);
     }
 
-    public function test_an_unused_template_is_deleted(): void
+    public function test_an_unused_template_goes_to_the_recycle_bin(): void
     {
         $event = $this->createEvent();
         $template = MovementTemplate::create(['event_id' => $event->id, 'code' => 'MVT-U', 'name' => 'Unused']);
@@ -38,6 +43,6 @@ class MovementTemplateDeleteTest extends TestCase
             ->delete("/admin/movement-templates/{$template->id}")
             ->assertSessionHas('success');
 
-        $this->assertModelMissing($template);
+        $this->assertSoftDeleted($template);
     }
 }

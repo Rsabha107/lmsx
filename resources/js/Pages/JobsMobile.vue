@@ -1,13 +1,6 @@
 <template>
   <app-layout>
-    <!-- No Active Event State -->
-    <div v-if="!hasActiveEvent" class="empty-state-full">
-      <div class="empty-state-icon">📅</div>
-      <h2 class="empty-state-title">No Active Event</h2>
-      <p class="empty-state-text">
-        Please select an event from the dropdown above to view your jobs.
-      </p>
-    </div>
+    <NoActiveEvent v-if="!hasActiveEvent" what="your jobs" />
 
     <!-- Active Event Content -->
     <div v-else class="mobile-container">
@@ -107,6 +100,7 @@ import { useStatusLabels } from '../Composables/useStatusLabels';
 import { computed } from 'vue';
 import { router, usePage } from '@inertiajs/vue3';
 import AppLayout from '../Components/AppLayout.vue';
+import NoActiveEvent from '../Components/NoActiveEvent.vue';
 import StatusPill from '../Components/StatusPill.vue';
 import SvgIcon from '../Components/SvgIcon.vue';
 

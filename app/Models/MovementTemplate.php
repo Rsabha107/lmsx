@@ -6,10 +6,13 @@ use App\Models\Concerns\UppercasesCode;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class MovementTemplate extends Model
 {
     use Concerns\SerializesWallClock;
+    // Deleted templates sit in the recycle bin (deletion_id) until the purge removes them.
+    use SoftDeletes;
 
     use UppercasesCode;
 

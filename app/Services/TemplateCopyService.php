@@ -87,13 +87,13 @@ class TemplateCopyService
     }
 
     /**
-     * Find a code that isn't already taken (code is globally unique across events).
+     * Find a code that isn't already taken (code is globally unique across events, recycle bin included).
      */
     private function uniqueCode(string $modelClass, string $baseCode): string
     {
         $code = $baseCode;
         $suffix = 2;
-        while ($modelClass::where('code', $code)->exists()) {
+        while ($this->query($modelClass)->where('code', $code)->exists()) {
             $code = "{$baseCode}-{$suffix}";
             $suffix++;
         }
@@ -102,17 +102,25 @@ class TemplateCopyService
     }
 
     /**
-     * Find a name that isn't already taken in the target event (names are unique per event).
+     * Find a name that isn't already taken in the target event (names are unique per event, recycle bin included).
      */
     private function uniqueName(string $modelClass, string $baseName, int $eventId): string
     {
         $name = $baseName;
         $suffix = 2;
-        while ($modelClass::where('event_id', $eventId)->where('name', $name)->exists()) {
+        while ($this->query($modelClass)->where('event_id', $eventId)->where('name', $name)->exists()) {
             $name = "{$baseName} ({$suffix})";
             $suffix++;
         }
 
         return $name;
+    }
+
+    /** Deleted templates still hold their code and name in the unique indexes. */
+    private function query(string $modelClass)
+    {
+        return in_array(\Illuminate\Database\Eloquent\SoftDeletes::class, class_uses_recursive($modelClass), true)
+            ? $modelClass::withTrashed()
+            : $modelClass::query();
     }
 }

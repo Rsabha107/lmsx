@@ -74,16 +74,16 @@
         <span v-else>Sign in</span>
       </button>
 
-      <div class="sso-divider"><span>Or sign in with</span></div>
+      <div class="sso-divider"><span>or</span></div>
 
-      <a href="/auth/microsoft/redirect" class="btn-sso" title="Sign in with Microsoft">
+      <a href="/auth/microsoft/redirect" class="btn-sso" title="Sign in with your SC/LOC account">
         <svg width="16" height="16" viewBox="0 0 23 23" aria-hidden="true">
           <path fill="#f25022" d="M0 0h11v11H0z"/>
           <path fill="#7fba00" d="M12 0h11v11H12z"/>
           <path fill="#00a4ef" d="M0 12h11v11H0z"/>
           <path fill="#ffb900" d="M12 12h11v11H12z"/>
         </svg>
-        <span>Microsoft</span>
+        <span>Sign in with your SC/LOC account</span>
       </a>
     </form>
   </auth-layout>

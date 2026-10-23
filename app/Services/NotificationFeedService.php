@@ -26,6 +26,7 @@ class NotificationFeedService
             $this->fromIssues($eventId),
             $this->fromDelayedMovements($eventId),
             $this->fromAgencyCrewChanges($eventId),
+            $this->fromDeletions($eventId),
         );
 
         usort($alerts, fn ($a, $b) => ($b['at'] ?? '') <=> ($a['at'] ?? ''));
@@ -146,6 +147,28 @@ class NotificationFeedService
                 'Agency crew change: '.$log->target,
                 $log->meta.' — '.$log->user_name,
                 $log->created_at,
+            ))
+            ->all();
+    }
+
+    /** Delete requests waiting for a second admin, and mass-delete brake trips; admins only. */
+    private function fromDeletions(?int $eventId): array
+    {
+        if (! auth()->user()?->can('plans.manage')) {
+            return [];
+        }
+
+        return \App\Models\Deletion::pending()
+            ->when($eventId, fn ($q) => $q->where(fn ($w) => $w->where('event_id', $eventId)->orWhereNull('event_id')))
+            ->latest()
+            ->limit(self::SCAN_LIMIT)
+            ->get()
+            ->map(fn (\App\Models\Deletion $d) => $this->alert(
+                'deletion-'.$d->id,
+                $d->trigger === 'brake' ? 'danger' : 'warn',
+                ($d->trigger === 'brake' ? 'Mass-delete brake: ' : 'Delete waiting for approval: ').\App\Models\Deletion::label($d->kind, $d->item_count),
+                "Asked by {$d->requester_name}. Approve or reject it in Setups → Recycle bin.",
+                $d->created_at,
             ))
             ->all();
     }

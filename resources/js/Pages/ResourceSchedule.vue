@@ -1,9 +1,6 @@
 <template>
   <app-layout>
-    <div v-if="!hasActiveEvent" class="empty-state-full">
-      <h2 class="empty-state-title">No Active Event</h2>
-      <p class="empty-state-text">Select an event from the dropdown above to view resource schedules.</p>
-    </div>
+    <NoActiveEvent v-if="!hasActiveEvent" what="resource schedules" />
 
     <div v-else class="rs-page">
       <header class="rs-head">
@@ -134,6 +131,7 @@
 import { ref, computed, watch, onUnmounted } from 'vue';
 import { router, usePage } from '@inertiajs/vue3';
 import AppLayout from '../Components/AppLayout.vue';
+import NoActiveEvent from '../Components/NoActiveEvent.vue';
 import StatusPill from '../Components/StatusPill.vue';
 import MonthCalendar from '../Components/MonthCalendar.vue';
 import { minutesFrom, duration, mergedMinutes, todayKey } from '../Composables/useCrewRoster';
@@ -282,9 +280,6 @@ function printPdf() {
 </script>
 
 <style scoped>
-.empty-state-full { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 60vh; text-align: center; }
-.empty-state-title { font-size: 24px; font-weight: 700; color: var(--ink); margin-bottom: 8px; }
-.empty-state-text { font-size: 14px; color: var(--ink3); max-width: 400px; }
 
 .rs-page { display: flex; flex-direction: column; gap: 14px; }
 .rs-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-end; gap: 12px; }

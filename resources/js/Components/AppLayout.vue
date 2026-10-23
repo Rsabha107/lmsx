@@ -327,6 +327,7 @@ const allNavItems = [
     items: [
       { label: 'Users',         route: 'setups/users',       icon: 'user',   can: 'setups' },
       { label: 'Roles & Permissions', route: 'setups/access', icon: 'shield', can: 'access.manage' },
+      { label: 'Recycle bin',   route: 'setups/recycle-bin', icon: 'trash', can: 'plans.manage', badge: 'pendingDeletions' },
       { label: 'Utilities',     route: 'utilities',          icon: 'columns', can: 'fleet.manage', flag: 'utilities' },
       { label: 'Settings',      route: 'setups/settings',    icon: 'settings', can: 'setups' },
     ]
@@ -392,6 +393,7 @@ const SidebarLink = (props, { emit }) => {
   }
 
   // A file download must be a real request, not an Inertia visit.
+  const badge = props.item.badge ? Number(page.props[props.item.badge] ?? 0) : 0;
   return h(props.item.download ? 'a' : Link, {
     href,
     class: ['sidebar-link', isActive ? 'sidebar-link--active' : ''],
@@ -400,6 +402,7 @@ const SidebarLink = (props, { emit }) => {
   }, () => [
     h(SvgIcon, { name: props.item.icon }),
     h('span', { class: 'nav-label' }, props.item.label),
+    badge > 0 ? h('span', { class: 'nav-badge', title: `${badge} waiting for you` }, badge) : null,
   ]);
 };
 SidebarLink.props = ['item'];
@@ -567,6 +570,13 @@ MobileNavItem.props = ['item'];
 }
 :deep(.sidebar-link:hover) { background: var(--panel); color: var(--ink); }
 :deep(.sidebar-link--active) { background: var(--accent-soft); color: var(--accent-fg); }
+:deep(.nav-badge) {
+  margin-left: auto; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px;
+  background: var(--danger); color: #fff; font-size: 10.5px; font-weight: 700;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.sidebar--mini :deep(.nav-badge) { position: absolute; top: 2px; right: 2px; margin: 0; }
+.sidebar--mini :deep(.sidebar-link) { position: relative; }
 
 /* Touch targets need more room than a pointer does. */
 @media (max-width: 767px) {

@@ -1,16 +1,14 @@
 <template>
   <app-layout>
-    <div v-if="!hasActiveEvent" class="empty-state-full">
-      <h2 class="empty-state-title">No Active Event</h2>
-      <p class="empty-state-text">Select an event from the dropdown above to see its duty roster.</p>
-    </div>
+    <NoActiveEvent v-if="!hasActiveEvent" what="the duty roster" />
 
     <div v-else class="dr-page">
       <header class="dr-head">
         <div>
           <div class="dr-kicker">Duty roster · {{ eventName }}</div>
-          <h1 class="dr-h1">{{ tab === 'summary' ? 'Roster summary' : 'Shift schedule' }}</h1>
-          <p class="dr-sub">{{ rangeLabel }} · {{ members.length }} staff<template v-if="todayCoverage"> · {{ todayCoverage }} on duty today</template></p>
+          <h1 class="dr-h1">{{ tab === 'summary' ? 'Roster summary' : (tab === 'hotels' ? 'Hotel team schedule' : 'Shift schedule') }}</h1>
+          <p v-if="tab === 'hotels'" class="dr-sub">Supervisors, crew teams and kit runs per team hotel and match day · {{ members.length }} staff on the roster</p>
+          <p v-else class="dr-sub">{{ rangeLabel }} · {{ members.length }} staff<template v-if="todayCoverage"> · {{ todayCoverage }} on duty today</template></p>
         </div>
         <div class="dr-actions">
           <button v-if="canManage" type="button" class="dr-btn" @click="typesOpen = true">
@@ -19,7 +17,7 @@
           <button v-if="canManage" type="button" class="dr-btn" @click="openAdd">
             <svg-icon name="user" :size="15" /> Add staff
           </button>
-          <a class="dr-btn dr-btn--primary" :href="exportUrl">
+          <a class="dr-btn dr-btn--primary" :href="tab === 'hotels' ? '/duty-roster/hotels/export' : exportUrl">
             <svg-icon name="download" :size="15" /> Excel
           </a>
         </div>
@@ -56,7 +54,7 @@
         </p>
       </div>
 
-      <div class="dr-toolbar">
+      <div v-if="tab !== 'hotels'" class="dr-toolbar">
         <div class="dr-week">
           <button type="button" class="dr-nav" aria-label="Previous week" @click="go(addDays(from, -7))">‹</button>
           <span class="dr-week-label">{{ rangeLabel }}</span>
@@ -70,7 +68,9 @@
         </div>
       </div>
 
-      <div v-if="!members.length" class="dr-empty">
+      <HotelSchedule v-if="tab === 'hotels'" :schedule="hotelSchedule" :can-manage="canManage" />
+
+      <div v-else-if="!members.length" class="dr-empty">
         <svg-icon name="team" :size="28" />
         <p>No one is on this event's roster yet.</p>
         <button v-if="canManage" type="button" class="dr-btn dr-btn--primary" @click="openAdd">Add staff</button>
@@ -307,9 +307,11 @@
 import { ref, reactive, computed, watch, nextTick, onMounted, onUnmounted } from 'vue';
 import { router, usePage } from '@inertiajs/vue3';
 import AppLayout from '../Components/AppLayout.vue';
+import NoActiveEvent from '../Components/NoActiveEvent.vue';
 import Modal from '../Components/Modal.vue';
 import ConfirmModal from '../Components/ConfirmModal.vue';
 import MonthCalendar from '../Components/MonthCalendar.vue';
+import HotelSchedule from '../Components/HotelSchedule.vue';
 import SvgIcon from '../Components/SvgIcon.vue';
 import { todayKey } from '../Composables/useCrewRoster';
 import { useToast } from '../Composables/useToast';
@@ -321,6 +323,8 @@ const props = defineProps({
   members: { type: Array, default: () => [] },
   shifts: { type: [Object, Array], default: () => ({}) },
   candidates: { type: Array, default: () => [] },
+  // Hotel schedule tab; loaded only when that tab is open.
+  hotelSchedule: { type: Object, default: null },
 });
 
 const WEEKS = [1, 2, 4, 6];
@@ -364,7 +368,7 @@ const isCurrent = computed(() => todayKey() >= props.from && todayKey() <= lastD
 
 function go(from, weeks = props.weeks) {
   cancelAll();
-  router.get('/duty-roster', { from, weeks, tab: tab.value === 'schedule' ? 'schedule' : undefined }, { preserveState: true, preserveScroll: true });
+  router.get('/duty-roster', { from, weeks, tab: tab.value === 'summary' ? undefined : tab.value }, { preserveState: true, preserveScroll: true });
 }
 
 const exportUrl = computed(() => `/duty-roster/export?${new URLSearchParams({ from: props.from, weeks: props.weeks })}`);
@@ -419,16 +423,22 @@ function rowSummary(m) {
 const TABS = [
   { key: 'summary', label: 'Summary', icon: 'chart' },
   { key: 'schedule', label: 'Schedule', icon: 'schedule' },
+  { key: 'hotels', label: 'Hotel schedule', icon: 'building' },
 ];
-const tab = ref(new URLSearchParams(window.location.search).get('tab') === 'schedule' ? 'schedule' : 'summary');
+const TAB_KEYS = TABS.map((t) => t.key);
+const urlTab = new URLSearchParams(window.location.search).get('tab');
+const tab = ref(TAB_KEYS.includes(urlTab) ? urlTab : 'summary');
 function setTab(key) {
   tab.value = key;
   cancelAll();
   brush.value = null;
   const url = new URL(window.location.href);
-  if (key === 'schedule') url.searchParams.set('tab', key);
+  if (key !== 'summary') url.searchParams.set('tab', key);
   else url.searchParams.delete('tab');
   window.history.replaceState(window.history.state, '', url);
+  if (key === 'hotels' && !props.hotelSchedule) {
+    router.reload({ only: ['hotelSchedule'] });
+  }
 }
 
 const workload = computed(() => props.members.map((m) => {
@@ -687,9 +697,6 @@ function deleteType(row) {
 </script>
 
 <style scoped>
-.empty-state-full { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 60vh; text-align: center; }
-.empty-state-title { font-size: 24px; font-weight: 700; color: var(--ink); margin-bottom: 8px; }
-.empty-state-text { font-size: 14px; color: var(--ink3); max-width: 400px; }
 
 .dr-page { display: flex; flex-direction: column; gap: 14px; }
 .dr-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-end; gap: 12px; }

@@ -58,6 +58,33 @@ test('the same arrival again is blocked as a duplicate', async ({ page }) => {
   await expect(dialog.getByRole('button', { name: 'Create plan' })).toBeDisabled();
 });
 
+test('the plan checklist shows where the plan stands and links each step', async ({ page }) => {
+  await gotoPlansList(page);
+  await expect(page.locator('.pl-prog-next').first()).toContainText('Next:');
+  await page.getByText('E2E single plan').first().click();
+
+  const checklist = page.getByRole('region', { name: 'Plan checklist' });
+  const step = (label) => checklist.locator('.pc-step', { hasText: label });
+  await expect(step('Team, date & template')).toContainText('Team Arrival');
+  await expect(step('Review movements')).toContainText('1 movement');
+  await expect(step('Assign crew')).toContainText('0 / 1 crewed');
+  await expect(step('Generate jobs')).toContainText('0 / 1 generated');
+  // Nothing is crewed yet, so there is nothing to generate.
+  await expect(step('Generate jobs').getByRole('button', { name: 'Generate jobs' })).toBeDisabled();
+  await expect(step('Assign crew').getByRole('link', { name: 'Open Crew Assignment' })).toHaveAttribute('href', `/crew-assignment?date=${isoDate(1)}`);
+
+  await step('Resolve conflicts').getByRole('button', { name: /conflicts$/ }).click();
+  await expect(page.locator('.ct-scope-btn--on')).toContainText('This plan');
+  await step('Review movements').getByRole('button', { name: 'Show movements' }).click();
+  await expect(page.locator('button.tab--active')).toContainText('Movements');
+
+  await checklist.getByRole('button', { name: 'Hide' }).click();
+  await expect(checklist.locator('.pc-step')).toHaveCount(0);
+  await expect(checklist).toContainText('Next:');
+  await checklist.getByRole('button', { name: 'Show steps' }).click();
+  await expect(checklist.locator('.pc-step')).toHaveCount(5);
+});
+
 test('bulk plans by flights', async ({ page }) => {
   const dialog = await openNewPlan(page);
   await dialog.getByRole('tab', { name: /By arrivals/ }).click();
@@ -171,6 +198,10 @@ test('assign crew to a movement and generate its job', async ({ page }) => {
 
   await page.getByRole('button', { name: 'Generate', exact: true }).first().click();
   await expect(page.getByText(/JOB-\d{8}-\d{4}/).first()).toBeVisible();
+
+  const checklist = page.getByRole('region', { name: 'Plan checklist' });
+  await expect(checklist.locator('.pc-step', { hasText: 'Assign crew' })).toContainText('1 / 1 crewed');
+  await expect(checklist.locator('.pc-step', { hasText: 'Generate jobs' })).toContainText('1 / 1 generated');
 });
 
 test('crew assignment offers the same crew as planning', async ({ page }) => {
@@ -179,6 +210,34 @@ test('crew assignment offers the same crew as planning', async ({ page }) => {
   await expect(vehicle).toBeVisible();
   await expect(vehicle.locator('option:checked')).toContainText('V-01');
   await expect(vehicle.locator('option', { hasText: 'V-OTHER' })).toHaveCount(0);
+});
+
+test('crew assignment shows a second event and its double-booking of a shared driver', async ({ page }) => {
+  await page.goto(`/crew-assignment?date=${isoDate(1)}&events=`);
+  const shieldRow = page.locator('.ct-code', { hasText: 'TRP-90001' });
+  await expect(page.locator('.ct-code').first()).toBeVisible();
+  await expect(shieldRow).toHaveCount(0);
+  // Even with one event shown, the saved clash with the other event's movement is named.
+  await expect(page.getByText(/TRP-90001/).first()).toBeVisible();
+
+  await page.getByLabel('Events shown').click();
+  await page.getByLabel('Show E2E Shield').check();
+
+  // The other event's movement joins the table, tagged with its event, and the shared driver clashes.
+  await expect(shieldRow).toBeVisible();
+  await expect(page.locator('.ct-tag--event', { hasText: 'SHD' }).first()).toBeVisible();
+  await expect(page.getByText(/Driver One is also on/).first()).toBeVisible();
+
+  // Its vehicles come from its own event's pool: V-01 isn't in it.
+  const shieldVehicle = page.getByLabel('Vehicle 1 for TRP-90001');
+  await expect(shieldVehicle.locator('option', { hasText: 'V-01' })).toHaveCount(0);
+
+  // Remembered until unticked.
+  await page.reload();
+  await expect(shieldRow).toBeVisible();
+  await page.getByLabel('Events shown').click();
+  await page.getByLabel('Show E2E Shield').uncheck();
+  await expect(shieldRow).toHaveCount(0);
 });
 
 test('conflicts tab lists the plan conflicts and View focuses their movements', async ({ page }) => {

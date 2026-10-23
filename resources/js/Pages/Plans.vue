@@ -1,13 +1,6 @@
 <template>
   <app-layout>
-    <!-- No Active Event State -->
-    <div v-if="!activeEvent" class="empty-state-full">
-      <div class="empty-state-icon">📅</div>
-      <h2 class="empty-state-title">No Active Event</h2>
-      <p class="empty-state-text">
-        Please select an event from the dropdown above to view plans.
-      </p>
-    </div>
+    <NoActiveEvent v-if="!activeEvent" what="plans" />
 
     <!-- Active Event Content -->
     <div v-else>
@@ -537,6 +530,19 @@
       </div>
     </div>
 
+    <!-- Guided steps for the open plan; every step links to the screen that does it. -->
+    <PlanChecklist
+      v-if="view === 'plan' && selectedPlanObj"
+      :plan="selectedPlanObj"
+      :open-conflicts="openConflicts"
+      :can-manage="canManagePlans"
+      @edit="editPlan(selectedPlanObj)"
+      @movements="activeTab = 'movements'"
+      @add-movement="activeTab = 'movements'; addMovement()"
+      @conflicts="openPlanConflicts"
+      @generate="generateFromChecklist"
+    />
+
     <!-- Stats grid (only show when plan is selected) -->
     <div v-if="view === 'plan' && selectedPlanObj" class="stats-grid">
       <!-- <MiniStat label="Plan" :value="selectedPlanObj.name" /> -->
@@ -587,6 +593,7 @@
         v-if="activeTab === 'plans'"
         v-model:selected-ids="selectedPlanIds"
         :plans="allPlans"
+        :open-conflicts="openConflicts"
         :prerequisites="prerequisites"
         :can-create-plan="canCreatePlan"
         :prerequisite-hint="prerequisiteHint"
@@ -1394,7 +1401,9 @@
       <!-- Conflicts tab -->
       <ConflictsTab
         v-else-if="activeTab === 'conflicts'"
+        v-model:scope="conflictScope"
         :conflicts="conflicts"
+        :plan-movement-ids="selectedPlanObj ? selectedPlanMovements.map((mv) => mv.id) : null"
         @resolve="resolvingConflict = $event"
         @view="viewConflict"
       />
@@ -4458,6 +4467,13 @@
               {{ bulkDeleteSummary.blocked.map((p) => p.name).join(", ") }}
             </div>
             <div
+              v-if="bulkDeleteSummary.deletable.length > ($page.props.deletionRules?.approveOver?.plans ?? Infinity)"
+              class="delete-approval-note"
+            >
+              More than {{ $page.props.deletionRules.approveOver.plans }} plans: another admin has to approve
+              in Setups → Recycle bin before they are deleted.
+            </div>
+            <div
               v-if="bulkDeleteSummary.movements > 0"
               class="form-field"
               style="margin-bottom: 12px"
@@ -4480,8 +4496,8 @@
             >
               {{ bulkDeleteError }}
             </p>
-            <p style="font-size: 13px; color: #dc2626; font-weight: 600">
-              This action cannot be undone.
+            <p style="font-size: 13px; color: var(--ink3)">
+              Moves to Setups → Recycle bin; it can be restored for {{ $page.props.deletionRules?.keepDays ?? 30 }} days.
             </p>
           </div>
           <div class="modal-footer">
@@ -4627,8 +4643,8 @@
               {{ deletePlanError }}
             </p>
 
-            <p style="font-size: 13px; color: #dc2626; font-weight: 600">
-              This action cannot be undone.
+            <p style="font-size: 13px; color: var(--ink3)">
+              Moves to Setups → Recycle bin; it can be restored for {{ $page.props.deletionRules?.keepDays ?? 30 }} days.
             </p>
           </div>
           <div class="modal-footer">
@@ -4738,8 +4754,8 @@
                 Associated Job: {{ deletingMovement.job_id }}
               </li>
             </ul>
-            <p v-if="!deletingMovement.job_id" style="font-size: 13px; color: #dc2626; font-weight: 600">
-              This action cannot be undone.
+            <p v-if="!deletingMovement.job_id" style="font-size: 13px; color: var(--ink3)">
+              Moves to Setups → Recycle bin; it can be restored for {{ $page.props.deletionRules?.keepDays ?? 30 }} days.
             </p>
           </div>
           <div class="modal-footer">
@@ -4825,9 +4841,9 @@
             </div>
             <p
               v-if="bulkMovementDelete.deletable.length"
-              style="font-size: 13px; color: #dc2626; font-weight: 600"
+              style="font-size: 13px; color: var(--ink3)"
             >
-              This action cannot be undone.
+              Moves to Setups → Recycle bin; it can be restored for {{ $page.props.deletionRules?.keepDays ?? 30 }} days.
             </p>
           </div>
           <div class="modal-footer">
@@ -5097,6 +5113,7 @@ import { router, usePage } from "@inertiajs/vue3";
 import { useToast } from "../Composables/useToast";
 import axios from "axios";
 import AppLayout from "../Components/AppLayout.vue";
+import NoActiveEvent from "../Components/NoActiveEvent.vue";
 import StatusPill from "../Components/StatusPill.vue";
 import SvgIcon from "../Components/SvgIcon.vue";
 import MiniStat from "../Components/MiniStat.vue";
@@ -5113,6 +5130,7 @@ import NewPlanModal from "../Components/Plans/NewPlanModal.vue";
 import EditMovementModal from "../Components/Plans/EditMovementModal.vue";
 import ConflictsTab from "../Components/Plans/ConflictsTab.vue";
 import PlanList from "../Components/Plans/PlanList.vue";
+import PlanChecklist from "../Components/Plans/PlanChecklist.vue";
 import { formatDate, formatDateTime, formatMovementCode, legMinutes } from "../Composables/planFormat";
 import FormDateField from "../Components/FormDateField.vue";
 import ColumnFilter from "../Components/ColumnFilter.vue";
@@ -5644,6 +5662,21 @@ const conflicts = computed(() => props.conflicts);
 // Accepted conflicts stay listed but no longer count or mark rows.
 const openConflicts = computed(() => conflicts.value.filter((c) => !c.accepted));
 const resolvingConflict = ref(null);
+// The Conflicts tab of an open plan: its own conflicts or the whole event's.
+const conflictScope = ref("event");
+const canManagePlans = computed(() => page.props.auth?.can?.["plans.manage"] === true);
+
+function openPlanConflicts() {
+  conflictScope.value = "plan";
+  activeTab.value = "conflicts";
+}
+
+// Same path as the movements tab's Generate jobs button, over the whole plan.
+function generateFromChecklist() {
+  activeTab.value = "movements";
+  selectedMovementIds.value = new Set();
+  generateJobs();
+}
 
 // movement id -> the conflicts it's part of
 const conflictsByMovement = computed(() => {
@@ -7369,6 +7402,10 @@ function statusLabel(s) {
 </script>
 
 <style scoped>
+.delete-approval-note {
+  font-size: 13px; color: var(--ink2); background: var(--accent-soft);
+  border-radius: 6px; padding: 10px 12px; margin-bottom: 12px;
+}
 .plan-dd-all {
   display: flex;
   align-items: center;
@@ -7604,40 +7641,9 @@ function statusLabel(s) {
 
 
 
-.empty-state-full {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  min-height: 60vh;
-  text-align: center;
-}
 
-.empty-state-text {
-  font-size: 14px;
-  color: var(--ink3);
-  max-width: 400px;
-}
 
-.empty-state-icon {
-  width: 72px;
-  height: 72px;
-  border-radius: 14px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin: 0 auto 20px;
-  color: var(--accent);
-}
 
-.empty-state-title {
-  font-size: 18px;
-  font-weight: 700;
-  color: var(--ink);
-  margin: 0 0 8px;
-}
 
 
 

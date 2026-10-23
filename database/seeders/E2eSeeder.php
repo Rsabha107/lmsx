@@ -9,10 +9,14 @@ use App\Models\Driver;
 use App\Models\Event;
 use App\Models\FleetProvider;
 use App\Models\GameMatch;
+use App\Models\Movement;
 use App\Models\MovementTemplate;
+use App\Models\Plan;
+use App\Models\RosterMember;
 use App\Models\Setting;
 use App\Models\Team;
 use App\Models\TeamFlight;
+use App\Models\TeamStay;
 use App\Models\User;
 use App\Models\Vehicle;
 use App\Models\Venue;
@@ -49,6 +53,7 @@ class E2eSeeder extends Seeder
         $supervisor = User::factory()->create(['name' => 'E2E Supervisor', 'email' => 'e2e.supervisor@example.test', 'fleet_provider_id' => $provider->id]);
         $supervisor->assignRole('ground_control');
         $supervisor->events()->attach($event);
+        RosterMember::create(['event_id' => $event->id, 'user_id' => $supervisor->id, 'sort' => 1]);
 
         $venue = Venue::create(['name' => 'E2E Stadium', 'type' => 'stadium']);
         $event->venues()->attach($venue);
@@ -62,6 +67,8 @@ class E2eSeeder extends Seeder
                     'event_id' => $event->id, 'team_id' => $team->id, 'direction' => 'arrival',
                     'flight_number' => 'QR'.(100 + $i), 'scheduled_at' => $day->copy()->subDays(2)->setTime(10 + $i, 0),
                 ]);
+                // Two team hotels for the Duty Roster's hotel schedule (no dates, so no stay conflicts).
+                TeamStay::create(['event_id' => $event->id, 'team_id' => $team->id, 'hotel_name' => $i < 2 ? 'E2E Grand Hotel' : 'E2E Bay Hotel']);
 
                 return [$code => $team];
             });
@@ -92,6 +99,38 @@ class E2eSeeder extends Seeder
         $other = FleetProvider::withoutGlobalScopes()->create(['code' => 'OTH', 'name' => 'Other Co']);
         Vehicle::create(['code' => 'V-OTHER', 'provider_id' => $other->id, 'plate_number' => 'POTHER', 'vehicle_type' => 'Van', 'capacity' => 8, 'status' => 'available', 'is_active' => true])
             ->events()->attach($event);
+
+        $this->sharedEvent($provider, $admin);
+    }
+
+    /**
+     * A second event run by the same provider, sharing Driver One, with one movement tomorrow
+     * 10:15-11:15 on Driver One: it overlaps the arrival the planning tests crew, so Crew
+     * Assignment shows the clash once both events are ticked.
+     */
+    private function sharedEvent(FleetProvider $provider, User $admin): void
+    {
+        $event = Event::create([
+            'name' => 'E2E Shield', 'short_name' => 'SHD', 'active_flag' => false,
+            'start_date' => now()->subDay()->toDateString(), 'end_date' => now()->addDays(30)->toDateString(),
+            'fleet_provider_id' => $provider->id,
+        ]);
+        $admin->events()->attach($event);
+
+        $driver = Driver::where('name', 'Driver One')->first();
+        $driver->events()->attach($event);
+
+        Country::firstOrCreate(['country_code' => 'OMA'], ['country_name' => 'Oman']);
+        $team = Team::create(['event_id' => $event->id, 'code' => 'OMA-17', 'team_name' => 'Oman', 'country_id' => 'OMA', 'is_active' => true]);
+        $tomorrow = now()->addDay()->startOfDay();
+        $plan = Plan::create(['event_id' => $event->id, 'code' => 'PLN-SHD-001', 'name' => 'Shield day', 'date' => $tomorrow->toDateString(), 'status' => 'draft']);
+
+        Movement::create([
+            'code' => 'TRP-90001', 'event_id' => $event->id, 'plan_id' => $plan->id, 'team_id' => $team->id,
+            'kind' => 'transfer', 'functional_area' => 'LOG', 'from_location' => 'Team Hotel', 'to_location' => 'Training site',
+            'window_start' => $tomorrow->copy()->setTime(10, 15), 'window_end' => $tomorrow->copy()->setTime(11, 15),
+            'driver_id' => $driver->id, 'fleet_provider_id' => $provider->id, 'status' => 'scheduled', 'source' => 'manual',
+        ]);
     }
 
     /** @param array<int, array{0: string, 1: string, 2: int}> $steps code, name, offset from the reference time */

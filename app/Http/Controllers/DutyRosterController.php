@@ -8,6 +8,7 @@ use App\Models\RosterMember;
 use App\Models\RosterShift;
 use App\Models\ShiftType;
 use App\Models\User;
+use App\Services\HotelScheduleService;
 use Carbon\Carbon;
 use Carbon\CarbonPeriod;
 use Illuminate\Http\RedirectResponse;
@@ -53,6 +54,10 @@ class DutyRosterController extends Controller
             'candidates' => $canManage && $eventId
                 ? User::whereNotIn('id', $members->pluck('user_id'))->orderBy('name')->get(['id', 'name', 'email', 'job_title'])
                 : [],
+            // Hotel schedule tab: built only when that tab is open (or asked for by a partial reload).
+            'hotelSchedule' => $request->query('tab') === 'hotels'
+                ? fn () => $eventId ? app(HotelScheduleService::class)->build($eventId) : null
+                : Inertia::optional(fn () => $eventId ? app(HotelScheduleService::class)->build($eventId) : null),
         ]);
     }
 

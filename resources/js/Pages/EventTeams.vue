@@ -1,13 +1,6 @@
 <template>
   <app-layout>
-    <!-- No Active Event State -->
-    <div v-if="!activeEvent" class="empty-state-full">
-      <div class="empty-state-icon">📅</div>
-      <h2 class="empty-state-title">No Active Event</h2>
-      <p class="empty-state-text">
-        Please select an event from the dropdown above to view event teams.
-      </p>
-    </div>
+    <NoActiveEvent v-if="!activeEvent" what="event teams" />
 
     <!-- Active Event Content -->
     <div v-else>
@@ -1103,6 +1096,7 @@
 import { ref, computed, watch, nextTick } from "vue";
 import { router } from "@inertiajs/vue3";
 import AppLayout from "@/Components/AppLayout.vue";
+import NoActiveEvent from "@/Components/NoActiveEvent.vue";
 import Modal from "@/Components/Modal.vue";
 import Button from "@/Components/Button.vue";
 import RefreshButton from "@/Components/RefreshButton.vue";
@@ -1871,29 +1865,6 @@ function csvEscape(value) {
 </script>
 
 <style scoped>
-.empty-state-full {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  min-height: 60vh;
-  text-align: center;
-}
-.empty-state-icon {
-  font-size: 64px;
-  margin-bottom: 16px;
-}
-.empty-state-title {
-  font-size: 24px;
-  font-weight: 700;
-  color: var(--ink);
-  margin-bottom: 8px;
-}
-.empty-state-text {
-  font-size: 14px;
-  color: var(--ink3);
-  max-width: 400px;
-}
 
 .page-header {
   display: flex;

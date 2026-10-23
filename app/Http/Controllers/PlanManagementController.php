@@ -10,6 +10,7 @@ use App\Models\Movement;
 use App\Models\Event;
 use App\Models\Venue;
 use App\Services\ConflictDetectionService;
+use App\Services\DeletionService;
 use App\Services\JobGenerationService;
 use App\Services\JobLifecycleService;
 use Carbon\Carbon;
@@ -31,7 +32,7 @@ class PlanManagementController extends Controller
 {
     protected JobGenerationService $jobService;
 
-    public function __construct(JobGenerationService $jobService)
+    public function __construct(JobGenerationService $jobService, private readonly DeletionService $deletions)
     {
         $this->jobService = $jobService;
     }
@@ -927,17 +928,14 @@ class PlanManagementController extends Controller
             return back()->with('error', "Cannot delete plan. {$jobsCount} movement(s) have generated jobs. Delete those jobs first.");
         }
 
-        $planName = $plan->name;
+        $deletion = $this->deletions->request('plans', collect([$plan]), $request->user(), $plan->event_id, $request->input('reason'));
 
-        $movementsCount = $this->deletePlanWithMovements($plan);
-
-        return redirect()->route('plans.index')
-            ->with('success', "Plan '{$planName}' and {$movementsCount} movement(s) deleted successfully");
+        return redirect()->route('plans.index')->with('success', $this->deletions->message($deletion));
     }
 
     /**
-     * Delete several plans with their movements. Plans whose movements already
-     * have jobs are skipped, matching the single-plan rule.
+     * Delete several plans with their movements into the recycle bin. Plans whose movements
+     * already have jobs are skipped, matching the single-plan rule.
      */
     public function destroyBulk(Request $request)
     {
@@ -945,6 +943,7 @@ class PlanManagementController extends Controller
             'ids' => ['required', 'array', 'min:1'],
             'ids.*' => ['integer', 'distinct'],
             'confirm' => ['nullable', 'string'],
+            'reason' => ['nullable', 'string', 'max:500'],
         ]);
 
         $plans = Plan::whereIn('id', $validated['ids'])
@@ -961,27 +960,19 @@ class PlanManagementController extends Controller
             throw ValidationException::withMessages(['confirm' => 'Type DELETE to confirm.']);
         }
 
-        $movementsCount = DB::transaction(
-            fn () => $deletable->sum(fn (Plan $plan) => $this->deletePlanWithMovements($plan))
-        );
+        if ($deletable->isEmpty()) {
+            return redirect()->route('plans.index')
+                ->with('error', "Nothing deleted. {$blocked->count()} skipped (movements have generated jobs).");
+        }
 
-        $message = "Deleted {$deletable->count()} plan(s) and {$movementsCount} movement(s).";
+        $deletion = $this->deletions->request('plans', $deletable, $request->user(), $this->activeEventId($request), $validated['reason'] ?? null);
+
+        $message = $this->deletions->message($deletion);
         if ($blocked->isNotEmpty()) {
             $message .= " {$blocked->count()} skipped (movements have generated jobs).";
         }
 
-        return redirect()->route('plans.index')
-            ->with($deletable->isNotEmpty() ? 'success' : 'error', $message);
-    }
-
-    private function deletePlanWithMovements(Plan $plan): int
-    {
-        return DB::transaction(function () use ($plan) {
-            $count = $plan->movements()->delete();
-            $plan->delete();
-
-            return $count;
-        });
+        return redirect()->route('plans.index')->with('success', $message);
     }
 
     /**
@@ -1070,7 +1061,7 @@ class PlanManagementController extends Controller
                 'movement_template_id' => [
                     'required',
                     Rule::exists('movement_templates', 'id')
-                        ->where(fn ($q) => $q->where('event_id', $plan->event_id)),
+                        ->where(fn ($q) => $q->where('event_id', $plan->event_id)->whereNull('deleted_at')),
                 ],
                 'base_time' => 'nullable|date_format:H:i',
             ]);
@@ -1298,14 +1289,21 @@ class PlanManagementController extends Controller
         }
 
         unset($validated['units'], $validated['supervisors']);
-        app(\App\Services\JobPushNotifier::class)->trackCrew($movement, function () use ($movement, $validated, $units, $supervisors, $lifecycle) {
+
+        $leadChanged = collect(['vehicle_id', 'driver_id', 'field_supervisor_id'])
+            ->contains(fn ($key) => array_key_exists($key, $validated) && (int) $validated[$key] !== (int) $movement->{$key});
+        if ($leadChanged) {
+            $lifecycle->guardCrewEditable($movement);
+        }
+
+        app(\App\Services\JobPushNotifier::class)->trackCrew($movement, fn () => \Illuminate\Support\Facades\DB::transaction(function () use ($movement, $validated, $units, $supervisors, $lifecycle) {
             $movement->update($validated);
 
             if ($units !== null || $supervisors !== null) {
                 $movement->refresh();
                 $lifecycle->assignMovementCrew($movement, $movement->vehicle_id, $movement->driver_id, $movement->field_supervisor_id, $units, $supervisors);
             }
-        });
+        }));
 
         return redirect()->back()->with('success', 'Movement updated successfully.');
     }
@@ -1338,9 +1336,9 @@ class PlanManagementController extends Controller
             return redirect()->back()->with('error', 'Cannot delete movement with generated jobs. Delete the job first.');
         }
 
-        $movement->delete();
+        $deletion = $this->deletions->request('movements', collect([$movement]), $request->user(), $movement->event_id);
 
-        return redirect()->back()->with('success', 'Movement deleted successfully.');
+        return redirect()->back()->with('success', $this->deletions->message($deletion));
     }
 
     /**
@@ -1385,20 +1383,21 @@ class PlanManagementController extends Controller
             ->where('event_id', $this->activeEventId($request))
             ->get();
 
-        $deletableIds = $movements->filter(fn ($movement) => !$movement->job_id)->pluck('id');
-        $skippedCount = $movements->count() - $deletableIds->count();
+        $deletable = $movements->filter(fn ($movement) => !$movement->job_id)->values();
+        $skippedCount = $movements->count() - $deletable->count();
 
-        Movement::whereIn('id', $deletableIds)->delete();
+        if ($deletable->isEmpty()) {
+            return redirect()->back()->with('error', "Nothing deleted. {$skippedCount} skipped (job already generated).");
+        }
 
-        $message = "Deleted {$deletableIds->count()} movement(s).";
+        $deletion = $this->deletions->request('movements', $deletable, $request->user(), $this->activeEventId($request));
+
+        $message = $this->deletions->message($deletion);
         if ($skippedCount > 0) {
             $message .= " {$skippedCount} skipped (job already generated).";
         }
 
-        return redirect()->back()->with(
-            $deletableIds->count() > 0 ? 'success' : 'error',
-            $message
-        );
+        return redirect()->back()->with('success', $message);
     }
 
     /**

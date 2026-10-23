@@ -7,10 +7,13 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class JobOperation extends Model
 {
     use Concerns\SerializesWallClock;
+    // Deleted jobs sit in the recycle bin (deletion_id) until the purge removes them.
+    use SoftDeletes;
 
     protected $table = 'jobs_operations';
 

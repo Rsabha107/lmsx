@@ -2,7 +2,10 @@
 
 namespace Tests\Feature;
 
+use App\Models\Deletion;
 use App\Models\Event;
+use App\Models\User;
+use App\Services\DeletionService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -102,20 +105,25 @@ class EventStatusTest extends TestCase
         $this->assertSame('current', $event->fresh()->status);
     }
 
-    public function test_deleting_an_event_needs_its_name_typed_back(): void
+    public function test_deleting_an_event_needs_its_name_typed_back_and_a_second_admin(): void
     {
         $event = $this->event('2026-09-20', '2026-10-02');
         $admin = $this->createUserWithRole('admin');
 
         $this->actingAs($admin)->delete("/events/{$event->id}")->assertSessionHasErrors('confirm_name');
         $this->actingAs($admin)->delete("/events/{$event->id}", ['confirm_name' => 'wrong'])->assertSessionHasErrors('confirm_name');
-        $this->assertModelExists($event);
+        $this->assertNotSoftDeleted($event);
 
-        $this->actingAs($admin)->delete("/events/{$event->id}", ['confirm_name' => $event->name])->assertSessionHasNoErrors();
-        $this->assertModelMissing($event);
+        $this->actingAs($admin)->delete("/events/{$event->id}", ['confirm_name' => $event->name])
+            ->assertSessionHasNoErrors()
+            ->assertSessionHas('success', fn ($m) => str_starts_with($m, 'Sent for approval: 1 event.'));
+
+        // Nothing goes until another admin approves.
+        $this->assertNotSoftDeleted($event);
+        $this->assertDatabaseHas('deletions', ['kind' => 'event', 'status' => 'pending', 'trigger' => 'event', 'event_id' => $event->id]);
     }
 
-    public function test_deleting_an_event_removes_its_templates_even_when_legs_reference_them(): void
+    public function test_an_approved_event_delete_goes_to_the_bin_and_the_purge_removes_it_with_its_templates(): void
     {
         $event = $this->event('2026-09-20', '2026-10-02');
         $now = now();
@@ -134,34 +142,20 @@ class EventStatusTest extends TestCase
         $this->actingAs($this->createUserWithRole('admin'))
             ->delete("/events/{$event->id}", ['confirm_name' => $event->name])
             ->assertSessionHasNoErrors();
+        $deletion = Deletion::where('kind', 'event')->firstOrFail();
+
+        app(DeletionService::class)->approve($deletion, User::factory()->create());
+
+        $this->assertSoftDeleted($event);
+        $this->assertSoftDeleted('movement_templates', ['id' => $movementTemplateId]);
+        $this->assertDatabaseCount('movement_template_legs', 1);
+
+        app(DeletionService::class)->purge($deletion->refresh());
 
         $this->assertModelMissing($event);
         $this->assertDatabaseCount('movement_template_legs', 0);
         $this->assertDatabaseMissing('checkpoint_templates', ['id' => $checkpointTemplateId]);
-    }
-
-    public function test_the_event_can_be_deleted_step_by_step_with_progress(): void
-    {
-        $event = $this->event('2026-09-20', '2026-10-02');
-        $admin = $this->createUserWithRole('admin');
-        $now = now();
-
-        DB::table('movement_templates')->insert(['code' => 'MT-STEP', 'name' => 'Step', 'event_id' => $event->id, 'created_at' => $now, 'updated_at' => $now]);
-
-        $plan = $this->actingAs($admin)->getJson("/events/{$event->id}/deletion-plan")->assertOk()->json('steps');
-        $this->assertSame('event', collect($plan)->last()['key']);
-        $this->assertSame(1, collect($plan)->firstWhere('key', 'movement_templates')['count']);
-
-        $payload = ['confirm_name' => $event->name];
-
-        $this->actingAs($admin)->postJson("/events/{$event->id}/delete-step", ['step' => 'event', 'confirm_name' => 'wrong'])->assertStatus(422);
-        $this->actingAs($admin)->postJson("/events/{$event->id}/delete-step", ['step' => 'movement_templates'] + $payload)
-            ->assertOk()->assertJsonPath('deleted', 1);
-        $this->assertDatabaseMissing('movement_templates', ['code' => 'MT-STEP']);
-        $this->assertModelExists($event);
-
-        $this->actingAs($admin)->postJson("/events/{$event->id}/delete-step", ['step' => 'event'] + $payload)->assertOk();
-        $this->assertModelMissing($event);
+        $this->assertSame('purged', $deletion->refresh()->status);
     }
 
     public function test_start_and_end_dates_are_required(): void

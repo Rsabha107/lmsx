@@ -19,6 +19,11 @@ class HandleInertiaRequests extends Middleware
     public function share(Request $request): array
     {
         $activeEventId = $request->session()->get('active_event_id');
+        // An event moved to the recycle bin stops being anyone's active event.
+        if ($activeEventId && ! Event::whereKey($activeEventId)->exists()) {
+            $request->session()->forget('active_event_id');
+            $activeEventId = null;
+        }
 
         return array_merge(parent::share($request), [
             'appName'       => 'NAQLA LMS',
@@ -47,6 +52,15 @@ class HandleInertiaRequests extends Middleware
             'ui' => $this->uiFlags(),
             // The one source of status wording; the mobile API sends the same labels.
             'jobStatusLabels' => \App\Models\JobOperation::uiStatusLabels(),
+            // Delete dialogs say up front when a second admin must approve.
+            'deletionRules' => [
+                'approveOver' => \App\Services\DeletionService::APPROVAL_OVER,
+                'keepDays' => \App\Services\DeletionService::KEEP_DAYS,
+            ],
+            // Delete requests other admins are waiting on, for the sidebar badge.
+            'pendingDeletions' => fn () => $request->user()?->can('plans.manage')
+                ? \App\Models\Deletion::pending()->where('requested_by', '!=', $request->user()->id)->count()
+                : 0,
         ]);
     }
 

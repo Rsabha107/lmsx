@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\DutyRosterController;
+use App\Http\Controllers\HotelScheduleController;
 use Illuminate\Support\Facades\Route;
 
 Route::middleware(['auth', 'permission:roster.manage'])->prefix('duty-roster')->name('duty-roster.')->group(function () {
@@ -13,4 +14,14 @@ Route::middleware(['auth', 'permission:roster.manage'])->prefix('duty-roster')->
     Route::post('/shift-types', [DutyRosterController::class, 'storeShiftType'])->name('shift-types.store');
     Route::put('/shift-types/{shiftType}', [DutyRosterController::class, 'updateShiftType'])->name('shift-types.update');
     Route::delete('/shift-types/{shiftType}', [DutyRosterController::class, 'destroyShiftType'])->name('shift-types.destroy');
+
+    // Hotel schedule tab: supervisors, crew teams and kit runs per team hotel and match day.
+    Route::prefix('hotels')->name('hotels.')->controller(HotelScheduleController::class)->group(function () {
+        Route::get('/export', 'export')->name('export');
+        Route::put('/day', 'updateDay')->name('day');
+        Route::put('/crew', 'updateCrew')->name('crew');
+        Route::put('/vsa', 'updateVsa')->name('vsa');
+        Route::put('/offsets', 'updateOffsets')->name('offsets');
+        Route::post('/auto-fill', 'autoFill')->name('auto-fill');
+    });
 });

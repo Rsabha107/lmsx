@@ -57,7 +57,7 @@ class JobDeleteTest extends TestCase
         return [$job, $movement];
     }
 
-    public function test_deleting_jobs_removes_checkpoints_and_frees_movements(): void
+    public function test_deleting_jobs_moves_them_to_the_recycle_bin_and_frees_movements(): void
     {
         [$job1, $movement1] = $this->jobWithMovement();
         [$job2, $movement2] = $this->jobWithMovement();
@@ -67,13 +67,15 @@ class JobDeleteTest extends TestCase
             ->assertRedirect()
             ->assertSessionHas('success');
 
-        $this->assertDatabaseMissing('jobs_operations', ['id' => $job1->id]);
-        $this->assertDatabaseMissing('jobs_operations', ['id' => $job2->id]);
-        $this->assertDatabaseHas('jobs_operations', ['id' => $kept->id]);
-        $this->assertSame(0, JobCheckpoint::whereIn('job_id', [$job1->id, $job2->id])->count());
+        $this->assertSoftDeleted($job1);
+        $this->assertSoftDeleted($job2);
+        $this->assertNotSoftDeleted($kept);
+        // Checkpoints stay with the job in the bin, so a restore brings them back.
+        $this->assertSame(2, JobCheckpoint::whereIn('job_id', [$job1->id, $job2->id])->count());
         $this->assertNull($movement1->refresh()->job_id);
         $this->assertNull($movement2->refresh()->job_generated_at);
         $this->assertDatabaseHas('audit_logs', ['action' => 'Job deleted']);
+        $this->assertDatabaseHas('deletions', ['kind' => 'jobs', 'status' => 'done', 'item_count' => 2]);
     }
 
     public function test_started_job_needs_its_id_typed_to_delete(): void
@@ -83,11 +85,11 @@ class JobDeleteTest extends TestCase
 
         $this->planner()->delete('/jobs', ['ids' => [$job->id], 'confirm' => 'nope'])
             ->assertSessionHasErrors('confirm');
-        $this->assertDatabaseHas('jobs_operations', ['id' => $job->id]);
+        $this->assertNotSoftDeleted($job);
 
         $this->planner()->delete('/jobs', ['ids' => [$job->id], 'confirm' => $job->job_id])
             ->assertSessionHasNoErrors();
-        $this->assertDatabaseMissing('jobs_operations', ['id' => $job->id]);
+        $this->assertSoftDeleted($job);
     }
 
     public function test_bulk_delete_with_a_started_job_needs_delete_typed(): void

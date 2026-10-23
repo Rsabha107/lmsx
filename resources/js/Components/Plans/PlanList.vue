@@ -169,7 +169,7 @@
         v-if="plansPageView === 'table'"
         style="
           display: grid;
-          grid-template-columns: 28px 80px 120px 1.5fr 1fr 120px 100px 120px;
+          grid-template-columns: 28px 80px 120px 1.5fr 1fr 110px 90px 170px 110px;
           gap: 10px;
           padding: 10px 14px;
           border-bottom: 1px solid var(--border);
@@ -190,6 +190,7 @@
         <div>Template</div>
         <div>Status</div>
         <div>Movements</div>
+        <div>Progress</div>
         <div>Actions</div>
       </div>
       <div
@@ -315,7 +316,7 @@
           @click="emit('open', plan.id)"
           :style="{
             display: 'grid',
-            gridTemplateColumns: '28px 80px 120px 1.5fr 1fr 120px 100px 120px',
+            gridTemplateColumns: '28px 80px 120px 1.5fr 1fr 110px 90px 170px 110px',
             gap: '10px',
             padding: '12px 14px',
             borderBottom:
@@ -378,6 +379,10 @@
         >
           {{ plan.movements_count || 0 }}
         </div>
+        <div class="pl-prog" :title="progressTitle(plan.id)">
+            <span class="pl-prog-bar" aria-hidden="true"><span v-for="st in readinessById[plan.id].steps" :key="st.key" :class="['pl-seg', `pl-seg--${st.state}`]" /></span>
+            <span :class="['pl-prog-next', { 'pl-prog-next--ok': !readinessById[plan.id].next }]">{{ nextLabel(plan.id) }}</span>
+          </div>
         <div
           style="display: flex; gap: 6px; justify-content: center"
           @click.stop
@@ -477,6 +482,14 @@
                   <span v-else style="font-style: italic;"> Blank</span>
                 </div>
                 
+                <!-- Where the plan stands: set-up, movements, conflicts, crew, jobs -->
+                <div style="margin-bottom: 10px;">
+                  <div class="pl-prog" :title="progressTitle(plan.id)">
+                    <span class="pl-prog-bar" aria-hidden="true"><span v-for="st in readinessById[plan.id].steps" :key="st.key" :class="['pl-seg', `pl-seg--${st.state}`]" /></span>
+                    <span :class="['pl-prog-next', { 'pl-prog-next--ok': !readinessById[plan.id].next }]">{{ nextLabel(plan.id) }}</span>
+                  </div>
+                </div>
+
                 <!-- Footer: Status + Movements -->
                 <div style="display: flex; justify-content: space-between; align-items: center;">
                   <Badge type="status" :variant="plan.status">
@@ -502,6 +515,7 @@ import Button from '../Button.vue';
 import SvgIcon from '../SvgIcon.vue';
 import TableActions from '../TableActions.vue';
 import { formatDate } from '../../Composables/planFormat';
+import { planReadiness } from '../../Composables/planReadiness';
 
 // The event's plans grouped by date, with search, type filters and bulk selection.
 const props = defineProps({
@@ -509,12 +523,21 @@ const props = defineProps({
   prerequisites: { type: Array, default: () => [] },
   canCreatePlan: { type: Boolean, default: false },
   prerequisiteHint: { type: String, default: '' },
+  // The event's unaccepted conflicts, for each plan's progress.
+  openConflicts: { type: Array, default: () => [] },
 });
 
 // Plan ids ticked for bulk delete; kept by the page so it can clear them after deleting.
 const selectedIds = defineModel('selectedIds', { type: Set, required: true });
 
 const emit = defineEmits(['new-plan', 'open', 'duplicate', 'edit', 'delete', 'bulk-delete']);
+
+const readinessById = computed(() => Object.fromEntries(props.plans.map((plan) => [plan.id, planReadiness(plan, props.openConflicts)])));
+const nextLabel = (id) => {
+  const next = readinessById.value[id]?.next;
+  return next ? `Next: ${next.label.toLowerCase()}` : 'All jobs generated';
+};
+const progressTitle = (id) => (readinessById.value[id]?.steps ?? []).map((st) => `${st.state === 'done' ? '✓' : '•'} ${st.label}: ${st.detail}`).join('\n');
 
 const plansPageView = ref('grid'); // 'table' or 'grid' for main plans overview page
 
@@ -884,4 +907,13 @@ function toggleSelectAllPlans() {
 .filter-chip--active .filter-chip-count {
   background: rgba(255, 255, 255, 0.25);
 }
+
+.pl-prog { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.pl-prog-bar { display: inline-flex; gap: 3px; }
+.pl-seg { flex: 1; max-width: 26px; height: 5px; border-radius: 3px; background: var(--border); }
+.pl-seg--done { background: var(--ok); }
+.pl-seg--partial { background: color-mix(in srgb, var(--ok) 45%, var(--border)); }
+.pl-seg--warn { background: var(--warn); }
+.pl-prog-next { font-size: 11px; color: var(--ink3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pl-prog-next--ok { color: var(--ok); font-weight: 600; }
 </style>

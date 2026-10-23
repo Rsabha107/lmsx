@@ -8,6 +8,7 @@ use App\Models\CheckpointTemplate;
 use App\Models\Event;
 use App\Models\MovementTemplate;
 use App\Models\MovementTemplateLeg;
+use App\Services\DeletionService;
 use App\Services\JobGenerationService;
 use App\Services\TemplateCopyService;
 use Illuminate\Http\Request;
@@ -21,7 +22,10 @@ use Inertia\Inertia;
  */
 class MovementTemplateController extends Controller
 {
-    private const NAME_TAKEN = ['name.unique' => 'A movement template with this name already exists in this event.'];
+    private const NAME_TAKEN = [
+        'name.unique' => 'A movement template with this name already exists in this event (or is in the recycle bin).',
+        'code.unique' => 'This code is already used by a movement template (or one in the recycle bin).',
+    ];
 
     /**
      * Display a listing of movement templates.
@@ -368,29 +372,14 @@ class MovementTemplateController extends Controller
     }
 
     /**
-     * Remove the specified movement template from storage.
+     * Move a movement template to the recycle bin. One used by plans (deleted plans included)
+     * waits for another admin's approval.
      */
-    public function destroy(MovementTemplate $movementTemplate)
+    public function destroy(Request $request, MovementTemplate $movementTemplate, DeletionService $deletions)
     {
-        // Check if template is being used
-        $plansCount = $movementTemplate->plans()->count();
-        
-        if ($plansCount > 0) {
-            $emptyCount = $movementTemplate->plans()->doesntHave('movements')->count();
-            $empty = $emptyCount > 0 ? " {$emptyCount} of them have no movements." : '';
+        $deletion = $deletions->request('movement_templates', collect([$movementTemplate]), $request->user(), $movementTemplate->event_id, $request->input('reason'));
 
-            return back()->with('error', "Cannot delete template. It is used in {$plansCount} plan(s).{$empty}");
-        }
-
-        $name = $movementTemplate->name;
-        $code = $movementTemplate->code;
-        $eventId = $movementTemplate->event_id;
-        $movementTemplate->delete();
-
-        AuditLog::change('Movement template deleted', $code, ['name' => $name], null, $eventId);
-
-        return redirect()->route('library')
-            ->with('success', "Movement template '{$name}' deleted successfully");
+        return redirect()->route('library')->with('success', $deletions->message($deletion));
     }
 
     /**

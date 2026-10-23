@@ -5,6 +5,7 @@
  * Dashboard, schedule, library, and general app features
  */
 
+use App\Http\Controllers\AuditController;
 use App\Http\Controllers\LmsController;
 use App\Http\Controllers\MobileAppDownloadController;
 use Illuminate\Http\Request;
@@ -38,18 +39,16 @@ Route::middleware('auth')->group(function () {
         Route::post('/email/send', [LmsController::class, 'sendEmail'])->name('email.send');
     });
 
-    Route::get('/audit', [LmsController::class, 'audit'])
-        ->middleware('permission:audit.view')
-        ->name('audit');
-    Route::get('/audit', [LmsController::class, 'audit'])
-        ->middleware('permission:audit.view')
-        ->name('audit');
+    Route::middleware('permission:audit.view')->group(function () {
+        Route::get('/audit', [AuditController::class, 'index'])->name('audit');
+        Route::get('/audit/export', [AuditController::class, 'export'])->name('audit.export');
+    });
 
     // Session: active event selector
     Route::post('/session/active-event', function (Request $request) {
         $validated = $request->validate([
             // Cancelled events are hidden from the switcher, so don't accept them either.
-            'event_id' => ['nullable', 'integer', Rule::exists('events', 'id')->where('active_flag', true)],
+            'event_id' => ['nullable', 'integer', Rule::exists('events', 'id')->where('active_flag', true)->whereNull('deleted_at')],
         ]);
 
         $eventId = $validated['event_id'] ?? null;

@@ -956,21 +956,6 @@ class LmsController extends Controller
         return redirect()->back()->with('success', "Daily summary sent to {$recipients->count()} recipient(s).");
     }
 
-    public function audit(): Response    {
-        $entries = AuditLog::latest()->limit(500)->get()->map(fn (AuditLog $log) => [
-            't' => $log->created_at->format('d M H:i'),
-            'who' => $log->user_name,
-            'role' => $log->user_role,
-            'action' => $log->action,
-            'target' => $log->target ?? '',
-            'meta' => $log->meta ?? '',
-        ])->all();
-
-        return Inertia::render('Audit', [
-            'audit' => $entries,
-        ]);
-    }
-
     /**
      * Override a checkpoint status (privileged action)
      */
@@ -1403,14 +1388,16 @@ class LmsController extends Controller
     }
 
     /**
-     * Delete one or many jobs; their movements stay and can be regenerated.
+     * Delete one or many jobs into the recycle bin; their movements stay and can be regenerated.
+     * More than a few, or past the hourly limit, waits for another admin's approval.
      */
-    public function destroyJobs(Request $request, JobLifecycleService $lifecycle): RedirectResponse
+    public function destroyJobs(Request $request, \App\Services\DeletionService $deletions): RedirectResponse
     {
         $validated = $request->validate([
             'ids' => ['required', 'array', 'min:1'],
             'ids.*' => ['integer', 'distinct'],
             'confirm' => ['nullable', 'string'],
+            'reason' => ['nullable', 'string', 'max:500'],
         ]);
 
         $jobs = JobOperation::with('team')->whereIn('id', $validated['ids'])->get();
@@ -1428,8 +1415,16 @@ class LmsController extends Controller
             }
         }
 
-        $deleted = $lifecycle->deleteJobs($jobs);
+        if ($jobs->isEmpty()) {
+            return back()->with('error', 'No jobs to delete.');
+        }
 
-        return back()->with('success', "Deleted {$deleted} job(s).");
+        $deletion = $deletions->request(
+            'jobs', $jobs, $request->user(),
+            $request->session()->get('active_event_id') ?? $jobs->first()->event_id,
+            $validated['reason'] ?? null,
+        );
+
+        return back()->with('success', $deletions->message($deletion));
     }
 }

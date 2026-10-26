@@ -57,10 +57,17 @@ class MicrosoftController extends Controller
                 return $mobile ? $this->toMobile($mobile, ['error' => $message]) : $this->microsoftLogout($request, $message);
             }
 
+            if (! $user->is_active) {
+                Log::warning('Microsoft login blocked — account deactivated: '.$email);
+
+                return $mobile ? $this->toMobile($mobile, ['error' => User::INACTIVE_MESSAGE]) : $this->microsoftLogout($request, User::INACTIVE_MESSAGE);
+            }
+
             $user->update([
                 'name'        => $azureUser->getName() ?: $user->name,
                 'provider'    => 'microsoft',
                 'provider_id' => $azureUser->getId(),
+                'last_login_at' => now(),
             ]);
 
             if ($mobile) {

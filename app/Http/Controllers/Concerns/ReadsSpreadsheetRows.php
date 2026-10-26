@@ -67,11 +67,21 @@ trait ReadsSpreadsheetRows
             default => 'Xlsx',
         };
 
+        if ($readerType === 'Xlsx') {
+            \App\Support\Spreadsheet\ImportLimits::assertXlsxArchive($path);
+        }
+
         /** @var IReader $reader */
         $reader = IOFactory::createReader($readerType);
         $reader->setReadDataOnly(true);
+        $reader->setReadEmptyCells(false);
+        $limits = new \App\Support\Spreadsheet\ImportLimits();
+        $reader->setReadFilter($limits);
 
-        return $reader->load($path)->getActiveSheet();
+        $sheet = $reader->load($path)->getActiveSheet();
+        $limits->assertWithinLimits();
+
+        return $sheet;
     }
 
     /**

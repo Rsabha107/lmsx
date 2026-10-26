@@ -9,6 +9,7 @@ use App\Http\Controllers\AccessController;
 use App\Http\Controllers\PermissionController;
 use App\Http\Controllers\RoleController;
 use App\Http\Controllers\SettingsController;
+use App\Http\Controllers\UserAccessController;
 use App\Http\Controllers\UserController;
 use Illuminate\Support\Facades\Route;
 
@@ -22,6 +23,11 @@ Route::middleware(['auth', 'role:admin'])->prefix('setups')->name('setups.')->gr
         Route::post('/', [UserController::class, 'store'])->name('store');
         Route::put('/{id}', [UserController::class, 'update'])->name('update');
         Route::delete('/{id}', [UserController::class, 'destroy'])->name('destroy');
+        Route::post('/{id}/status', [UserAccessController::class, 'updateStatus'])->name('status');
+        Route::post('/invitations', [UserAccessController::class, 'invite'])->name('invite');
+        Route::post('/invitations/{invitation}/resend', [UserAccessController::class, 'resend'])->name('invitations.resend');
+        Route::delete('/invitations/{invitation}', [UserAccessController::class, 'revoke'])->name('invitations.revoke');
+        Route::post('/grant-access', [UserAccessController::class, 'grant'])->name('grant');
     });
     
 // Roles and permissions share one screen; the CRUD endpoints below back it.
@@ -34,6 +40,7 @@ Route::middleware(['auth', 'role:admin'])->prefix('setups')->name('setups.')->gr
         Route::post('/event', [SettingsController::class, 'updateEvent'])->name('update-event');
         Route::post('/ui-flag', [SettingsController::class, 'updateUiFlag'])->name('update-ui-flag');
         Route::post('/thresholds', [SettingsController::class, 'updateThresholds'])->name('update-thresholds');
+        Route::post('/daily-email', [SettingsController::class, 'updateDailyEmail'])->name('update-daily-email');
         Route::delete('/{id}', [SettingsController::class, 'destroy'])->name('destroy');
         Route::post('/preview', [SettingsController::class, 'preview'])->name('preview');
         Route::post('/preview-impact', [SettingsController::class, 'previewImpact'])->name('preview-impact');

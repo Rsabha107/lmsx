@@ -285,7 +285,7 @@ const allNavItems = [
   { label: 'Dashboard',     route: 'dashboard',        icon: 'dashboard', can: 'console.view' },
   { label: 'Daleel',        route: 'ai',                icon: 'ai',        can: 'ai.use' },
   { label: 'Planning',      route: 'plans',             icon: 'plans',     can: 'plans.view' },
-  { label: 'Jobs Queue',    route: 'jobs',              icon: 'jobs',      can: 'console.view' },
+  { label: 'Jobs Queue',    route: 'jobs',              icon: 'jobs',      can: ['console.view', 'jobs.view'] },
   { label: 'Crew Assignment', route: 'crew-assignment', icon: 'team',      can: 'movements.assign-crew' },
   { label: 'Duty Roster',   route: 'duty-roster',       icon: 'schedule',  can: 'roster.manage' },
   { label: 'Jobs (Mobile)', route: 'jobs/mobile',       icon: 'phone',     can: 'jobs.view', flag: 'jobsMobileMenu' },
@@ -335,7 +335,7 @@ const allNavItems = [
 ];
 
 const allowed = (item) =>
-  (!item.can || page.props.auth?.can?.[item.can] === true)
+  (!item.can || [item.can].flat().every((ability) => page.props.auth?.can?.[ability] === true))
   && (!item.flag || page.props.ui?.[item.flag] !== false);
 
 // Hide what the user would only be 403'd on, and drop sections left empty.

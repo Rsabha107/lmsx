@@ -22,6 +22,7 @@ Route::middleware('auth')->group(function () {
     Route::middleware('permission:fleet.view')->group(function () {
         Route::get('/fleet', [LmsController::class, 'fleet'])->name('fleet');
         Route::get('/kit-truck', [KitTruckDashboardController::class, 'index'])->name('kit-truck');
+        Route::get('/kit-truck/export', [KitTruckDashboardController::class, 'export'])->name('kit-truck.export');
         Route::get('/matches', [MatchesController::class, 'index'])->name('matches.index');
         Route::get('/matches/import-template', [MatchImportController::class, 'template'])->name('matches.import-template');
         Route::get('/event-teams', [EventTeamsController::class, 'index'])->name('event-teams');

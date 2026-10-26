@@ -23,7 +23,10 @@ class ResourceScheduleTest extends TestCase
 
     private function agency(int $eventId): static
     {
-        return $this->actingAs($this->createProviderUser('agency'))->withSession(['active_event_id' => $eventId]);
+        $agency = $this->createProviderUser('agency');
+        $agency->events()->attach($eventId);
+
+        return $this->actingAs($agency)->withSession(['active_event_id' => $eventId]);
     }
 
     public function test_a_vehicles_week_lists_lead_and_extra_bookings_planned_or_generated(): void

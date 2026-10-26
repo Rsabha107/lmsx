@@ -1,0 +1,37 @@
+/* Shared by the Add user and Create/Edit user dialogs (Setups → Users). */
+.ud { display: flex; flex-direction: column; gap: 18px; }
+.ud-sub { font-size: 12px; color: var(--ink3); line-height: 1.45; margin: -8px 0 0; }
+.ud-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+.ud-field { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.ud-label { font-size: 11px; font-weight: 600; color: var(--ink3); }
+.ud-hint { font-weight: 400; color: var(--ink4); }
+.ud-input {
+  height: 38px; padding: 0 10px; border: 1px solid var(--border); border-radius: 8px; font-size: 13px;
+  outline: none; background: var(--surface); color: var(--ink); font-family: inherit; box-sizing: border-box; width: 100%;
+}
+.ud-input:focus { border-color: var(--ink); }
+.ud-input:disabled { background: var(--panel); color: var(--ink2); }
+.ud-input--bad { border-color: color-mix(in srgb, var(--danger) 55%, transparent); }
+.ud-input--mono { font-family: var(--font-mono, ui-monospace, Menlo, monospace); }
+.ud-msg { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 11px; color: var(--ink3); }
+.ud-msg--warn { color: var(--warn); }
+.ud-msg--bad { color: var(--danger); }
+.ud-switch-link { border: none; background: none; padding: 0; font-size: 11px; font-weight: 600; color: var(--accent); cursor: pointer; font-family: inherit; }
+.ud-btn {
+  height: 38px; padding: 0 12px; border: 1px solid var(--border); background: var(--surface); color: var(--ink2);
+  border-radius: 8px; font-size: 12px; font-weight: 500; cursor: pointer; font-family: inherit; flex: none;
+}
+.ud-btn:hover { border-color: var(--border-strong); color: var(--ink); }
+.ud-check { display: flex; align-items: center; gap: 10px; padding: 0; border: none; background: none; cursor: pointer; text-align: left; font-family: inherit; }
+.ud-check-box {
+  width: 16px; height: 16px; border-radius: 4px; flex: none; border: 1.5px solid var(--border-strong); background: var(--surface);
+  color: #fff; font-size: 10px; display: flex; align-items: center; justify-content: center;
+}
+.ud-check--on .ud-check-box { background: var(--accent); border-color: var(--accent); }
+.ud-check-text { font-size: 12px; color: var(--ink); }
+
+.ud-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; flex-wrap: wrap; }
+.ud-status { font-size: 12px; color: var(--ink3); }
+.ud-status--ok { color: var(--ok); }
+.ud-status--bad { color: var(--danger); }
+.ud-foot-actions { display: flex; gap: 8px; }

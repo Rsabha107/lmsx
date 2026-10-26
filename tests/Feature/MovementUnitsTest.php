@@ -27,7 +27,10 @@ class MovementUnitsTest extends TestCase
 
     private function agency(): static
     {
-        return $this->actingAs($this->createProviderUser('agency'))->withSession(['active_event_id' => $this->event->id]);
+        $agency = $this->createProviderUser('agency');
+        $agency->events()->attach($this->event->id);
+
+        return $this->actingAs($agency)->withSession(['active_event_id' => $this->event->id]);
     }
 
     private function movement(array $attributes = [])

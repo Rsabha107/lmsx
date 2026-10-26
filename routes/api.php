@@ -22,7 +22,7 @@ Route::name('api.mobile.')->group(function () {
         ->middleware('throttle:5,1')
         ->name('sso.microsoft');
 
-    Route::middleware(['auth:sanctum', 'throttle:mobile'])->group(function () {
+    Route::middleware(['auth:sanctum', 'active', 'throttle:mobile'])->group(function () {
         Route::get('/me', [AuthController::class, 'me'])->name('me');
         Route::post('/logout', [AuthController::class, 'logout'])->name('logout');
 

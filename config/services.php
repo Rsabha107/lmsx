@@ -40,6 +40,8 @@ return [
         'client_secret' => env('MICROSOFT_CLIENT_SECRET'),
         'redirect' => env('MICROSOFT_REDIRECT_URI'),
         'tenant' => env('MICROSOFT_TENANT_ID'),
+        // Email domains of SC/LOC staff, who are granted access and sign in with Microsoft (no password).
+        'staff_domains' => array_values(array_filter(array_map(fn ($d) => strtolower(trim($d)), explode(',', (string) env('SSO_STAFF_DOMAINS', 'sc.qa,loc.qa'))))),
     ],
 
     'aviationstack' => [

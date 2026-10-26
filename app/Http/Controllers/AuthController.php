@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\User;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -29,7 +30,15 @@ class AuthController extends Controller
         ]);
 
         if (Auth::attempt($credentials, $request->boolean('remember'))) {
+            // Told only after the right password, so it reveals nothing to a guesser.
+            if (! $request->user()->is_active) {
+                Auth::logout();
+
+                return back()->withErrors(['email' => User::INACTIVE_MESSAGE])->onlyInput('email');
+            }
+
             $request->session()->regenerate();
+            $request->user()->forceFill(['last_login_at' => now()])->saveQuietly();
 
             // Field supervisors have no desk console, so honouring an intended
             // console URL would land them on a 403.
@@ -76,13 +85,10 @@ class AuthController extends Controller
             'email' => 'required|email',
         ]);
 
-        $status = Password::sendResetLink($request->only('email'));
+        // One reply whatever happened (sent, unknown address, throttled), so the form never reveals who has an account.
+        Password::sendResetLink($request->only('email'));
 
-        if ($status === Password::RESET_LINK_SENT) {
-            return back()->with('status', __($status));
-        }
-
-        return back()->withErrors(['email' => __($status)]);
+        return back()->with('status', 'If that address has an account, a reset link is on its way.');
     }
 
     public function showResetPassword(string $token): Response
@@ -104,7 +110,8 @@ class AuthController extends Controller
         $status = Password::reset(
             $request->only('email', 'password', 'password_confirmation', 'token'),
             function ($user, $password) {
-                $user->forceFill(['password' => Hash::make($password)])
+                // A password they chose themselves replaces any temporary one.
+                $user->forceFill(['password' => Hash::make($password), 'must_change_password' => false])
                      ->setRememberToken(Str::random(60));
                 $user->save();
                 event(new PasswordReset($user));

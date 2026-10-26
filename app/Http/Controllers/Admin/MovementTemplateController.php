@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Exceptions\DeletionRefused;
 use App\Models\AuditLog;
 use App\Models\CheckpointTemplate;
 use App\Models\Event;
@@ -372,12 +373,30 @@ class MovementTemplateController extends Controller
     }
 
     /**
-     * Move a movement template to the recycle bin. One used by plans (deleted plans included)
-     * waits for another admin's approval.
+     * Copy a movement template of the active event, legs included, as "<name> (copy)".
+     */
+    public function duplicate(Request $request, MovementTemplate $movementTemplate, TemplateCopyService $copyService)
+    {
+        abort_unless((int) $movementTemplate->event_id === (int) $request->session()->get('active_event_id'), 404);
+
+        $copy = $copyService->duplicateMovementTemplate($movementTemplate->load('legs'));
+
+        AuditLog::change('Movement template duplicated', $copy->code, ['from' => $movementTemplate->code, 'name' => $copy->name], $copy, $copy->event_id);
+
+        return redirect()->route('library')->with('success', "Duplicated as {$copy->name} ({$copy->code}).");
+    }
+
+    /**
+     * Move a movement template to the recycle bin. Refused while a plan uses it; one used only by
+     * plans in the recycle bin waits for another admin's approval.
      */
     public function destroy(Request $request, MovementTemplate $movementTemplate, DeletionService $deletions)
     {
-        $deletion = $deletions->request('movement_templates', collect([$movementTemplate]), $request->user(), $movementTemplate->event_id, $request->input('reason'));
+        try {
+            $deletion = $deletions->request('movement_templates', collect([$movementTemplate]), $request->user(), $movementTemplate->event_id, $request->input('reason'));
+        } catch (DeletionRefused $e) {
+            return back()->with('error', $e->getMessage());
+        }
 
         return redirect()->route('library')->with('success', $deletions->message($deletion));
     }

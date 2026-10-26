@@ -14,7 +14,7 @@ class WriteRouteAuthorizationTest extends TestCase
 {
     /** Public or authentication-only by nature. */
     private const AUTH_FLOW = [
-        'login.attempt', 'logout', 'password.email', 'password.update',
+        'login.attempt', 'logout', 'password.email', 'password.update', 'invitation.store', 'password.change.update',
         'api.mobile.login', 'api.mobile.sso.microsoft', 'api.mobile.logout',
         'api.mobile.devices.store', 'api.mobile.devices.destroy',
         'session.active-event', 'session.active-plan',

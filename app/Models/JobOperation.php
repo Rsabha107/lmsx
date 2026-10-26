@@ -162,6 +162,24 @@ class JobOperation extends Model
      * Jobs the user supervises, as lead or as an extra supervisor on the movement.
      * $prefix keeps joined queries unambiguous, e.g. 'jobs_operations.'.
      */
+    /**
+     * The jobs a user may see in an event: the same rules as JobOperationPolicy::view (functional area
+     * unless jobs.view-all-functional-areas, own jobs unless jobs.view-unassigned). ProviderScope still applies.
+     */
+    public function scopeVisibleTo(Builder $query, User $user, int $eventId): Builder
+    {
+        $query->where('event_id', $eventId);
+
+        if (! $user->can('jobs.view-all-functional-areas')) {
+            $query->whereIn('functional_area', $user->functionalAreaCodes());
+        }
+        if (! $user->can('jobs.view-unassigned')) {
+            $query->supervisedBy((int) $user->id);
+        }
+
+        return $query;
+    }
+
     public function scopeSupervisedBy(Builder $query, int $userId, string $prefix = ''): Builder
     {
         return $query->where(fn ($q) => $q->where($prefix.'supervisor_id', $userId)

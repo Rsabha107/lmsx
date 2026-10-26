@@ -29,3 +29,8 @@ Thumbs.db
 /docs/*
 !/docs/assessment/
 !/docs/assessment/**
+security/application-attack-surface.md
+security/EXECUTIVE-SECURITY-SUMMARY.md
+security/remediation-plan.md
+security/route-security-matrix.md
+security/SECURITY-ASSESSMENT.md

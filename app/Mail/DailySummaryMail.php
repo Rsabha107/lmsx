@@ -20,11 +20,7 @@ class DailySummaryMail extends Mailable
 
     public function envelope(): Envelope
     {
-        $event = $this->summary['event']['short_name'] ?? $this->summary['event']['name'] ?? 'NAQLA LMS';
-
-        return new Envelope(
-            subject: "Logistics Snapshot · {$event} · ".$this->summary['date'],
-        );
+        return new Envelope(subject: $this->summary['subject']);
     }
 
     public function content(): Content

@@ -11,7 +11,7 @@
         </div>
         <h1 class="auth-title">Check your email</h1>
         <p class="auth-sub">
-          We sent a password reset link to <strong>{{ sentTo }}</strong>.
+          If <strong>{{ sentTo }}</strong> has an account, we sent it a password reset link.
           Check your inbox and follow the link to reset your password.
         </p>
         <p class="resend-note">

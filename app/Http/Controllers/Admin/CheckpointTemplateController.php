@@ -85,6 +85,8 @@ class CheckpointTemplateController extends Controller
                 ->where('event_id', $request->session()->get('active_event_id'))],
             'movement_type' => 'required|in:arrival,departure,transfer,training,match,daily_ops',
             'description' => 'nullable|string',
+            'from_location' => 'nullable|string|max:255',
+            'to_location' => 'nullable|string|max:255',
             'estimated_duration_minutes' => 'nullable|integer|min:1',
             'is_active' => 'boolean',
             'checkpoints' => 'nullable|array',
@@ -100,6 +102,8 @@ class CheckpointTemplateController extends Controller
             'name' => $validated['name'],
             'movement_type' => $validated['movement_type'],
             'description' => $validated['description'] ?? null,
+            'from_location' => $validated['from_location'] ?? null,
+            'to_location' => $validated['to_location'] ?? null,
             'estimated_duration_minutes' => $validated['estimated_duration_minutes'] ?? null,
             'is_active' => $validated['is_active'] ?? true,
         ]);
@@ -189,6 +193,8 @@ class CheckpointTemplateController extends Controller
                 ->ignore($checkpointTemplate->id)],
             'movement_type' => 'required|in:arrival,departure,transfer,training,match,daily_ops',
             'description' => 'nullable|string',
+            'from_location' => 'nullable|string|max:255',
+            'to_location' => 'nullable|string|max:255',
             'estimated_duration_minutes' => 'nullable|integer|min:1',
             'is_active' => 'boolean',
             'checkpoints' => 'nullable|array',
@@ -206,6 +212,8 @@ class CheckpointTemplateController extends Controller
             'name' => $validated['name'],
             'movement_type' => $validated['movement_type'],
             'description' => $validated['description'] ?? null,
+            'from_location' => $validated['from_location'] ?? null,
+            'to_location' => $validated['to_location'] ?? null,
             'estimated_duration_minutes' => $validated['estimated_duration_minutes'] ?? null,
             'is_active' => $validated['is_active'] ?? true,
         ]);
@@ -277,6 +285,20 @@ class CheckpointTemplateController extends Controller
 
         return redirect()->route('library')
             ->with('success', $templates->count() . ' checkpoint template(s) copied to the active event');
+    }
+
+    /**
+     * Copy a checkpoint template of the active event, steps included, as "<name> (copy)".
+     */
+    public function duplicate(Request $request, CheckpointTemplate $checkpointTemplate, TemplateCopyService $copyService)
+    {
+        abort_unless((int) $checkpointTemplate->event_id === (int) $request->session()->get('active_event_id'), 404);
+
+        $copy = $copyService->duplicateCheckpointTemplate($checkpointTemplate);
+
+        AuditLog::change('Checkpoint template duplicated', $copy->code, ['from' => $checkpointTemplate->code, 'name' => $copy->name], $copy, $copy->event_id);
+
+        return redirect()->route('library')->with('success', "Duplicated as {$copy->name} ({$copy->code}).");
     }
 
     /**

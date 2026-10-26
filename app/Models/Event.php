@@ -111,6 +111,12 @@ class Event extends Model
         return $this->belongsToMany(User::class, 'user_events')->withTimestamps();
     }
 
+    /** Who receives this event's Daily Email (Setups → Settings → Notifications). */
+    public function dailyEmailRecipients(): BelongsToMany
+    {
+        return $this->belongsToMany(User::class, 'daily_email_recipients')->withTimestamps();
+    }
+
     /** Not cancelled. */
     /** Events the user may reach: all for admin/events.access-all, otherwise their assignments. */
     public function scopeAccessibleTo($query, ?\App\Models\User $user)

@@ -21,7 +21,7 @@ use Illuminate\Support\Facades\Route;
 // were authenticated-only and have been removed; web job actions are in routes/web/jobs.php.
 
 // Legacy token API, authorised per job inside the controller.
-Route::prefix('api')->name('api.')->middleware(['auth:sanctum'])->group(function () {
+Route::prefix('api')->name('api.')->middleware(['auth:sanctum', 'active'])->group(function () {
     Route::get('/my-jobs', [JobOperationController::class, 'myJobs'])->name('my-jobs');
     Route::post('/checkpoints/{checkpoint}/quick-complete', [JobOperationController::class, 'quickCompleteCheckpoint'])->name('checkpoint.quick-complete');
     Route::get('/jobs/{job}/progress', [JobOperationController::class, 'progress'])->name('job.progress');
@@ -31,11 +31,14 @@ Route::prefix('api')->name('api.')->middleware(['auth:sanctum'])->group(function
 Route::prefix('admin')->name('admin.')->middleware(['auth', 'role:admin'])->group(function () {
     // Checkpoint Library
     Route::delete('checkpoints/bulk-delete', [CheckpointController::class, 'destroyBulk'])->name('checkpoints.bulk-delete');
+    Route::patch('checkpoints/bulk-category', [CheckpointController::class, 'updateCategoryBulk'])->name('checkpoints.bulk-category');
+    Route::post('checkpoints/add-to-template', [CheckpointController::class, 'addToTemplate'])->name('checkpoints.add-to-template');
     Route::resource('checkpoints', CheckpointController::class);
 
     // Checkpoint Templates
     Route::get('checkpoint-templates/by-event/{event}', [CheckpointTemplateController::class, 'byEvent'])->name('checkpoint-templates.by-event');
     Route::post('checkpoint-templates/copy-from-event', [CheckpointTemplateController::class, 'copyFromEvent'])->name('checkpoint-templates.copy-from-event');
+    Route::post('checkpoint-templates/{checkpointTemplate}/duplicate', [CheckpointTemplateController::class, 'duplicate'])->name('checkpoint-templates.duplicate');
     Route::resource('checkpoint-templates', CheckpointTemplateController::class);
     Route::post('checkpoint-templates/{template}/checkpoints', [CheckpointTemplateController::class, 'attachCheckpoint'])->name('checkpoint-templates.attach-checkpoint');
     Route::delete('checkpoint-templates/{template}/checkpoints/{checkpoint}', [CheckpointTemplateController::class, 'detachCheckpoint'])->name('checkpoint-templates.detach-checkpoint');
@@ -43,6 +46,7 @@ Route::prefix('admin')->name('admin.')->middleware(['auth', 'role:admin'])->grou
     // Movement Templates
     Route::get('movement-templates/by-event/{event}', [MovementTemplateController::class, 'byEvent'])->name('movement-templates.by-event');
     Route::post('movement-templates/copy-from-event', [MovementTemplateController::class, 'copyFromEvent'])->name('movement-templates.copy-from-event');
+    Route::post('movement-templates/{movementTemplate}/duplicate', [MovementTemplateController::class, 'duplicate'])->name('movement-templates.duplicate');
     Route::resource('movement-templates', MovementTemplateController::class);
     Route::post('movement-templates/{template}/legs', [MovementTemplateController::class, 'addLeg'])->name('movement-templates.add-leg');
     Route::put('movement-templates/{template}/legs/{leg}', [MovementTemplateController::class, 'updateLeg'])->name('movement-templates.update-leg');

@@ -13,6 +13,7 @@ use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\URL;
+use Illuminate\Support\Str;
 use Illuminate\Support\ServiceProvider;
 use SocialiteProviders\Manager\SocialiteWasCalled;
 
@@ -46,6 +47,9 @@ class AppServiceProvider extends ServiceProvider
         // Dates sent outside a model keep the models' wall-clock JSON shape (see SerializesWallClock).
         FactoryImmutable::getDefaultInstance()->serializeUsing('Y-m-d\TH:i:s.u\Z');
 
+        // Exports never turn user text into a live spreadsheet formula.
+        \PhpOffice\PhpSpreadsheet\Cell\Cell::setValueBinder(new \App\Support\Spreadsheet\TextOnlyValueBinder());
+
         // Conservative limit — this hits a paid external API synchronously
         // on every request, so it needs its own (tighter) limiter rather
         // than the framework default.
@@ -58,5 +62,15 @@ class AppServiceProvider extends ServiceProvider
 
         // Photo/signature uploads cost storage and CPU.
         RateLimiter::for('mobile-upload', fn (Request $request) => Limit::perMinute(30)->by($request->user()?->id ?: $request->ip()));
+
+        // Pair account and network limits so rotating either identifier alone does not evade them.
+        RateLimiter::for('web-login', fn (Request $request) => [
+            Limit::perMinute(5)->by('login:ip:'.$request->ip()),
+            Limit::perMinute(5)->by('login:email:'.Str::lower((string) $request->input('email'))),
+        ]);
+        RateLimiter::for('web-password-reset', fn (Request $request) => [
+            Limit::perMinute(3)->by('reset:ip:'.$request->ip()),
+            Limit::perMinute(3)->by('reset:email:'.Str::lower((string) $request->input('email'))),
+        ]);
     }
 }

@@ -16,7 +16,7 @@ use Illuminate\Support\Facades\Auth;
 use Laravel\Sanctum\HasApiTokens;
 use Spatie\Permission\Traits\HasRoles;
 
-#[Fillable(['name', 'email', 'phone', 'job_title', 'password', 'provider', 'provider_id', 'fleet_provider_id'])]
+#[Fillable(['name', 'email', 'phone', 'job_title', 'password', 'provider', 'provider_id', 'fleet_provider_id', 'is_active', 'deactivated_at', 'last_login_at', 'must_change_password'])]
 #[Hidden(['password', 'remember_token'])]
 class User extends Authenticatable
 {
@@ -33,6 +33,11 @@ class User extends Authenticatable
     /** Code looks these up by name, so they can be neither deleted nor renamed. */
     public const PROTECTED_ROLES = ['admin', self::SECURITY_ROLE];
 
+    public const INACTIVE_MESSAGE = 'This account has been deactivated. Contact an administrator if you need access again.';
+
+    /** Matches the column default, so a just-created user is active before it is reloaded. */
+    protected $attributes = ['is_active' => true];
+
     /**
      * Get the attributes that should be cast.
      *
@@ -43,7 +48,24 @@ class User extends Authenticatable
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
+            'is_active' => 'boolean',
+            'deactivated_at' => 'datetime',
+            'last_login_at' => 'datetime',
+            'must_change_password' => 'boolean',
         ];
+    }
+
+    public function scopeActive($query)
+    {
+        return $query->where('users.is_active', true);
+    }
+
+    /** SC/LOC staff sign in with Microsoft; their addresses are on these domains (services.microsoft.staff_domains). */
+    public static function isStaffEmail(?string $email): bool
+    {
+        $domain = strtolower((string) substr(strrchr((string) $email, '@') ?: '', 1));
+
+        return $domain !== '' && in_array($domain, config('services.microsoft.staff_domains', []), true);
     }
 
     public function functionalAreas(): HasMany
@@ -118,7 +140,8 @@ class User extends Authenticatable
     {
         $viewer ??= Auth::user();
 
-        return $query->whereHas('roles', fn ($q) => $q->where('name', 'ground_control'))
+        return $query->where('users.is_active', true)
+            ->whereHas('roles', fn ($q) => $q->where('name', 'ground_control'))
             ->when($viewer?->isProviderRestricted(), fn ($q) => $q->where('users.fleet_provider_id', $viewer->fleet_provider_id ?? 0));
     }
 

@@ -96,10 +96,60 @@ class SettingsController extends Controller
                 'utilities' => $this->settingsService->getGlobalFlag(SettingsService::FLAG_UTILITIES),
             ],
             'mobileOnlyUsers' => $this->mobileOnlyUserCount(),
+            'dailyEmail' => $this->dailyEmailAudience($request),
             'conflictThresholds' => collect(SettingsService::CONFLICT_THRESHOLDS)
                 ->map(fn (array $t, string $key) => $t + ['key' => $key, 'value' => $this->settingsService->getThreshold($key)])
                 ->values(),
         ]);
+    }
+
+    /**
+     * The active event's Daily Email audience and who can be picked: active users with an email,
+     * plus anyone already chosen who has since been deactivated (shown, but not sent to).
+     */
+    private function dailyEmailAudience(Request $request): array
+    {
+        $eventId = (int) $request->session()->get('active_event_id');
+        $event = $eventId ? Event::find($eventId) : null;
+        $chosen = $event ? $event->dailyEmailRecipients()->pluck('users.id')->all() : [];
+
+        return [
+            'event' => $event?->only(['id', 'name', 'short_name']),
+            'recipientIds' => $chosen,
+            'users' => $event
+                ? User::with('roles:id,name')
+                    ->whereNotNull('email')
+                    ->where(fn ($q) => $q->where('is_active', true)->orWhereIn('id', $chosen))
+                    ->orderBy('name')
+                    ->get(['id', 'name', 'email', 'is_active'])
+                    ->map(fn (User $u) => ['id' => $u->id, 'name' => $u->name, 'email' => $u->email, 'active' => (bool) $u->is_active, 'roles' => $u->roles->pluck('name')->all()])
+                : [],
+        ];
+    }
+
+    /** Who receives the active event's Daily Email. */
+    public function updateDailyEmail(Request $request)
+    {
+        $eventId = (int) $request->session()->get('active_event_id');
+        abort_unless($eventId && $request->user()->canAccessEvent($eventId), 403, 'Pick an event first.');
+        $event = Event::findOrFail($eventId);
+
+        $ids = $request->validate([
+            'user_ids' => 'present|array|max:200',
+            'user_ids.*' => ['integer', \Illuminate\Validation\Rule::exists('users', 'id')->whereNotNull('email')],
+        ])['user_ids'];
+
+        $before = $event->dailyEmailRecipients()->pluck('users.email', 'users.id');
+        $event->dailyEmailRecipients()->sync(array_unique(array_map('intval', $ids)));
+        $after = $event->dailyEmailRecipients()->pluck('users.email', 'users.id');
+
+        $added = $after->diffKeys($before)->values()->all();
+        $removed = $before->diffKeys($after)->values()->all();
+        if ($added || $removed) {
+            AuditLog::change('Daily Email audience changed', $event->name, ['added' => $added, 'removed' => $removed], $event, $event->id);
+        }
+
+        return back()->with('success', $added || $removed ? "Daily Email audience saved: {$after->count()} recipient(s)." : 'No changes to save.');
     }
 
     /** Saves the limits the conflict checks judge against. */

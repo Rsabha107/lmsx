@@ -43,6 +43,12 @@ class Checkpoint extends Model
             ->orderBy('pivot_order');
     }
 
+    /** Every job's copy of this step (renames carry through to them: CheckpointNameSync). */
+    public function jobCheckpoints(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(JobCheckpoint::class, 'checkpoint_id');
+    }
+
     /**
      * Scope for active checkpoints only.
      */

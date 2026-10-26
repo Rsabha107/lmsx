@@ -25,7 +25,10 @@ class AgencyCrewAssignmentTest extends TestCase
 
     private function agency(Event $event): static
     {
-        return $this->actingAs($this->createProviderUser('agency'))->withSession(['active_event_id' => $event->id]);
+        $agency = $this->createProviderUser('agency');
+        $agency->events()->syncWithoutDetaching([$event->id]);
+
+        return $this->actingAs($agency)->withSession(['active_event_id' => $event->id]);
     }
 
     private function supervisor(): User
@@ -178,7 +181,8 @@ class AgencyCrewAssignmentTest extends TestCase
 
         $this->agency($event)->get('/crew-assignment')->assertOk();
         $this->agency($event)->get('/plans')->assertOk();
-        $this->agency($event)->get('/jobs')->assertOk();
+        // The Jobs Queue needs jobs.view; the agency reads jobs on the Day Board (SEC-001).
+        $this->agency($event)->get('/jobs')->assertForbidden();
     }
 
     public function test_the_agency_cannot_change_anything_else(): void

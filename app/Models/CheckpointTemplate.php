@@ -20,6 +20,8 @@ class CheckpointTemplate extends Model
         'name',
         'movement_type',
         'description',
+        'from_location',
+        'to_location',
         'estimated_duration_minutes',
         'is_active',
     ];

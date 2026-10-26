@@ -123,7 +123,7 @@ class ResourceScheduleController extends Controller
         return match ($type) {
             'vehicle' => Vehicle::find($id),
             'driver' => Driver::find($id),
-            'supervisor' => User::find($id),
+            'supervisor' => $this->supervisors()->find($id),
         };
     }
 
@@ -234,7 +234,7 @@ class ResourceScheduleController extends Controller
 
     private function supervisors()
     {
-        $query = User::permission('jobs.view');
+        $query = User::fieldSupervisors();
         $user = Auth::user();
 
         return $user?->isProviderRestricted()

@@ -14,7 +14,8 @@ Route::middleware('auth')->group(function () {
 
     // Desktop console views.
     Route::middleware('permission:console.view')->group(function () {
-        Route::get('/jobs', [LmsController::class, 'jobs'])->name('jobs');
+        // The queue also needs jobs.view: the agency has the console but reads jobs only via the Day Board.
+        Route::get('/jobs', [LmsController::class, 'jobs'])->middleware('permission:jobs.view')->name('jobs');
         Route::get('/job/{id}', [LmsController::class, 'jobDetail'])->name('job.detail');
         Route::get('/tracker', [LmsController::class, 'tracker'])->name('tracker');
     });

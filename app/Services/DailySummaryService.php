@@ -5,149 +5,219 @@ namespace App\Services;
 use App\Models\Event;
 use App\Models\JobCheckpoint;
 use App\Models\JobIssue;
+use App\Models\JobOperation;
 use App\Models\Movement;
-use App\Models\User;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Collection;
 
 /**
- * Builds the daily operations snapshot (KPIs, movements, recipients) from
- * real rows for a single event/day.
+ * The Daily Email for one event and day D: what needs attention today and tomorrow, how yesterday
+ * went, today at a glance, and D's movements. Sent by hand from the Daily Email page to the
+ * event's chosen audience (Setups → Settings → Notifications).
  */
 class DailySummaryService
 {
+    /** Example rows listed under each attention block; the count is always the full number. */
+    private const EXAMPLES = 5;
+
+    public function __construct(private ConflictDetectionService $conflicts)
+    {
+    }
+
+    /** @param  ?int  $eventId  null = every event; 0 = none */
     public function build(?int $eventId, string $date): array
     {
-        $movements = $this->movements($eventId, $date);
+        $day = Carbon::parse($date)->startOfDay();
+        $event = $eventId ? Event::find($eventId) : null;
+        $attention = $this->attention($eventId, $day);
+        $total = array_sum(array_column($attention, 'count'));
+        $label = $event?->short_name ?: $event?->name ?: 'NAQLA LMS';
 
         return [
-            'event' => $eventId ? Event::find($eventId)?->only(['id', 'name', 'short_name']) : null,
-            'date' => $date,
-            'kpis' => $this->kpis($eventId, $date, $movements),
-            'schedule' => $movements,
+            'event' => $event?->only(['id', 'name', 'short_name']),
+            'date' => $day->toDateString(),
+            'subject' => ($total > 0 ? "⚠ {$total} ".($total === 1 ? 'item needs' : 'items need').' attention' : '✓ All set')
+                ." · {$label} · ".$day->format('D j M'),
+            'attention' => $attention,
+            'attentionTotal' => $total,
+            'yesterday' => $this->yesterday($eventId, $day->copy()->subDay()),
+            // Not 'today': that name is the shared top-bar date (HandleInertiaRequests).
+            'glance' => $this->today($eventId, $day),
+            'schedule' => $this->schedule($eventId, $day),
             'recipients' => $this->recipients($eventId),
         ];
     }
 
-    /**
-     * Today's movements in the same shape the Schedule page uses.
-     */
-    private function movements(?int $eventId, string $date): array
+    /** Live (not cancelled or completed) movements starting on D or D+1. */
+    private function upcoming(?int $eventId, Carbon $day): Collection
     {
-        return Movement::with(['team', 'flight', 'job.vehicle'])
-            ->when($eventId, fn ($q) => $q->where('event_id', $eventId))
-            ->whereDate('window_start', $date)
+        return Movement::with(['team:id,code,team_name', 'job:id,movement_id'])
+            ->when($eventId !== null, fn ($q) => $q->where('event_id', $eventId))
+            ->whereNotIn('status', ['cancelled', 'completed'])
+            ->where('window_start', '>=', $day)
+            ->where('window_start', '<', $day->copy()->addDays(2))
+            ->orderBy('window_start')
+            ->get();
+    }
+
+    /** Only blocks with something in them; each links to the screen that fixes it. */
+    private function attention(?int $eventId, Carbon $day): array
+    {
+        $movements = $this->upcoming($eventId, $day);
+        $blocks = [];
+
+        $missing = $movements->filter(fn (Movement $m) => ! $m->vehicle_id || ! $m->driver_id || ! $m->field_supervisor_id);
+        $blocks[] = $this->block('crew', 'Movements missing crew', $missing->count(),
+            $missing->take(self::EXAMPLES)->map(fn (Movement $m) => $this->movementLine($m).' · no '.implode(', ', array_keys(array_filter([
+                'vehicle' => ! $m->vehicle_id, 'driver' => ! $m->driver_id, 'supervisor' => ! $m->field_supervisor_id,
+            ]))))->values()->all(),
+            url('/crew-assignment?date='.$day->toDateString()), 'Open Crew Assignment');
+
+        // High-severity clashes nobody accepted, on these two days (missing crew is the block above).
+        $ids = $movements->pluck('id')->flip();
+        $clashes = collect($eventId ? $this->conflicts->forEvent($eventId) : [])
+            ->filter(fn ($c) => ! $c['accepted'] && $c['sev'] === 'high' && $c['type'] !== 'Unassigned Resource'
+                && collect($c['movement_ids'])->contains(fn ($id) => $ids->has($id)))
+            ->values();
+        $blocks[] = $this->block('conflicts', 'Unresolved conflicts', $clashes->count(),
+            $clashes->take(self::EXAMPLES)->map(fn ($c) => trim(($c['when'] ? $c['when'].' · ' : '').$c['type'].': '.$c['text']))->all(),
+            url('/plans?tab=conflicts'), 'Open the Conflicts tab');
+
+        $noJob = $movements->filter(fn (Movement $m) => $m->job === null);
+        $blocks[] = $this->block('jobs', 'Movements with no job yet', $noJob->count(),
+            $noJob->take(self::EXAMPLES)->map(fn (Movement $m) => $this->movementLine($m))->values()->all(),
+            url('/plans'), 'Open Planning');
+
+        $issues = JobIssue::open()->with(['job:id,job_id,team_id', 'job.team:id,code'])
+            ->when($eventId !== null, fn ($q) => $q->where('event_id', $eventId))
+            ->oldest()->get();
+        $blocks[] = $this->block('issues', 'Open issues', $issues->count(),
+            $issues->take(self::EXAMPLES)->map(fn (JobIssue $i) => implode(' · ', array_filter([
+                $i->label(), $i->job?->job_id, $i->job?->team?->code, 'open '.$this->age($i->created_at),
+            ])))->all(),
+            url('/jobs'), 'Open the Jobs Queue');
+
+        return array_values(array_filter($blocks, fn ($b) => $b['count'] > 0));
+    }
+
+    private function block(string $key, string $title, int $count, array $rows, string $link, string $linkLabel): array
+    {
+        return compact('key', 'title', 'count', 'rows', 'link') + ['linkLabel' => $linkLabel];
+    }
+
+    private function movementLine(Movement $m): string
+    {
+        return implode(' · ', array_filter([
+            $m->window_start?->format('D j M H:i'),
+            $m->team?->code,
+            ($m->from_location ?? '—').' → '.($m->to_location ?? '—'),
+        ]));
+    }
+
+    private function age(?Carbon $since): string
+    {
+        $minutes = $since ? (int) $since->diffInMinutes(now(), true) : 0;
+        $days = intdiv($minutes, 1440);
+        $hours = intdiv($minutes % 1440, 60);
+
+        return $days > 0 ? "{$days} d {$hours} h" : ($hours > 0 ? "{$hours} h" : ($minutes % 60).' min');
+    }
+
+    /** D−1 judged on its own: jobs of movements that started that day, checkpoints scheduled that day. */
+    private function yesterday(?int $eventId, Carbon $day): array
+    {
+        $next = $day->copy()->addDay();
+        $scope = fn ($q) => $q->when($eventId !== null, fn ($q) => $q->where('event_id', $eventId));
+
+        $jobs = fn () => JobOperation::query()->where($scope)->where('status', '!=', 'cancelled')
+            ->whereHas('movement', fn ($q) => $q->where('window_start', '>=', $day)->where('window_start', '<', $next));
+        $checkpoints = fn () => JobCheckpoint::query()->where($scope)->where('scheduled_at', '>=', $day)->where('scheduled_at', '<', $next);
+
+        $judged = $checkpoints()->where('state', 'done')->whereNotNull('is_on_time')->count();
+        $onTime = $checkpoints()->where('state', 'done')->where('is_on_time', true)->count();
+        $avgDelay = $checkpoints()->where('state', 'done')->where('delay_minutes', '>', 0)->avg('delay_minutes');
+
+        return [
+            'date' => $day->toDateString(),
+            'jobsPlanned' => $jobs()->count(),
+            'jobsCompleted' => $jobs()->where('status', 'completed')->count(),
+            'onTimePct' => $judged > 0 ? (int) round($onTime / $judged * 100) : null,
+            'judged' => $judged,
+            'avgDelay' => $avgDelay !== null ? (int) round($avgDelay) : null,
+            'skipped' => $checkpoints()->where('state', 'skipped')->count(),
+            'issuesRaised' => JobIssue::query()->where($scope)->where('created_at', '>=', $day)->where('created_at', '<', $next)->count(),
+            'issuesResolved' => JobIssue::query()->where($scope)->where('resolved_at', '>=', $day)->where('resolved_at', '<', $next)->count(),
+        ];
+    }
+
+    private function today(?int $eventId, Carbon $day): array
+    {
+        $starts = Movement::query()
+            ->when($eventId !== null, fn ($q) => $q->where('event_id', $eventId))
+            ->where('status', '!=', 'cancelled')
+            ->where('window_start', '>=', $day)
+            ->where('window_start', '<', $day->copy()->addDay())
+            ->orderBy('window_start')
+            ->pluck('window_start');
+
+        $byHour = $starts->countBy(fn (Carbon $t) => $t->format('H'));
+        $busiest = $byHour->sortDesc()->keys()->first();
+
+        return [
+            'movements' => $starts->count(),
+            'first' => $starts->first()?->format('H:i'),
+            'last' => $starts->last()?->format('H:i'),
+            'busiestHour' => $busiest !== null ? sprintf('%02d:00–%02d:00', $busiest, ((int) $busiest + 1) % 24) : null,
+            'busiestCount' => $busiest !== null ? $byHour[$busiest] : 0,
+            'link' => url('/day-board?date='.$day->toDateString()),
+        ];
+    }
+
+    /** D's movements, with the movement's own crew (set before any job exists). */
+    private function schedule(?int $eventId, Carbon $day): array
+    {
+        return Movement::with(['team:id,code,team_name', 'job:id,movement_id,job_id,status', 'vehicle:id,code,plate_number,vehicle_type', 'units:id,movement_id,vehicle_id'])
+            ->when($eventId !== null, fn ($q) => $q->where('event_id', $eventId))
+            ->where('window_start', '>=', $day)
+            ->where('window_start', '<', $day->copy()->addDay())
             ->orderBy('window_start')
             ->get()
             ->map(function (Movement $movement) {
                 $job = $movement->job;
                 $delay = (int) ($movement->delay_minutes ?? 0);
-
-                $status = 'scheduled';
-                if ($delay > 0) {
-                    $status = 'delayed';
-                } elseif ($job?->status === 'completed') {
-                    $status = 'done';
-                } elseif ($job?->status === 'in-progress') {
-                    $status = 'in-progress';
-                }
+                $vehicle = $movement->vehicle ? ($movement->vehicle->code ?? $movement->vehicle->plate_number ?? $movement->vehicle->vehicle_type) : null;
+                $extra = $movement->units->whereNotNull('vehicle_id')->count();
 
                 return [
                     'id' => $job?->job_id ?? 'MV-'.$movement->id,
-                    'code' => $movement->team?->code ?? 'UNK',
-                    'team' => $movement->team?->team_name ?? 'Unknown team',
+                    'code' => $movement->team?->code ?? '—',
+                    'team' => $movement->team?->team_name ?? '—',
                     'from' => $movement->from_location ?? '—',
                     'to' => $movement->to_location ?? '—',
                     'dep' => $movement->window_start?->format('H:i') ?? '--:--',
                     'arr' => $movement->window_end?->format('H:i') ?? '--:--',
-                    'pax' => $movement->passengers ?? $movement->flight?->party_size_total ?? $movement->team?->party_size_total ?? 0,
-                    'vehicle' => $job?->vehicle?->code ?? $job?->vehicle?->plate_number ?? 'Unassigned',
-                    'status' => $status,
+                    'vehicle' => $vehicle ? $vehicle.($extra ? " +{$extra}" : '') : 'Unassigned',
+                    'status' => match (true) {
+                        $movement->status === 'cancelled' => 'cancelled',
+                        $delay > 0 => 'delayed',
+                        $job?->status === 'completed' => 'done',
+                        $job?->status === 'in-progress' => 'in-progress',
+                        default => 'scheduled',
+                    },
                     'delay' => $delay > 0 ? $delay : null,
                 ];
             })
             ->all();
     }
 
-    private function kpis(?int $eventId, string $date, array $movements): array
-    {
-        $day = Carbon::parse($date);
-
-        $checkpoints = fn () => JobCheckpoint::query()
-            ->when($eventId, fn ($q) => $q->where('event_id', $eventId))
-            ->whereDate('created_at', '<=', $day->copy()->endOfDay());
-
-        $total = $checkpoints()->count();
-        $done = $checkpoints()->where('state', 'done')->count();
-        $onTime = $checkpoints()->where('state', 'done')->where('is_on_time', true)->count();
-
-        $delays = collect($movements)->pluck('delay')->filter()->values();
-        $avgDelay = $delays->isEmpty() ? 0 : round($delays->avg(), 1);
-
-        $planned = count($movements);
-        $completed = collect($movements)->where('status', 'done')->count();
-
-        $openIssues = JobIssue::open()
-            ->when($eventId, fn ($q) => $q->where('event_id', $eventId))
-            ->count();
-
-        return [
-            [
-                'id' => 'otar',
-                'label' => 'On-time arrival rate',
-                'value' => $done > 0 ? round(($onTime / $done) * 100, 1).'%' : '—',
-                'delta' => "$onTime of $done completed checkpoints",
-                'tone' => $this->tone($done > 0 ? ($onTime / $done) * 100 : 100, 90, 75),
-            ],
-            [
-                'id' => 'avgd',
-                'label' => 'Avg. delay',
-                'value' => $avgDelay > 0 ? $avgDelay.' min' : '0 min',
-                'delta' => $delays->count().' delayed movement(s)',
-                'tone' => $avgDelay <= 5 ? 'ok' : ($avgDelay <= 15 ? 'warn' : 'danger'),
-            ],
-            [
-                'id' => 'jobs',
-                'label' => 'Jobs completed / planned',
-                'value' => "$completed / $planned",
-                'delta' => $planned > 0 ? round(($completed / $planned) * 100).'%' : '—',
-                'tone' => 'primary',
-            ],
-            [
-                'id' => 'chk',
-                'label' => 'Checkpoint compliance',
-                'value' => $total > 0 ? round(($done / $total) * 100, 1).'%' : '—',
-                'delta' => "$done of $total checkpoints",
-                'tone' => $this->tone($total > 0 ? ($done / $total) * 100 : 100, 95, 85),
-            ],
-            [
-                'id' => 'iss',
-                'label' => 'Open issues',
-                'value' => (string) $openIssues,
-                'delta' => $openIssues === 0 ? 'none outstanding' : 'awaiting resolution',
-                'tone' => $openIssues === 0 ? 'ok' : ($openIssues < 5 ? 'warn' : 'danger'),
-            ],
-        ];
-    }
-
-    /**
-     * Recipients are the users assigned to the event; without an event the
-     * snapshot has no audience.
-     */
+    /** The event's chosen audience: active users with an email address. No audience = nobody. */
     private function recipients(?int $eventId): array
     {
-        if (! $eventId) {
-            return [];
-        }
+        $event = $eventId ? Event::find($eventId) : null;
 
-        return User::whereHas('events', fn ($q) => $q->where('events.id', $eventId))
-            ->whereNotNull('email')
-            ->orderBy('name')
-            ->get(['id', 'name', 'email'])
-            ->toArray();
-    }
-
-    private function tone(float $percent, float $okAt, float $warnAt): string
-    {
-        return $percent >= $okAt ? 'ok' : ($percent >= $warnAt ? 'warn' : 'danger');
+        return $event
+            ? $event->dailyEmailRecipients()->active()->whereNotNull('email')->orderBy('name')->get(['users.id', 'users.name', 'users.email'])
+                ->map(fn ($u) => ['id' => $u->id, 'name' => $u->name, 'email' => $u->email])->all()
+            : [];
     }
 }

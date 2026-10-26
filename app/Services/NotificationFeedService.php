@@ -19,6 +19,7 @@ class NotificationFeedService
     /** How many rows of each source to scan before merging and trimming. */
     private const SCAN_LIMIT = 60;
 
+    /** @param  ?int  $eventId  null = every event; 0 = none */
     public function recent(?int $eventId = null, int $limit = 25): array
     {
         $alerts = array_merge(
@@ -37,7 +38,7 @@ class NotificationFeedService
     private function fromCheckpoints(?int $eventId): array
     {
         $checkpoints = JobCheckpoint::with('job.team')
-            ->when($eventId, fn ($q) => $q->where('event_id', $eventId))
+            ->when($eventId !== null, fn ($q) => $q->where('event_id', $eventId))
             ->where(function ($q) {
                 $q->where('was_overridden', true)
                     ->orWhere('state', 'skipped')
@@ -92,7 +93,7 @@ class NotificationFeedService
     {
         return JobIssue::with(['job', 'reporter'])
             ->open()
-            ->when($eventId, fn ($q) => $q->where('event_id', $eventId))
+            ->when($eventId !== null, fn ($q) => $q->where('event_id', $eventId))
             ->latest()
             ->limit(self::SCAN_LIMIT)
             ->get()
@@ -111,7 +112,7 @@ class NotificationFeedService
     private function fromDelayedMovements(?int $eventId): array
     {
         return Movement::with('team')
-            ->when($eventId, fn ($q) => $q->where('event_id', $eventId))
+            ->when($eventId !== null, fn ($q) => $q->where('event_id', $eventId))
             ->where('delay_minutes', '>', 0)
             ->orderByDesc('updated_at')
             ->limit(self::SCAN_LIMIT)
@@ -137,7 +138,7 @@ class NotificationFeedService
     {
         return AuditLog::where('action', JobLifecycleService::CREW_ASSIGNED)
             ->where('user_role', 'agency')
-            ->when($eventId, fn ($q) => $q->where('event_id', $eventId))
+            ->when($eventId !== null, fn ($q) => $q->where('event_id', $eventId))
             ->latest()
             ->limit(self::SCAN_LIMIT)
             ->get()
@@ -159,7 +160,7 @@ class NotificationFeedService
         }
 
         return \App\Models\Deletion::pending()
-            ->when($eventId, fn ($q) => $q->where(fn ($w) => $w->where('event_id', $eventId)->orWhereNull('event_id')))
+            ->when($eventId !== null, fn ($q) => $q->where(fn ($w) => $w->where('event_id', $eventId)->orWhereNull('event_id')))
             ->latest()
             ->limit(self::SCAN_LIMIT)
             ->get()

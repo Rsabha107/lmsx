@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\CheckpointTemplate;
 use App\Models\MovementTemplate;
 use App\Models\MovementTemplateLeg;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Copies checkpoint/movement templates from one event into another.
@@ -14,14 +15,16 @@ class TemplateCopyService
     /**
      * Copy a checkpoint template, including its checkpoint sequence, into another event.
      */
-    public function copyCheckpointTemplate(CheckpointTemplate $source, int $targetEventId): CheckpointTemplate
+    public function copyCheckpointTemplate(CheckpointTemplate $source, int $targetEventId, ?string $name = null): CheckpointTemplate
     {
         $copy = CheckpointTemplate::create([
             'event_id' => $targetEventId,
             'code' => $this->uniqueCode(CheckpointTemplate::class, $source->code),
-            'name' => $this->uniqueName(CheckpointTemplate::class, $source->name, $targetEventId),
+            'name' => $this->uniqueName(CheckpointTemplate::class, $name ?? $source->name, $targetEventId),
             'movement_type' => $source->movement_type,
             'description' => $source->description,
+            'from_location' => $source->from_location,
+            'to_location' => $source->to_location,
             'estimated_duration_minutes' => $source->estimated_duration_minutes,
             'is_active' => $source->is_active,
         ]);
@@ -84,6 +87,52 @@ class TemplateCopyService
         }
 
         return $copy;
+    }
+
+    /**
+     * A copy of a checkpoint template in its own event, steps included, as "<name> (copy)".
+     */
+    public function duplicateCheckpointTemplate(CheckpointTemplate $source): CheckpointTemplate
+    {
+        return DB::transaction(fn () => $this->copyCheckpointTemplate($source->loadMissing('checkpoints'), $source->event_id, "{$source->name} (copy)"));
+    }
+
+    /**
+     * A copy of a movement template in its own event, for editing into a variant. The legs keep
+     * pointing at the same checkpoint templates (nothing to copy within one event).
+     */
+    public function duplicateMovementTemplate(MovementTemplate $source): MovementTemplate
+    {
+        return DB::transaction(function () use ($source) {
+            $copy = MovementTemplate::create([
+                'event_id' => $source->event_id,
+                'code' => $this->uniqueCode(MovementTemplate::class, $source->code),
+                'name' => $this->uniqueName(MovementTemplate::class, "{$source->name} (copy)", $source->event_id),
+                'description' => $source->description,
+                'scenario_type' => $source->scenario_type,
+                'functional_area' => $source->functional_area,
+                'total_legs' => $source->total_legs,
+                'estimated_duration_minutes' => $source->estimated_duration_minutes,
+                'is_active' => $source->is_active,
+            ]);
+
+            foreach ($source->legs as $leg) {
+                MovementTemplateLeg::create([
+                    'movement_template_id' => $copy->id,
+                    'checkpoint_template_id' => $leg->checkpoint_template_id,
+                    'order' => $leg->order,
+                    'name' => $leg->name,
+                    'leg_type' => $leg->leg_type,
+                    'from_location' => $leg->from_location,
+                    'to_location' => $leg->to_location,
+                    'estimated_duration_minutes' => $leg->estimated_duration_minutes,
+                    'vehicle_type' => $leg->vehicle_type,
+                    'estimated_passengers' => $leg->estimated_passengers,
+                ]);
+            }
+
+            return $copy;
+        });
     }
 
     /**

@@ -71,7 +71,7 @@ class LmsController extends Controller
         return Inertia::render('Dashboard', [
             'kpis'          => LmsData::kpis(),
             'schedule'      => LmsData::schedule(),
-            'notifications' => $notifications->recent($request->session()->get('active_event_id'), 6),
+            'notifications' => $notifications->recent($this->feedEventId($request), 6),
             'audit'         => LmsData::audit(),
             'clocks'        => $request->user()->hasRole('admin') ? $this->clocks() : null,
         ]);
@@ -116,7 +116,7 @@ class LmsController extends Controller
         // Get plans for active event
         $plans = Plan::with(['movements.team'])
             ->when($activeEventId, function ($query) use ($activeEventId) {
-                $query->where('event_id', $activeEventId);
+                $query->where('event_id', (int) $activeEventId);
             })
             ->orderBy('date', 'desc')
             ->get()
@@ -161,20 +161,57 @@ class LmsController extends Controller
         $activeEventId = $request->session()->get('active_event_id');
 
         return Inertia::render('Library', [
+            // used_in: every template using the checkpoint, any event (the library is global).
             'checkpoints' => Checkpoint::withCount('checkpointTemplates as usage_count')
+                // How many jobs (every event) a rename would reach: shown before saving one.
+                ->addSelect(['jobs_count' => \App\Models\JobCheckpoint::selectRaw('COUNT(DISTINCT job_id)')->whereColumn('checkpoint_id', 'checkpoints.id')])
+                ->with(['checkpointTemplates' => fn ($q) => $q->select('checkpoint_templates.id', 'checkpoint_templates.code', 'checkpoint_templates.name', 'checkpoint_templates.event_id')
+                    ->with('event:id,short_name')])
                 ->orderBy('code')
-                ->get(),
-            'checkpointTemplates' => CheckpointTemplate::with(['checkpoints' => function ($query) {
-                $query->orderBy('checkpoint_checkpoint_template.order');
-            }])
-                ->withCount('checkpoints as checkpoint_count')
-                ->when($activeEventId, fn($q) => $q->where('event_id', $activeEventId))
-                ->orderBy('code')
-                ->get(),
+                ->get()
+                ->map(function (Checkpoint $checkpoint) {
+                    $checkpoint->setAttribute('used_in', $checkpoint->checkpointTemplates->map(fn ($t) => [
+                        'id' => $t->id,
+                        'name' => $t->name,
+                        'event' => $t->event?->short_name,
+                        'event_id' => $t->event_id,
+                    ])->values());
+                    $checkpoint->unsetRelation('checkpointTemplates');
+
+                    return $checkpoint;
+                }),
+            'checkpointTemplates' => (function () use ($activeEventId) {
+                $templates = CheckpointTemplate::with(['checkpoints' => function ($query) {
+                    $query->orderBy('checkpoint_checkpoint_template.order');
+                }])
+                    ->withCount('checkpoints as checkpoint_count')
+                    ->where('event_id', (int) $activeEventId)
+                    ->orderBy('code')
+                    ->get();
+
+                // used_in: the movement templates whose legs use it (recycle bin left out).
+                $usedIn = \App\Models\MovementTemplateLeg::query()
+                    ->join('movement_templates', 'movement_templates.id', '=', 'movement_template_legs.movement_template_id')
+                    ->whereNull('movement_templates.deleted_at')
+                    ->whereIn('movement_template_legs.checkpoint_template_id', $templates->pluck('id'))
+                    ->orderBy('movement_templates.name')
+                    ->get(['movement_template_legs.checkpoint_template_id', 'movement_templates.id', 'movement_templates.name'])
+                    ->groupBy('checkpoint_template_id')
+                    ->map(fn ($rows) => $rows->unique('id')->map(fn ($r) => ['id' => $r->id, 'name' => $r->name])->values());
+
+                return $templates->each(fn (CheckpointTemplate $t) => $t->setAttribute('used_in', $usedIn[$t->id] ?? []));
+            })(),
             'movementTemplates' => MovementTemplate::with(['legs' => function ($query) {
                 $query->orderBy('order');
             }])
-                ->when($activeEventId, fn($q) => $q->where('event_id', $activeEventId))
+                ->withCount('plans')
+                // Movements of its plans (trashed plans and movements left out), for "Used in".
+                ->addSelect(['movements_count' => \App\Models\Movement::selectRaw('count(*)')
+                    ->join('plans', 'plans.id', '=', 'movements.plan_id')
+                    ->whereNull('plans.deleted_at')
+                    ->whereColumn('plans.movement_template_id', 'movement_templates.id')])
+                // No event picked: the template tabs show No Active Event, so no other event's templates.
+                ->where('event_id', (int) $activeEventId)
                 ->orderBy('code')
                 ->get()
                 ->map(function ($template) {
@@ -197,16 +234,19 @@ class LmsController extends Controller
 
     public function jobs(Request $request): Response
     {
-        $activeEventId = $request->session()->get('active_event_id');
+        $user = $request->user();
+        $activeEventId = (int) $request->session()->get('active_event_id') ?: null;
         $settings = app(\App\Services\SettingsService::class);
 
-        // Build job query - scoped to the active event, if one is selected
-        $jobsQuery = JobOperation::with(self::JOB_ROW_RELATIONS)
-            ->when($activeEventId, fn ($q) => $q->where('event_id', $activeEventId));
-
-        $jobs = $jobsQuery->orderBy('created_at', 'desc')
-            ->get()
-            ->map(fn ($job) => $this->jobRow($job, $settings));
+        // Only the active event, if the user may still open it, and only the jobs they may see there
+        // (same rules as JobOperationPolicy::view). No event: the page shows its "No Active Event" state.
+        $jobs = $activeEventId && $user->canAccessEvent($activeEventId)
+            ? JobOperation::with(self::JOB_ROW_RELATIONS)
+                ->visibleTo($user, $activeEventId)
+                ->orderBy('created_at', 'desc')
+                ->get()
+                ->map(fn ($job) => $this->jobRow($job, $settings))
+            : collect();
 
         return Inertia::render('Jobs', [
             'schedule' => $jobs,
@@ -900,8 +940,19 @@ class LmsController extends Controller
     public function notifications(Request $request, NotificationFeedService $feed): Response
     {
         return Inertia::render('Notifications', [
-            'notifications' => $feed->recent($request->session()->get('active_event_id')),
+            'notifications' => $feed->recent($this->feedEventId($request)),
         ]);
+    }
+
+    /**
+     * The event a feed covers: the active one (HandleInertiaRequests drops one the user lost), else
+     * every event for those who may reach all of them, else none (0).
+     */
+    private function feedEventId(Request $request): ?int
+    {
+        $eventId = (int) $request->session()->get('active_event_id');
+
+        return $eventId ?: ($request->user()->canAccessAllEvents() ? null : 0);
     }
 
     public function email(Request $request, DailySummaryService $summary): Response
@@ -913,10 +964,10 @@ class LmsController extends Controller
             $date = now()->toDateString();
         }
 
-        return Inertia::render('Email', $summary->build(
-            $request->session()->get('active_event_id'),
-            $date,
-        ));
+        return Inertia::render('Email', $summary->build($this->feedEventId($request), $date) + [
+            // Only admins can open Settings, where the audience is chosen.
+            'canManageAudience' => $request->user()->hasRole('admin'),
+        ]);
     }
 
     public function sendEmail(Request $request, DailySummaryService $summary): RedirectResponse
@@ -925,7 +976,11 @@ class LmsController extends Controller
             'date' => ['nullable', 'date'],
         ]);
 
-        $eventId = $request->session()->get('active_event_id');
+        // HandleInertiaRequests has already dropped an event the user can no longer access.
+        $eventId = (int) $request->session()->get('active_event_id');
+        if (! $eventId) {
+            return redirect()->back()->with('error', 'Pick an event first: the Daily Email is sent for one event.');
+        }
         $date = isset($validated['date'])
             ? \Carbon\Carbon::parse($validated['date'])->toDateString()
             : now()->toDateString();
@@ -934,7 +989,7 @@ class LmsController extends Controller
         $recipients = collect($snapshot['recipients'])->pluck('email')->filter()->values();
 
         if ($recipients->isEmpty()) {
-            return redirect()->back()->with('error', 'No recipients are assigned to this event.');
+            return redirect()->back()->with('error', 'No audience is set for this event. Choose one in Setups → Settings → Notifications → Daily Email.');
         }
 
         try {
@@ -950,7 +1005,7 @@ class LmsController extends Controller
             'Email · '.$date,
             $recipients->count().' recipient(s)',
             null,
-            $eventId ? (int) $eventId : null,
+            $eventId,
         );
 
         return redirect()->back()->with('success', "Daily summary sent to {$recipients->count()} recipient(s).");

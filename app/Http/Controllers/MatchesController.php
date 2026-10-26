@@ -18,21 +18,19 @@ class MatchesController extends Controller
     public function index(Request $request)
     {
         $activeEventId = $request->session()->get('active_event_id');
-        
-        $query = GameMatch::with(['team1.country', 'team2.country', 'event', 'venue.country'])
-            ->orderBy('match_date', 'asc');
-        
-        // Filter by active event if one is selected
-        if ($activeEventId) {
-            $query->where('event_id', $activeEventId);
-        }
-        
-        $matches = $query->get();
+
+        // No event picked: the page shows No Active Event, so send no other event's matches.
+        $matches = $activeEventId
+            ? GameMatch::with(['team1.country', 'team2.country', 'event', 'venue.country'])
+                ->where('event_id', $activeEventId)
+                ->orderBy('match_date', 'asc')
+                ->get()
+            : collect();
 
         $teams = $activeEventId
             ? Team::where('event_id', $activeEventId)->orderBy('team_name', 'asc')->get()
             : collect();
-        $events = Event::with(['venues', 'teams'])->orderBy('name', 'asc')->get();
+        $events = Event::accessibleTo($request->user())->with(['venues', 'teams'])->orderBy('name', 'asc')->get();
         $venues = Venue::with('country')->orderBy('name', 'asc')->get();
 
         return Inertia::render('Matches', [
@@ -48,12 +46,14 @@ class MatchesController extends Controller
      */
     public function store(Request $request)
     {
+        $eventId = $this->authorizedEventId($request);
+
         $validated = $request->validate([
-            'match_number' => ['required', 'string', 'max:50', Rule::unique('matches', 'match_number')->where('event_id', $request->input('event_id'))],
-            'event_id' => 'nullable|integer|exists:events,id',
+            'match_number' => ['required', 'string', 'max:50', Rule::unique('matches', 'match_number')->where('event_id', $eventId)],
+            'event_id' => 'nullable|integer',
             'venue_id' => 'nullable|integer|exists:venues,id',
-            'team1_id' => 'nullable|integer|exists:teams,id',
-            'team2_id' => 'nullable|integer|exists:teams,id',
+            'team1_id' => ['nullable', 'integer', Rule::exists('teams', 'id')->where('event_id', $eventId)],
+            'team2_id' => ['nullable', 'integer', Rule::exists('teams', 'id')->where('event_id', $eventId)],
             'stage' => 'nullable|string|max:100',
             'match_date' => 'nullable|date',
             'gates_opening' => 'nullable|string',
@@ -83,14 +83,15 @@ class MatchesController extends Controller
      */
     public function update(Request $request, $id)
     {
-        $match = GameMatch::findOrFail($id);
+        $match = $this->accessibleMatch($request, $id);
+        $eventId = $this->authorizedEventId($request);
 
         $validated = $request->validate([
-            'match_number' => ['required', 'string', 'max:50', Rule::unique('matches', 'match_number')->where('event_id', $request->input('event_id'))->ignore($match->id)],
-            'event_id' => 'nullable|integer|exists:events,id',
+            'match_number' => ['required', 'string', 'max:50', Rule::unique('matches', 'match_number')->where('event_id', $eventId)->ignore($match->id)],
+            'event_id' => 'nullable|integer',
             'venue_id' => 'nullable|integer|exists:venues,id',
-            'team1_id' => 'nullable|integer|exists:teams,id',
-            'team2_id' => 'nullable|integer|exists:teams,id',
+            'team1_id' => ['nullable', 'integer', Rule::exists('teams', 'id')->where('event_id', $eventId)],
+            'team2_id' => ['nullable', 'integer', Rule::exists('teams', 'id')->where('event_id', $eventId)],
             'stage' => 'nullable|string|max:100',
             'match_date' => 'nullable|date',
             'gates_opening' => 'nullable|string',
@@ -118,11 +119,29 @@ class MatchesController extends Controller
     /**
      * Remove the specified match from storage.
      */
-    public function destroy($id)
+    public function destroy(Request $request, $id)
     {
-        $match = GameMatch::findOrFail($id);
-        $match->delete();
+        $this->accessibleMatch($request, $id)->delete();
 
         return redirect()->back()->with('success', 'Match deleted successfully.');
+    }
+
+    /** A match the user may change: one in an event they can access. */
+    private function accessibleMatch(Request $request, $id): GameMatch
+    {
+        $match = GameMatch::findOrFail($id);
+        abort_unless($request->user()->canAccessEvent((int) $match->event_id), 403);
+
+        return $match;
+    }
+
+    /** The submitted event (blank = the active one), which the user must be able to access. */
+    private function authorizedEventId(Request $request): int
+    {
+        $eventId = (int) ($request->input('event_id') ?: $request->session()->get('active_event_id'));
+        abort_unless($eventId && Event::whereKey($eventId)->exists() && $request->user()->canAccessEvent($eventId), 403, 'Pick an event you can access.');
+        $request->merge(['event_id' => $eventId]);
+
+        return $eventId;
     }
 }

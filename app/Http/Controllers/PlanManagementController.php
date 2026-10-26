@@ -51,6 +51,33 @@ class PlanManagementController extends Controller
         abort_unless($eventId && (int) $eventId === $this->activeEventId($request), 403);
     }
 
+    /** New plans go into the active event only, so one must be picked and still accessible. */
+    private function requireActiveEvent(Request $request): int
+    {
+        $eventId = $this->activeEventId($request);
+        abort_unless($eventId, 403, 'Select an event you can access first.');
+
+        return $eventId;
+    }
+
+    /** An id submitted for a new plan must be a record of the active event. */
+    private function existsInEvent(string $table, int $eventId)
+    {
+        $rule = Rule::exists($table, 'id')->where('event_id', $eventId);
+
+        return $table === 'movement_templates' ? $rule->whereNull('deleted_at') : $rule;
+    }
+
+    /** @param  array<int|string, int|null>  $flightByTeam  team id => flight id */
+    private function ensureFlightsBelongToTeams(array $flightByTeam): void
+    {
+        foreach (array_filter($flightByTeam) as $teamId => $flightId) {
+            if (! \App\Models\TeamFlight::whereKey($flightId)->where('team_id', $teamId)->exists()) {
+                throw ValidationException::withMessages(['flight_id' => 'That flight belongs to another team.']);
+            }
+        }
+    }
+
     /**
      * checkpoint_template_id => total checkpoint count, for every template
      * in the system. One cheap query, reused for every movement's
@@ -425,19 +452,28 @@ class PlanManagementController extends Controller
         Log::info('Creating plan', ['fields' => array_keys($request->all())]);
         
         // Get active event from session
-        $activeEventId = session('active_event_id');
+        $activeEventId = $this->requireActiveEvent($request);
         
         $validated = $request->validate([
             'date' => 'required|date',
             'name' => 'nullable|string|max:255',
-            'team_id' => 'nullable|exists:teams,id',
-            'flight_id' => 'nullable|exists:team_flights,id',
+            'team_id' => ['nullable', $this->existsInEvent('teams', $activeEventId)],
+            'flight_id' => ['nullable', $this->existsInEvent('team_flights', $activeEventId)],
             'start_time' => 'nullable|date_format:H:i',
-            'movement_template_id' => 'nullable|exists:movement_templates,id',
+            'movement_template_id' => ['nullable', $this->existsInEvent('movement_templates', $activeEventId)],
             'functional_area' => 'nullable|in:LOG,AND,MOB',
             'team_assignments' => 'nullable|array', // ['default' => team_id] or [1 => team1_id, 2 => team2_id]
             'notes' => 'nullable|string',
         ]);
+
+        // Every team named in team_assignments (single ids or lists) must be one of the event's.
+        $assignedTeams = collect($validated['team_assignments'] ?? [])->flatten()->filter()->map(fn ($id) => (int) $id)->unique();
+        if ($assignedTeams->isNotEmpty() && \App\Models\Team::where('event_id', $activeEventId)->whereIn('id', $assignedTeams)->count() !== $assignedTeams->count()) {
+            throw ValidationException::withMessages(['team_assignments' => 'Every team must belong to the active event.']);
+        }
+        if (! empty($validated['team_id'])) {
+            $this->ensureFlightsBelongToTeams([$validated['team_id'] => $validated['flight_id'] ?? null]);
+        }
         
         // If flight_id is provided, use that flight's own time — but flight_id
         // here only ever refers to the team's ARRIVAL flight (the New Plan
@@ -613,17 +649,22 @@ class PlanManagementController extends Controller
         Log::info('Bulk creating plans', ['fields' => array_keys($request->all())]);
         
         // Get active event from session
-        $activeEventId = session('active_event_id');
+        $activeEventId = $this->requireActiveEvent($request);
         
         $validated = $request->validate([
             'plans' => 'required|array|min:1',
             'plans.*.date' => 'required|date',
             'plans.*.teams' => 'required|array|min:1',
-            'plans.*.teams.*.team_id' => 'required|exists:teams,id',
+            'plans.*.teams.*.team_id' => ['required', $this->existsInEvent('teams', $activeEventId)],
             'plans.*.teams.*.start_time' => 'nullable|date_format:H:i',
-            'plans.*.teams.*.flight_id' => 'nullable|exists:team_flights,id',
-            'plans.*.movement_template_id' => 'required|exists:movement_templates,id',
+            'plans.*.teams.*.flight_id' => ['nullable', $this->existsInEvent('team_flights', $activeEventId)],
+            'plans.*.movement_template_id' => ['required', $this->existsInEvent('movement_templates', $activeEventId)],
         ]);
+        foreach ($validated['plans'] as $planData) {
+            foreach ($planData['teams'] as $teamInfo) {
+                $this->ensureFlightsBelongToTeams([$teamInfo['team_id'] => $teamInfo['flight_id'] ?? null]);
+            }
+        }
         
         $createdPlans = [];
         $totalMovements = 0;
@@ -723,16 +764,16 @@ class PlanManagementController extends Controller
         Log::info('Bulk creating match plans', ['fields' => array_keys($request->all())]);
         
         // Get active event from session
-        $activeEventId = session('active_event_id');
+        $activeEventId = $this->requireActiveEvent($request);
         
         $validated = $request->validate([
             'plans' => 'required|array|min:1',
             'plans.*.date' => 'required|date',
             'plans.*.teams' => 'required|array|min:1',
-            'plans.*.teams.*.team_id' => 'required|exists:teams,id',
+            'plans.*.teams.*.team_id' => ['required', $this->existsInEvent('teams', $activeEventId)],
             'plans.*.teams.*.start_time' => 'required|date_format:H:i',
-            'plans.*.teams.*.match_id' => 'required|exists:matches,id',
-            'plans.*.movement_template_id' => 'required|exists:movement_templates,id',
+            'plans.*.teams.*.match_id' => ['required', $this->existsInEvent('matches', $activeEventId)],
+            'plans.*.movement_template_id' => ['required', $this->existsInEvent('movement_templates', $activeEventId)],
         ]);
         
         $createdPlans = [];
@@ -857,7 +898,7 @@ class PlanManagementController extends Controller
             'name' => 'required|string|max:255',
             'date' => 'required|date',
             'start_time' => 'nullable|date_format:H:i',
-            'movement_template_id' => 'nullable|exists:movement_templates,id',
+            'movement_template_id' => ['nullable', $this->existsInEvent('movement_templates', (int) $plan->event_id)],
             'functional_area' => 'nullable|in:LOG,AND,MOB',
             'status' => 'required|in:draft,active,completed,archived',
             'notes' => 'nullable|string',
@@ -1057,7 +1098,7 @@ class PlanManagementController extends Controller
         // Check if this is a template-based creation for a team
         if ($request->has('movement_template_id') && $request->filled('movement_template_id')) {
             $validated = $request->validate([
-                'team_id' => 'required|exists:teams,id',
+                'team_id' => ['required', $this->existsInEvent('teams', (int) $plan->event_id)],
                 'movement_template_id' => [
                     'required',
                     Rule::exists('movement_templates', 'id')
@@ -1127,7 +1168,7 @@ class PlanManagementController extends Controller
                 'required',
                 Rule::exists('teams', 'id')->where(fn ($q) => $q->where('event_id', $plan->event_id)),
             ],
-            'flight_id' => 'nullable|exists:team_flights,id',
+            'flight_id' => ['nullable', $this->existsInEvent('team_flights', (int) $plan->event_id)],
             'checkpoint_template_id' => [
                 'required',
                 Rule::exists('checkpoint_templates', 'id')
@@ -1255,7 +1296,7 @@ class PlanManagementController extends Controller
             'vehicle_id' => 'nullable|exists:vehicles,id',
             'driver_id' => 'nullable|exists:drivers,id',
             'field_supervisor_id' => 'nullable|exists:users,id',
-            'match_id' => 'nullable|exists:matches,id',
+            'match_id' => ['nullable', $this->existsInEvent('matches', (int) $movement->event_id)],
             'notes' => 'nullable|string',
             'units' => 'sometimes|array|max:10',
             'units.*.vehicle_id' => 'nullable|integer|exists:vehicles,id',
@@ -1527,8 +1568,8 @@ class PlanManagementController extends Controller
         $validated = $request->validate([
             'kind' => 'required|in:arrival,departure,transfer,training,match,daily_ops',
             'team_id' => ['required', Rule::exists('teams', 'id')->where('event_id', $this->activeEventId($request))],
-            'flight_id' => 'nullable|exists:team_flights,id',
-            'match_id' => 'nullable|exists:matches,id',
+            'flight_id' => ['nullable', Rule::exists('team_flights', 'id')->where('event_id', $this->activeEventId($request))],
+            'match_id' => ['nullable', Rule::exists('matches', 'id')->where('event_id', $this->activeEventId($request))],
             'checkpoint_template_id' => 'nullable|integer',
             'from_location' => 'nullable|string',
             'to_location' => 'nullable|string',
@@ -1552,8 +1593,8 @@ class PlanManagementController extends Controller
             'checks.*.key' => 'required|string',
             'checks.*.kind' => 'required|in:arrival,departure,transfer,training,match,daily_ops',
             'checks.*.team_id' => ['required', 'integer', Rule::exists('teams', 'id')->where('event_id', $this->activeEventId($request))],
-            'checks.*.flight_id' => 'nullable|integer|exists:team_flights,id',
-            'checks.*.match_id' => 'nullable|integer|exists:matches,id',
+            'checks.*.flight_id' => ['nullable', 'integer', Rule::exists('team_flights', 'id')->where('event_id', $this->activeEventId($request))],
+            'checks.*.match_id' => ['nullable', 'integer', Rule::exists('matches', 'id')->where('event_id', $this->activeEventId($request))],
             'checks.*.checkpoint_template_id' => 'nullable|integer',
             'checks.*.from_location' => 'nullable|string',
             'checks.*.to_location' => 'nullable|string',

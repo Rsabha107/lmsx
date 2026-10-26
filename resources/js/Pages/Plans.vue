@@ -5378,8 +5378,11 @@ const addTeamErrors = ref({});
 
 // Initialize activeTab based on whether there's a valid stored plan
 // If activePlan is explicitly null and we have plans, this means "All Movements" was selected
+// ?tab=conflicts (the Daily Email links there) opens the Conflicts tab.
 const activeTab = ref(
-  props.activePlan || (props.activePlan === null && props.plans?.length > 0)
+  new URLSearchParams(window.location.search).get('tab') === 'conflicts'
+    ? "conflicts"
+    : props.activePlan || (props.activePlan === null && props.plans?.length > 0)
     ? "movements" 
     : "plans"
 );

@@ -53,6 +53,14 @@ class DayBoardTest extends TestCase
                 ->where('dayCounts', ['2026-11-24' => 1, '2026-11-25' => 1]));
     }
 
+    private function agencyIn(\App\Models\Event $event): User
+    {
+        $agency = $this->createProviderUser('agency');
+        $agency->events()->attach($event->id);
+
+        return $agency;
+    }
+
     public function test_a_field_supervisor_sees_only_the_jobs_they_supervise(): void
     {
         $event = $this->createEvent();
@@ -62,6 +70,7 @@ class DayBoardTest extends TestCase
         $supervisor = User::factory()->create();
         $supervisor->assignRole('ground_control');
         $supervisor->functionalAreas()->create(['functional_area' => 'LOG']);
+        $supervisor->events()->attach($event->id);
 
         $mine = $this->createJob($event, $this->createMovement($event, $plan, $team, ['window_start' => '2026-11-24 08:00']), $team, ['supervisor_id' => $supervisor->id]);
         $extra = $this->createMovement($event, $plan, $team, ['window_start' => '2026-11-24 11:00']);
@@ -87,7 +96,7 @@ class DayBoardTest extends TestCase
         $job = $this->createJob($event, $this->createMovement($event, $plan, $team, ['window_start' => '2026-11-24 08:00']), $team);
         $this->createJob($event, $this->createMovement($event, $plan, $team, ['window_start' => '2026-11-24 09:00', 'functional_area' => 'MOB']), $team);
 
-        $this->actingAs($this->createProviderUser('agency'))->withSession(['active_event_id' => $event->id])
+        $this->actingAs($this->agencyIn($event))->withSession(['active_event_id' => $event->id])
             ->get('/day-board?date=2026-11-24')
             ->assertOk()
             ->assertInertia(fn (AssertableInertia $page) => $page
@@ -102,7 +111,7 @@ class DayBoardTest extends TestCase
         $team = $this->createTeam($event);
         $job = $this->createJob($event, $this->createMovement($event, $this->createPlan($event), $team), $team);
 
-        $as = $this->actingAs($this->createProviderUser('agency'))->withSession(['active_event_id' => $event->id]);
+        $as = $this->actingAs($this->agencyIn($event))->withSession(['active_event_id' => $event->id]);
 
         $as->get("/job/{$job->id}")
             ->assertOk()
@@ -144,6 +153,7 @@ class DayBoardTest extends TestCase
         $supervisor = User::factory()->create();
         $supervisor->assignRole('ground_control');
         $supervisor->functionalAreas()->create(['functional_area' => 'LOG']);
+        $supervisor->events()->attach($event->id);
 
         $this->createJob($event, $this->createMovement($event, $plan, $team, ['window_start' => '2026-11-24 11:00']), $team, ['supervisor_id' => $supervisor->id]);
         $this->createJob($event, $this->createMovement($event, $plan, $team, ['window_start' => '2026-11-24 09:00']), $team, ['supervisor_id' => $supervisor->id]);

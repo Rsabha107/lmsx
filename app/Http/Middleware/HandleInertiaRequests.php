@@ -19,8 +19,9 @@ class HandleInertiaRequests extends Middleware
     public function share(Request $request): array
     {
         $activeEventId = $request->session()->get('active_event_id');
-        // An event moved to the recycle bin stops being anyone's active event.
-        if ($activeEventId && ! Event::whereKey($activeEventId)->exists()) {
+        // An event moved to the recycle bin, or one the user has since lost access to, stops being their active event.
+        if ($activeEventId && (! Event::whereKey($activeEventId)->exists()
+            || ($request->user() && ! $request->user()->canAccessEvent((int) $activeEventId)))) {
             $request->session()->forget('active_event_id');
             $activeEventId = null;
         }

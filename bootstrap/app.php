@@ -48,7 +48,11 @@ return Application::configure(basePath: dirname(__DIR__))
                 subdomains: true,
             );
         }
+        $middleware->append(\App\Http\Middleware\SecurityHeaders::class);
+
         $middleware->web(append: [
+            \App\Http\Middleware\EnsureUserIsActive::class,
+            \App\Http\Middleware\EnsurePasswordChanged::class,
             \App\Http\Middleware\HandleInertiaRequests::class,
             \App\Http\Middleware\CheckInactivity::class,
             \App\Http\Middleware\RestrictAgencyToCrewAssignment::class,
@@ -62,6 +66,8 @@ return Application::configure(basePath: dirname(__DIR__))
             'permission' => \Spatie\Permission\Middleware\PermissionMiddleware::class,
             'role_or_permission' => \Spatie\Permission\Middleware\RoleOrPermissionMiddleware::class,
             'ui_flag' => \App\Http\Middleware\EnsureUiFlagEnabled::class,
+            'event.access' => \App\Http\Middleware\EnsureEventAccess::class,
+            'active' => \App\Http\Middleware\EnsureUserIsActive::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

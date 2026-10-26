@@ -59,8 +59,13 @@ class AuthController extends Controller
 
     private function issueToken(User $user, string $device): JsonResponse
     {
+        if (! $user->is_active) {
+            throw ValidationException::withMessages(['email' => [User::INACTIVE_MESSAGE]]);
+        }
+
         // One active token per device keeps re-logins from piling up rows.
         $user->tokens()->where('name', $device)->delete();
+        $user->forceFill(['last_login_at' => now()])->saveQuietly();
 
         return response()->json([
             'token' => $user->createToken($device)->plainTextToken,

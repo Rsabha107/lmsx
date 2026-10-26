@@ -9,10 +9,12 @@
       </div>
       <div class="header-actions">
         <RefreshButton :only="['rows', 'columns', 'kindCounts']" />
-        <Button variant="secondary" size="sm">
-          <template #icon><svg-icon name="filter" :size="14" /></template>
-          Filter
-        </Button>
+        <span class="export-wrap" :title="exportHint">
+          <Button variant="secondary" size="sm" :disabled="!!exportBlocked" @click="exportExcel">
+            <template #icon><svg-icon name="download" :size="14" /></template>
+            Export to Excel
+          </Button>
+        </span>
       </div>
     </div>
 
@@ -135,7 +137,7 @@
               <!-- Checkpoint group header (one per checkpoint) -->
               <th
                 v-for="col in columns"
-                :key="col.order"
+                :key="col.key"
                 class="mv-th mv-th--cp-group"
                 :colspan="col.requires_baggage_count ? 4 : 2"
               >{{ col.name }}</th>
@@ -149,7 +151,7 @@
                 <th class="mv-th mv-th--sub mv-th--actual">Actual</th>
               </template>
 
-              <template v-for="col in columns" :key="col.order">
+              <template v-for="col in columns" :key="col.key">
                 <template v-if="col.requires_baggage_count">
                   <th class="mv-th mv-th--sub mv-th--baggage">Planned Bags</th>
                   <th class="mv-th mv-th--sub mv-th--baggage">Actual Bags</th>
@@ -233,32 +235,32 @@
                 </td>
 
                 <!-- Dynamic checkpoint pairs -->
-                <template v-for="col in columns" :key="col.order">
+                <template v-for="col in columns" :key="col.key">
                   <template v-if="col.requires_baggage_count">
                     <td class="mv-td mv-td--center mv-td--baggage">
-                      <span class="baggage-count">{{ cpField(row, col.order, 'planned_bags') ?? '—' }}</span>
+                      <span class="baggage-count">{{ cpField(row, col.key, 'planned_bags') ?? '—' }}</span>
                     </td>
                     <td class="mv-td mv-td--center mv-td--baggage">
-                      <span class="baggage-count">{{ cpField(row, col.order, 'bags_loaded') ?? '—' }}</span>
+                      <span class="baggage-count">{{ cpField(row, col.key, 'bags_loaded') ?? '—' }}</span>
                     </td>
                     <td class="mv-td mv-td--center mv-td--baggage">
-                      <span class="baggage-count">{{ cpField(row, col.order, 'food_bags') ?? '—' }}</span>
+                      <span class="baggage-count">{{ cpField(row, col.key, 'food_bags') ?? '—' }}</span>
                     </td>
                     <td class="mv-td mv-td--center mv-td--baggage">
-                      <span class="baggage-count">{{ cpField(row, col.order, 'oversized_pieces') ?? '—' }}</span>
+                      <span class="baggage-count">{{ cpField(row, col.key, 'oversized_pieces') ?? '—' }}</span>
                     </td>
                   </template>
                   <template v-else>
                     <td class="mv-td mv-td--time mv-td--planned">
-                      {{ cpField(row, col.order, 'scheduled_at') || '—' }}
+                      {{ cpField(row, col.key, 'scheduled_at') || '—' }}
                     </td>
-                    <td class="mv-td mv-td--time" :class="cpHighlight(row, col.order)">
-                      <span class="actual-val">{{ cpField(row, col.order, 'completed_at') || '—' }}</span>
+                    <td class="mv-td mv-td--time" :class="cpHighlight(row, col.key)">
+                      <span class="actual-val">{{ cpField(row, col.key, 'completed_at') || '—' }}</span>
                       <span
-                        v-if="cpDelta(row, col.order) !== null"
+                        v-if="cpDelta(row, col.key) !== null"
                         class="delta-badge"
-                        :class="cpDelta(row, col.order) > 0 ? 'delta-badge--late' : 'delta-badge--early'"
-                      >{{ cpDeltaLabel(row, col.order) }}</span>
+                        :class="cpDelta(row, col.key) > 0 ? 'delta-badge--late' : 'delta-badge--early'"
+                      >{{ cpDeltaLabel(row, col.key) }}</span>
                     </td>
                   </template>
                 </template>
@@ -341,27 +343,28 @@ function statusTone(s) {
 }
 
 // ── Checkpoint helpers ────────────────────────────────────────────────────
-function getCheckpoint(row, order) {
-  return row.checkpoints?.find(c => c.order === order) ?? null;
+// Columns are library checkpoints (`key`), not positions: templates differ in step order.
+function getCheckpoint(row, key) {
+  return row.checkpoints?.find(c => c.key === key) ?? null;
 }
-function cpField(row, order, field) {
-  return getCheckpoint(row, order)?.[field] ?? null;
+function cpField(row, key, field) {
+  return getCheckpoint(row, key)?.[field] ?? null;
 }
-function cpDelta(row, order) {
-  const cp = getCheckpoint(row, order);
+function cpDelta(row, key) {
+  const cp = getCheckpoint(row, key);
   if (!cp?.scheduled_ts || !cp?.completed_ts) return null;
   return Math.round((cp.completed_ts - cp.scheduled_ts) / 60);
 }
-function cpDeltaLabel(row, order) {
-  const d = cpDelta(row, order);
+function cpDeltaLabel(row, key) {
+  const d = cpDelta(row, key);
   if (d === null) return '';
   if (d === 0) return 'on time';
   return `${fmtDuration(d, true)} ${d > 0 ? 'late' : 'early'}`;
 }
-function cpHighlight(row, order) {
-  const cp = getCheckpoint(row, order);
+function cpHighlight(row, key) {
+  const cp = getCheckpoint(row, key);
   if (!cp?.completed_ts) return '';
-  const d = cpDelta(row, order);
+  const d = cpDelta(row, key);
   if (d === null) return '';
   if (d >  5) return 'mv-td--late';
   if (d < -5) return 'mv-td--early';
@@ -390,21 +393,43 @@ const groupedRows = computed(() => {
 });
 
 // ── KPI strip ────────────────────────────────────────────────────────────
-// Phase 1: KPI tiles matched to checkpoints by NAME (case-insensitive), since
-// checkpoint templates are the source of truth for what stages exist per
-// movement kind. This is a best-effort mapping against the checkpoint names
-// currently configured in this event's templates — phase 2 will make the
-// tile-to-checkpoint mapping and target thresholds configurable per event
-// instead of hardcoded here.
-// Looked up by name in each job, not by position: templates differ (one has an extra
-// KIT HANDOVER step), so the same step can sit at another order from job to job.
+// Each tile reads a step by its library checkpoint CODE, which survives renames and template
+// changes (a step can sit at another position from job to job). Names are the fallback, for
+// steps whose code isn't listed (departure) or a database where the codes differ.
 const normName = (s) => (s ?? '').trim().toUpperCase().replace(/\s+/g, ' ');
-// Earlier templates used shorter names for the same step.
-const CHECKPOINT_ALIASES = {
-  'GWC ARRIVAL AT VSA/STA': ['GWC ARRIVAL AT VSA'],
+const STEPS = {
+  // Arrival
+  STAGING:        { codes: ['CK86'], names: ['ARRIVAL TIME AT POA STAGING'] },
+  CONVOY_DEPART:  { codes: ['CK87'], names: ['POA STAGING CONVY DEPART'] },
+  AIRPORT:        { codes: ['CK88'], names: ['CONVOY ARRIVAL AT AIRPORT'] },
+  QAS_HANDOVER:   { codes: ['CK89'], names: ['QAS HANDOVER TIME'] },
+  KIT_LOAD_END:   { codes: ['CK90'], names: ['KIT LOAD END'] },
+  LUGGAGE_HOTEL:  { codes: ['CK92'], names: ['LUGGAGE ARRIVAL TO HOTEL'] },
+  OFFLOAD_END:    { codes: ['CK93'], names: ['OFFLOAD END TIME'] },
+  LUGGAGE_PIECES: { codes: ['CK95'], names: ['LUGGAGE PIECES'] },
+  // Match day (old names kept: the template was renamed on 18 Oct 2026)
+  HOTEL_ARRIVAL:  { codes: ['CK100'], names: ['GWC ARRIVAL TIME AT HOTEL'] },
+  BAG_LOAD_START: { codes: ['CK96'], names: ['BAG LOAD START AT HOTEL', 'BAG LOAD START'] },
+  BAG_LOAD_END:   { codes: ['CK97'], names: ['BAG LOAD END AT HOTEL', 'BAG LOAD END'] },
+  HOTEL_DEPART:   { codes: ['CK101'], names: ['GWC DEPARTURE TIME FROM HOTEL TO VSA/STADIUM', 'DEPARTURE TIME FROM HOTEL TO FOP'] },
+  VSA_ARRIVAL:    { codes: ['CK102'], names: ['GWC ARRIVAL TIME AT VSA/STADIUM', 'GWC ARRIVAL AT VSA/STA', 'GWC ARRIVAL AT VSA'] },
+  FINAL_WHISTLE:  { codes: ['CK105'], names: ['FINAL WHISTLE'] },
+  STADIUM_LOAD:   { codes: ['CK106'], names: ['BAG LOAD START AT STADIUM', 'LOADING AT STADIUM'] },
+  VSA_DEPART:     { codes: ['CK107'], names: ['GWC DEPARTURE TIME FROM VSA/STADIUM TO HOTEL', 'GWC DEPARTURE FROM VSA/STADIUM TO HOTEL'] },
+  // The back-at-hotel step moved from CK108 to CK94 in the new template (same in the controller's SAME_STEP).
+  HOTEL_RETURN:   { codes: ['CK94', 'CK108'], names: ['ARRIVAL TO HOTEL'] },
+  HOTEL_UNLOADED: { codes: ['CK109'], names: ['BAG UNLOADING END AT HOTEL', 'HOTEL UNLOADING END TIME'] },
+  // Departure: no departure jobs yet to read codes from, so by name.
+  DEP_HOTEL_ARRIVAL: { names: ['ARRIVAL TIME AT HOTEL'] },
+  DEP_LOAD_START:    { names: ['BAG LOAD START'] },
+  DEP_LOAD_END:      { names: ['BAG LOAD END'] },
+  DEP_HOTEL_DEPART:  { names: ['DEPARTURE FROM HOTEL'] },
+  DEP_AIRPORT:       { names: ['LUGGAGE ARRIVAL AT AIRPORT'] },
 };
-function checkpointNamed(row, name) {
-  const wanted = [name, ...(CHECKPOINT_ALIASES[name] ?? [])].map(normName);
+function checkpointNamed(row, step) {
+  const byCode = step.codes && row.checkpoints?.find(c => c.code && step.codes.includes(c.code));
+  if (byCode) return byCode;
+  const wanted = (step.names ?? []).map(normName);
   return row.checkpoints?.find(c => wanted.includes(normName(c.name))) ?? null;
 }
 function avgDeltaStats(rows, name) {
@@ -521,20 +546,20 @@ const kpiGroups = computed(() => {
       {
         title: 'GWC Performance',
         tiles: [
-          { icon: 'check', label: 'On-time to Staging', value: countOnTime(done, 'ARRIVAL TIME AT POA STAGING', true) },
-          { icon: 'warn', label: 'Early/Late to Staging', value: countOnTime(done, 'ARRIVAL TIME AT POA STAGING', false) },
-          varianceTile('Avg Planned v Actual (Staging)', done, 'ARRIVAL TIME AT POA STAGING'),
-          durationTile('clock', 'Avg Duration Airport → Hotel', done, 'CONVOY ARRIVAL AT AIRPORT', 'LUGGAGE ARRIVAL TO HOTEL'),
-          durationTile('clock', 'Avg Hotel Arrival → Offload', done, 'LUGGAGE ARRIVAL TO HOTEL', 'OFFLOAD END TIME'),
+          { icon: 'check', label: 'On-time to Staging', value: countOnTime(done, STEPS.STAGING, true) },
+          { icon: 'warn', label: 'Early/Late to Staging', value: countOnTime(done, STEPS.STAGING, false) },
+          varianceTile('Avg Planned v Actual (Staging)', done, STEPS.STAGING),
+          durationTile('clock', 'Avg Duration Airport → Hotel', done, STEPS.AIRPORT, STEPS.LUGGAGE_HOTEL),
+          durationTile('clock', 'Avg Hotel Arrival → Offload', done, STEPS.LUGGAGE_HOTEL, STEPS.OFFLOAD_END),
         ],
       },
       {
         title: 'External Performance',
         tiles: [
-          durationTile('clock', 'Avg Staging → Convoy Depart', done, 'ARRIVAL TIME AT POA STAGING', 'POA STAGING CONVY DEPART'),
-          durationTile('clock', 'Avg Convoy Depart → QAS Handover', done, 'POA STAGING CONVY DEPART', 'QAS HANDOVER TIME'),
-          { icon: 'bag', label: 'Total Bags Received', value: fmtCount(sumField(done, 'LUGGAGE PIECES', 'bags_loaded')) },
-          durationTile('clock', 'Avg Bag Loading Duration', done, 'QAS HANDOVER TIME', 'KIT LOAD END'),
+          durationTile('clock', 'Avg Staging → Convoy Depart', done, STEPS.STAGING, STEPS.CONVOY_DEPART),
+          durationTile('clock', 'Avg Convoy Depart → QAS Handover', done, STEPS.CONVOY_DEPART, STEPS.QAS_HANDOVER),
+          { icon: 'bag', label: 'Total Bags Received', value: fmtCount(sumField(done, STEPS.LUGGAGE_PIECES, 'bags_loaded')) },
+          durationTile('clock', 'Avg Bag Loading Duration', done, STEPS.QAS_HANDOVER, STEPS.KIT_LOAD_END),
         ],
       },
     ];
@@ -546,51 +571,51 @@ const kpiGroups = computed(() => {
       {
         title: 'GWC Performance',
         tiles: [
-          varianceTile('Avg Planned v Actual (Hotel Arrival)', done, 'ARRIVAL TIME AT HOTEL'),
-          durationTile('clock', 'Avg Hotel Arrival → Loading Start', done, 'ARRIVAL TIME AT HOTEL', 'BAG LOAD START'),
-          durationTile('clock', 'Avg Bag Loading Duration', done, 'BAG LOAD START', 'BAG LOAD END'),
-          durationTile('clock', 'Avg Loading End → Departure', done, 'BAG LOAD END', 'DEPARTURE FROM HOTEL'),
-          durationTile('clock', 'Avg Departure → Airport Arrival', done, 'DEPARTURE FROM HOTEL', 'LUGGAGE ARRIVAL AT AIRPORT'),
+          varianceTile('Avg Planned v Actual (Hotel Arrival)', done, STEPS.DEP_HOTEL_ARRIVAL),
+          durationTile('clock', 'Avg Hotel Arrival → Loading Start', done, STEPS.DEP_HOTEL_ARRIVAL, STEPS.DEP_LOAD_START),
+          durationTile('clock', 'Avg Bag Loading Duration', done, STEPS.DEP_LOAD_START, STEPS.DEP_LOAD_END),
+          durationTile('clock', 'Avg Loading End → Departure', done, STEPS.DEP_LOAD_END, STEPS.DEP_HOTEL_DEPART),
+          durationTile('clock', 'Avg Departure → Airport Arrival', done, STEPS.DEP_HOTEL_DEPART, STEPS.DEP_AIRPORT),
         ],
       },
       {
         title: 'Baggage',
         tiles: [
-          { icon: 'bag', label: 'Planned Bags', value: fmtCount(sumField(done, 'LUGGAGE PIECES', 'planned_bags')) },
-          { icon: 'bag', label: 'Actual Bags', value: fmtCount(sumField(done, 'LUGGAGE PIECES', 'bags_loaded')) },
-          { icon: 'bag', label: 'Food Bags', value: fmtCount(sumField(done, 'LUGGAGE PIECES', 'food_bags')) },
-          { icon: 'bag', label: 'Oversized Pieces', value: fmtCount(sumField(done, 'LUGGAGE PIECES', 'oversized_pieces')) },
+          { icon: 'bag', label: 'Planned Bags', value: fmtCount(sumField(done, STEPS.LUGGAGE_PIECES, 'planned_bags')) },
+          { icon: 'bag', label: 'Actual Bags', value: fmtCount(sumField(done, STEPS.LUGGAGE_PIECES, 'bags_loaded')) },
+          { icon: 'bag', label: 'Food Bags', value: fmtCount(sumField(done, STEPS.LUGGAGE_PIECES, 'food_bags')) },
+          { icon: 'bag', label: 'Oversized Pieces', value: fmtCount(sumField(done, STEPS.LUGGAGE_PIECES, 'oversized_pieces')) },
         ],
       },
     ];
   }
 
   if (kind === 'match') {
-    overview.tiles.push({ icon: 'warn', label: 'Early/Late Arrivals', value: countOnTime(done, 'GWC ARRIVAL TIME AT HOTEL', false) });
+    overview.tiles.push({ icon: 'warn', label: 'Early/Late Arrivals', value: countOnTime(done, STEPS.HOTEL_ARRIVAL, false) });
     return [
       overview,
       {
         title: 'GWC Performance',
         tiles: [
-          varianceTile('Avg Planned v Actual (Hotel Arrival)', done, 'GWC ARRIVAL TIME AT HOTEL'),
-          durationTile('clock', 'Avg Duration Hotel → VSA', done, 'DEPARTURE TIME FROM HOTEL TO FOP', 'GWC ARRIVAL AT VSA/STA'),
-          varianceTile('Avg Planned v Actual (VSA Arrival)', done, 'GWC ARRIVAL AT VSA/STA'),
-          durationTile('clock', 'Avg Duration VSA → Hotel', done, 'GWC DEPARTURE FROM VSA/STADIUM TO HOTEL', 'ARRIVAL TO HOTEL'),
+          varianceTile('Avg Planned v Actual (Hotel Arrival)', done, STEPS.HOTEL_ARRIVAL),
+          durationTile('clock', 'Avg Duration Hotel → VSA', done, STEPS.HOTEL_DEPART, STEPS.VSA_ARRIVAL),
+          varianceTile('Avg Planned v Actual (VSA Arrival)', done, STEPS.VSA_ARRIVAL),
+          durationTile('clock', 'Avg Duration VSA → Hotel', done, STEPS.VSA_DEPART, STEPS.HOTEL_RETURN),
         ],
       },
       {
         title: 'PMA Kit-Manager Performance',
         tiles: [
-          durationTile('clock', 'Avg Hotel Arrival → Loading Start', done, 'GWC ARRIVAL TIME AT HOTEL', 'BAG LOAD START'),
-          durationTile('bag', 'Avg Kit Loading Time (Hotel)', done, 'BAG LOAD START', 'BAG LOAD END'),
-          durationTile('clock', 'Avg Loading End → Hotel Departure', done, 'BAG LOAD END', 'DEPARTURE TIME FROM HOTEL TO FOP'),
-          durationTile('clock', 'Avg Final Whistle → Loading Start (Stadium)', done, 'FINAL WHISTLE', 'LOADING AT STADIUM'),
+          durationTile('clock', 'Avg Hotel Arrival → Loading Start', done, STEPS.HOTEL_ARRIVAL, STEPS.BAG_LOAD_START),
+          durationTile('bag', 'Avg Kit Loading Time (Hotel)', done, STEPS.BAG_LOAD_START, STEPS.BAG_LOAD_END),
+          durationTile('clock', 'Avg Loading End → Hotel Departure', done, STEPS.BAG_LOAD_END, STEPS.HOTEL_DEPART),
+          durationTile('clock', 'Avg Final Whistle → Loading Start (Stadium)', done, STEPS.FINAL_WHISTLE, STEPS.STADIUM_LOAD),
         ],
       },
       {
         title: 'SSOC',
         tiles: [
-          durationTile('clock', 'Avg VSA Departure → Hotel Unload Complete', done, 'ARRIVAL TO HOTEL', 'HOTEL UNLOADING END TIME'),
+          durationTile('clock', 'Avg VSA Departure → Hotel Unload Complete', done, STEPS.HOTEL_RETURN, STEPS.HOTEL_UNLOADED),
         ],
       },
     ];
@@ -625,6 +650,30 @@ function setFunctionalArea(functionalArea) {
   if (props.filters.date) params.date = props.filters.date;
   router.get('/kit-truck', params, { preserveScroll: true });
 }
+
+// The same movement type, event, date, functional area and team search as on screen.
+// Needs a movement type and one event; the reason shows on hover while it is dimmed.
+const exportBlocked = computed(() => {
+  if (!props.filters.kind) return 'Pick a movement type to export.';
+  if (!props.filters.event) return 'Pick an event to export: the Excel covers one event at a time.';
+  if (!filteredRows.value.length) return 'Nothing to export for these filters.';
+  return '';
+});
+const exportHint = computed(() => exportBlocked.value || `Download this ${kindLabel.value} table as Excel`);
+
+function exportExcel() {
+  if (exportBlocked.value) return;
+  const params = new URLSearchParams({ kind: props.filters.kind, event: props.filters.event ?? '' });
+  if (props.filters.date) params.set('date', props.filters.date);
+  if (props.filters.functional_area) params.set('functional_area', props.filters.functional_area);
+  if (searchQuery.value.trim()) params.set('q', searchQuery.value.trim());
+  // The stat tiles above the table, as shown, go on top of the sheet.
+  params.set('stats', JSON.stringify(kpiGroups.value.map((g) => ({
+    title: g.title,
+    tiles: g.tiles.map((t) => ({ label: t.label, value: t.value, sub: t.sub ?? null, tone: t.tone ?? null })),
+  }))));
+  window.location.href = `/kit-truck/export?${params}`;
+}
 </script>
 
 <style scoped>
@@ -636,6 +685,10 @@ function setFunctionalArea(functionalArea) {
 .page-title { font-size: 20px; font-weight: 700; color: var(--ink); margin: 0 0 2px; }
 .page-sub   { font-size: 13px; color: var(--ink3); margin: 0; }
 .header-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+/* The wrapper carries the hover hint, since a disabled button shows none. */
+.export-wrap { display: inline-flex; }
+.export-wrap:has(.btn:disabled) { cursor: not-allowed; }
+.export-wrap :deep(.btn:disabled) { pointer-events: none; opacity: 0.45; }
 
 /* ── KPI strip ────────────────────────────────────────────────────── */
 .kpi-strip {

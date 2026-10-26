@@ -405,7 +405,7 @@ class AnalyticsController extends Controller
             if (is_array($value)) {
                 $csv .= $this->arrayToCsv($value, $fullKey);
             } else {
-                $csv .= "{$fullKey},{$value}\n";
+                $csv .= \App\Support\Spreadsheet\TextOnlyValueBinder::csvCell($fullKey).','.\App\Support\Spreadsheet\TextOnlyValueBinder::csvCell($value)."\n";
             }
         }
         return $csv;

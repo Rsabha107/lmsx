@@ -51,6 +51,9 @@ class DeletionService
     public function request(string $kind, Collection $items, User $user, ?int $eventId, ?string $reason = null): Deletion
     {
         $items = $items->values();
+        if ($kind === 'movement_templates') {
+            $this->assertTemplatesUnused($items->map(fn (Model $m) => $m->getKey())->all());
+        }
         $trigger = $this->approvalTrigger($kind, $items, $user);
 
         $create = fn () => Deletion::create([
@@ -304,7 +307,7 @@ class DeletionService
     {
         return match ($deletion->trigger) {
             'threshold' => 'More than '.(self::APPROVAL_OVER[$deletion->kind] ?? 0).' '.(Deletion::KIND_LABELS[$deletion->kind][1] ?? $deletion->kind).' at once',
-            'in_use' => 'The template is used by plans',
+            'in_use' => 'Plans in the recycle bin use the template',
             'event' => 'Deleting an event',
             'brake' => 'Over the limit of '.(self::BRAKE[$deletion->kind] ?? 0).' '.(Deletion::KIND_LABELS[$deletion->kind][1] ?? $deletion->kind).' deleted in '.self::BRAKE_MINUTES.' minutes',
             default => null,
@@ -321,7 +324,8 @@ class DeletionService
         if (isset(self::APPROVAL_OVER[$kind]) && $items->count() > self::APPROVAL_OVER[$kind]) {
             return 'threshold';
         }
-        // Deleted plans count too: they can be restored and would then point at nothing.
+        // Live plans refuse the delete outright (assertTemplatesUnused); plans in the recycle bin
+        // still count, as they can be restored and would then point at nothing.
         if ($kind === 'movement_templates' && Plan::withTrashed()->whereIn('movement_template_id', $items->map(fn (Model $m) => $m->getKey())->all())->exists()) {
             return 'in_use';
         }
@@ -336,6 +340,26 @@ class DeletionService
         }
 
         return null;
+    }
+
+    /**
+     * A movement template used by a plan that isn't deleted can't be deleted (the rule from before the
+     * recycle bin). Event deletes skip this: the event's plans go into the same batch.
+     *
+     * @param  array<int, int>  $templateIds
+     */
+    private function assertTemplatesUnused(array $templateIds): void
+    {
+        $plans = Plan::whereIn('movement_template_id', $templateIds);
+        $count = (clone $plans)->count();
+        if (! $count) {
+            return;
+        }
+        $empty = (clone $plans)->doesntHave('movements')->count();
+        $one = count($templateIds) === 1;
+
+        throw new DeletionRefused(($one ? 'Cannot delete template. It is' : 'Cannot delete these templates. They are')
+            ." used in {$count} plan(s).".($empty ? " {$empty} of them have no movements." : ''));
     }
 
     private function assertDecidable(Deletion $deletion, User $user): void
@@ -399,6 +423,8 @@ class DeletionService
                     break;
 
                 case 'movement_templates':
+                    // A plan may have been made from it while the request waited for approval.
+                    $this->assertTemplatesUnused($ids);
                     foreach ($live(MovementTemplate::class) as $template) {
                         $items['movement_templates'][] = $this->binIt($template, $deletion);
                     }

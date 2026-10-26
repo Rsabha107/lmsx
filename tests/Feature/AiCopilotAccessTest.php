@@ -58,6 +58,7 @@ class AiCopilotAccessTest extends TestCase
         ]);
 
         $user = $this->createUserWithRole('transport', 'LOG');
+        $user->events()->attach($event->id);
 
         $response = $this->actingAs($user)
             ->withSession(['active_event_id' => $event->id])

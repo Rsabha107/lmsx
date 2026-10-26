@@ -23,7 +23,10 @@ class CompletedJobCrewLockTest extends TestCase
 
     private function agency(Event $event): static
     {
-        return $this->actingAs($this->createProviderUser('agency'))->withSession(['active_event_id' => $event->id]);
+        $agency = $this->createProviderUser('agency');
+        $agency->events()->attach($event->id);
+
+        return $this->actingAs($agency)->withSession(['active_event_id' => $event->id]);
     }
 
     /** @return array{0: Movement, 1: Event} */

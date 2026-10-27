@@ -237,12 +237,16 @@ class LmsController extends Controller
         $user = $request->user();
         $activeEventId = (int) $request->session()->get('active_event_id') ?: null;
         $settings = app(\App\Services\SettingsService::class);
+        // The active event plus any others picked here (all accessible), like Crew Assignment.
+        $eventIds = $activeEventId && $user->canAccessEvent($activeEventId)
+            ? \App\Support\EventSelection::ids($request, 'jobs_event_ids')
+            : [];
 
-        // Only the active event, if the user may still open it, and only the jobs they may see there
-        // (same rules as JobOperationPolicy::view). No event: the page shows its "No Active Event" state.
-        $jobs = $activeEventId && $user->canAccessEvent($activeEventId)
+        // Only the jobs the user may see there (same rules as JobOperationPolicy::view).
+        // No event: the page shows its "No Active Event" state.
+        $jobs = $eventIds
             ? JobOperation::with(self::JOB_ROW_RELATIONS)
-                ->visibleTo($user, $activeEventId)
+                ->visibleTo($user, $eventIds)
                 ->orderBy('created_at', 'desc')
                 ->get()
                 ->map(fn ($job) => $this->jobRow($job, $settings))
@@ -250,7 +254,9 @@ class LmsController extends Controller
 
         return Inertia::render('Jobs', [
             'schedule' => $jobs,
-            ...$this->crewPools(),
+            'eventIds' => $eventIds,
+            'events' => \App\Support\EventSelection::options($user, $activeEventId),
+            ...$this->crewPools($eventIds ?: $activeEventId),
         ]);
     }
 
@@ -278,10 +284,10 @@ class LmsController extends Controller
         'issues.reporter',
     ];
 
-    /** Same pools the Planning movement editor offers, for crew changes in the override modal. */
-    private function crewPools(): array
+    /** Same pools the Planning movement editor offers, for crew changes in the override modal (every event shown). */
+    private function crewPools(int|array|null $eventIds = null): array
     {
-        $eventId = session('active_event_id');
+        $eventId = $eventIds ?? session('active_event_id');
 
         return [
             'drivers' => Driver::inEventPool($eventId)->select('id', 'name')->orderBy('name')->get(),
@@ -323,6 +329,7 @@ class LmsController extends Controller
                     'span_end' => ($job->checkpoints->sortBy('order')->last()?->scheduled_at ?? $movement?->window_end)?->format('Y-m-d H:i'),
                     'event_name' => $job->event?->name ?? null,
                     'event_code' => $job->event?->code ?? null,
+                    'event_short' => $job->event?->short_name ?: $job->event?->name,
                     'functional_area' => $job->functional_area ?? null,
                     'pax' => $movement?->passengers ?? $movement?->flight?->party_size_total ?? $team?->party_size_total ?? 0,
                     'vehicle' => $job->vehicle ? ($job->vehicle->code ?? $job->vehicle->plate_number ?? $job->vehicle->vehicle_type ?? 'Unassigned') : 'Unassigned',
@@ -832,7 +839,7 @@ class LmsController extends Controller
             'crewMembers' => $crewMembers,
             // The Jobs Queue row, for the shared override modal.
             'queueJob' => $this->jobRow($jobOperation, app(\App\Services\SettingsService::class)),
-            ...($job['can_override'] ? $this->crewPools() : []),
+            ...($job['can_override'] ? $this->crewPools((int) $jobOperation->event_id) : []),
         ]);
     }
 

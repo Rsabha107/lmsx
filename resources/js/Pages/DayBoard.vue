@@ -17,6 +17,8 @@
           </p>
         </div>
         <div class="db-head-actions">
+          <EventMultiPicker :events="events" :event-ids="eventIds" label="Showing"
+            hint="Show other events' jobs on this board. Each card is tagged with its event." @change="showEvents" />
           <div class="db-views" role="tablist" aria-label="View">
             <button type="button" role="tab" :aria-selected="view === 'board'" :class="['db-view', { 'db-view--on': view === 'board' }]" @click="setView('board')">Day Board</button>
             <button type="button" role="tab" :aria-selected="view === 'schedule'" :class="['db-view', { 'db-view--on': view === 'schedule' }]" @click="setView('schedule')">Schedule</button>
@@ -135,6 +137,7 @@
                   <div class="db-route" :title="`${job.from ?? ''} → ${job.to ?? ''}`">{{ job.from || '?' }} <span>→</span> {{ job.to || '?' }}</div>
                 </div>
                 <div class="db-card-tags">
+                  <span v-if="eventIds.length > 1 && job.event" class="db-event-tag">{{ job.event }}</span>
                   <span v-if="job.kind" :class="['db-kind', `db-kind--${job.kind}`]">{{ job.kind.replace('_', ' ') }}</span>
                   <status-pill :tone="STATUS_TONES[job.status] ?? 'neutral'" size="sm">{{ job.status_label }}</status-pill>
                 </div>
@@ -248,6 +251,7 @@ import StatusPill from '../Components/StatusPill.vue';
 import SvgIcon from '../Components/SvgIcon.vue';
 import FlagIcon from '../Components/FlagIcon.vue';
 import MovementScheduleView from '../Components/MovementScheduleView.vue';
+import EventMultiPicker from '../Components/EventMultiPicker.vue';
 import { useScheduleFilter } from '../Composables/useScheduleFilter';
 import { minutesFrom, duration, todayKey } from '../Composables/useCrewRoster';
 
@@ -257,6 +261,8 @@ const props = defineProps({
   jobs: { type: Array, default: () => [] },
   schedule: { type: Array, default: () => [] },
   dayCounts: { type: Object, default: () => ({}) },
+  eventIds: { type: Array, default: () => [] },
+  events: { type: Array, default: () => [] },
 });
 
 const { filters: scheduleFilters, activeFilter: activeScheduleFilter, filtered: scheduleRows } = useScheduleFilter(() => props.schedule);
@@ -304,6 +310,10 @@ function visit(date, view) {
 
 function goDay(key) {
   visit(key, props.view);
+}
+
+function showEvents(ids) {
+  router.get('/day-board', { date: props.date, view: props.view === 'schedule' ? 'schedule' : undefined, events: ids.length ? ids : '' }, { preserveState: true, preserveScroll: true });
 }
 
 function setView(next) {
@@ -620,6 +630,7 @@ const groups = computed(() => {
 .db-route { font-size: 12px; color: var(--ink3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .db-route span { color: var(--ink2); }
 .db-card-tags { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; flex-shrink: 0; }
+.db-event-tag { font-size: 10px; font-weight: 600; padding: 1px 6px; border-radius: 4px; border: 1px solid var(--border); color: var(--ink2); white-space: nowrap; }
 .db-kind { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; padding: 2px 7px; border-radius: 4px; background: var(--panel); color: var(--ink2); }
 .db-kind--arrival { background: #DBEAFE; color: #1E40AF; }
 .db-kind--departure { background: #FCE7F3; color: #9D174D; }

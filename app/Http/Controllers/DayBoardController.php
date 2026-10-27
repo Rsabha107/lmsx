@@ -29,12 +29,16 @@ class DayBoardController extends Controller
         }
 
         $view = $request->query('view') === 'schedule' ? 'schedule' : 'board';
-        $eventId = $request->session()->get('active_event_id');
+        // The active event plus any others picked here (all accessible), like Crew Assignment.
+        $eventIds = $request->session()->get('active_event_id')
+            ? \App\Support\EventSelection::ids($request, 'dayboard_event_ids')
+            : [];
 
-        $jobs = $eventId
-            ? $this->scoped($request, $eventId)
+        $jobs = $eventIds
+            ? $this->scoped($request, $eventIds)
                 ->whereHas('movement', fn ($q) => $q->where('window_start', '>=', $day)->where('window_start', '<', $day->copy()->addDay()))
                 ->with([
+                    'event:id,name,short_name',
                     'movement:id,team_id,kind,from_location,to_location,window_start,window_end,delay_minutes,passengers',
                     'movement.team:id,code,team_name,country_id,flag',
                     'vehicle:id,code,plate_number,vehicle_type',
@@ -54,15 +58,17 @@ class DayBoardController extends Controller
             'date' => $day->toDateString(),
             'view' => $view,
             'jobs' => $jobs,
-            'schedule' => $view === 'schedule' && $eventId ? $this->scheduleRows($request, $eventId, $day) : [],
-            'dayCounts' => $eventId ? $this->dayCounts($request, $eventId) : [],
+            'schedule' => $view === 'schedule' && $eventIds ? $this->scheduleRows($request, $eventIds, $day) : [],
+            'dayCounts' => $eventIds ? $this->dayCounts($request, $eventIds) : [],
+            'eventIds' => $eventIds,
+            'events' => \App\Support\EventSelection::options($request->user(), $eventIds[0] ?? null),
         ]);
     }
 
     /** The Movement Schedule rows for the day, limited to what this user may see. */
-    private function scheduleRows(Request $request, int $eventId, Carbon $day): array
+    private function scheduleRows(Request $request, array $eventIds, Carbon $day): array
     {
-        return $this->scoped($request, $eventId, 'jobs_operations.')
+        return $this->scoped($request, $eventIds, 'jobs_operations.')
             ->with(ScheduleRows::RELATIONS)
             ->join('movements', 'jobs_operations.movement_id', '=', 'movements.id')
             ->where('movements.window_start', '>=', $day)
@@ -75,14 +81,14 @@ class DayBoardController extends Controller
     }
 
     /** Jobs the user may see: active event, their functional areas, and only their own unless they may see others'. */
-    private function scoped(Request $request, int $eventId, string $prefix = ''): Builder
+    private function scoped(Request $request, array $eventIds, string $prefix = ''): Builder
     {
         $user = $request->user();
         // The agency reads every crew's jobs without holding job permissions; ProviderScope still applies.
         $agency = $user->hasRole('agency');
 
         return JobOperation::query()
-            ->where($prefix.'event_id', $eventId)
+            ->whereIn($prefix.'event_id', $eventIds)
             ->where($prefix.'status', '!=', 'cancelled')
             ->when(! $agency && ! $user->can('jobs.view-all-functional-areas'),
                 fn ($q) => $q->whereIn($prefix.'functional_area', $user->functionalAreaCodes()))
@@ -90,9 +96,9 @@ class DayBoardController extends Controller
     }
 
     /** @return array<string, int> jobs per day across the event, for the week strip and calendar */
-    private function dayCounts(Request $request, int $eventId): array
+    private function dayCounts(Request $request, array $eventIds): array
     {
-        return $this->scoped($request, $eventId, 'jobs_operations.')
+        return $this->scoped($request, $eventIds, 'jobs_operations.')
             ->join('movements', 'movements.id', '=', 'jobs_operations.movement_id')
             ->whereNotNull('movements.window_start')
             ->selectRaw('DATE(movements.window_start) as day, COUNT(*) as total')
@@ -128,6 +134,8 @@ class DayBoardController extends Controller
             'kind' => $movement?->kind,
             'team' => $team?->team_name,
             'team_code' => $team?->code,
+            // Shown when several events are on the board.
+            'event' => $job->event?->short_name ?: $job->event?->name,
             'country_code' => $team?->country_id,
             'flag' => $team?->flag,
             'from' => $movement?->from_location,

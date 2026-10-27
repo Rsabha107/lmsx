@@ -189,10 +189,7 @@ class MovementCrewController extends Controller
             'providers' => $user->can('plans.manage') ? FleetProvider::orderBy('name')->get(['id', 'name']) : [],
             'eventIds' => $eventIds,
             // Events that can be shown alongside the active one (orWhere only after accessibleTo's own filter).
-            'events' => Event::accessibleTo($user)
-                ->when(! $user->canAccessAllEvents() && $eventId, fn ($q) => $q->orWhere('id', $eventId))
-                ->orderBy('name')->get(['id', 'name', 'short_name'])
-                ->map(fn (Event $e) => ['id' => $e->id, 'name' => $e->name, 'short' => $e->short_name ?: $e->name]),
+            'events' => \App\Support\EventSelection::options($user, $eventId ? (int) $eventId : null),
         ]);
     }
 
@@ -204,19 +201,7 @@ class MovementCrewController extends Controller
      */
     private function crewEventIds(Request $request): array
     {
-        $active = (int) $request->session()->get('active_event_id');
-        if ($request->has('events')) {
-            $picked = array_map('intval', array_filter((array) $request->query('events'), 'is_numeric'));
-            $request->session()->put('crew_event_ids', $picked);
-        } else {
-            $picked = (array) $request->session()->get('crew_event_ids', []);
-        }
-
-        $others = $picked
-            ? Event::accessibleTo($request->user())->whereIn('id', array_diff($picked, [$active]))->orderBy('name')->pluck('id')->all()
-            : [];
-
-        return array_values(array_filter([$active ?: null, ...$others]));
+        return \App\Support\EventSelection::ids($request, 'crew_event_ids');
     }
 
     /** Adds `event_ids`: which of the chosen events' pools each vehicle or driver belongs to. */

@@ -166,9 +166,10 @@ class JobOperation extends Model
      * The jobs a user may see in an event: the same rules as JobOperationPolicy::view (functional area
      * unless jobs.view-all-functional-areas, own jobs unless jobs.view-unassigned). ProviderScope still applies.
      */
-    public function scopeVisibleTo(Builder $query, User $user, int $eventId): Builder
+    /** @param  int|list<int>  $eventIds  the event(s) shown; the caller checks the user may open them */
+    public function scopeVisibleTo(Builder $query, User $user, int|array $eventIds): Builder
     {
-        $query->where('event_id', $eventId);
+        $query->whereIn('event_id', (array) $eventIds);
 
         if (! $user->can('jobs.view-all-functional-areas')) {
             $query->whereIn('functional_area', $user->functionalAreaCodes());

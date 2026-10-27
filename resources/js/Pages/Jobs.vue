@@ -13,6 +13,8 @@
         <RefreshButton :only="['schedule']" @refresh="handleRefresh" />
       </div>
       <div class="page-header-actions">
+        <EventMultiPicker :events="events" :event-ids="eventIds" label="Showing"
+          hint="Show jobs of other events with this one. Each job is tagged with its event." @change="showEvents" />
         <Button v-if="false" variant="secondary" size="sm">
           <template #icon><svg-icon name="filter" :size="14" /></template>
           Filter
@@ -169,6 +171,7 @@
                 <div class="jl-line1">
                   <flag-icon :code="job.country_code" :fallback="job.flag" />
                   <span class="jl-team">{{ job.team }}</span>
+                  <span v-if="multiEvent" class="jl-event-tag" :title="job.event_name">{{ job.event_short }}</span>
                   <span
                     v-if="job.kind"
                     class="jl-job-phase"
@@ -620,6 +623,7 @@ import NoActiveEvent from '../Components/NoActiveEvent.vue';
 import StatusPill from '../Components/StatusPill.vue';
 import SvgIcon from '../Components/SvgIcon.vue';
 import RefreshButton from '../Components/RefreshButton.vue';
+import EventMultiPicker from '../Components/EventMultiPicker.vue';
 import Modal from '../Components/Modal.vue';
 import Button from '../Components/Button.vue';
 import CheckpointTimeline from '../Components/CheckpointTimeline.vue';
@@ -644,7 +648,14 @@ const props = defineProps({
   drivers: { type: Array, default: () => [] },
   supervisors: { type: Array, default: () => [] },
   vehicles: { type: Array, default: () => [] },
+  eventIds: { type: Array, default: () => [] },
+  events: { type: Array, default: () => [] },
 });
+
+const multiEvent = computed(() => props.eventIds.length > 1);
+function showEvents(ids) {
+  router.get('/jobs', { events: ids.length ? ids : '' }, { preserveState: true, preserveScroll: true });
+}
 
 const selectedJob = ref(null);
 const {
@@ -1430,6 +1441,7 @@ function reloadSelectedJob() {
   color: var(--ink3); font-weight: 700; margin: 0 0 2px;
 }
 .page-header-actions { display: flex; gap: 8px; flex-shrink: 0; flex-wrap: wrap; align-items: center; }
+.jl-event-tag { padding: 1px 6px; border-radius: 4px; background: var(--panel); border: 1px solid var(--border); font-size: 10px; font-weight: 600; color: var(--ink2); white-space: nowrap; }
 @media (max-width: 640px) {
   .page-header-actions {
     width: 100%;

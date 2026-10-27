@@ -528,39 +528,40 @@ class JobGenerationService
      */
     public function buildCheckpointsPayload(Movement $movement): array
     {
+        // A generated job is the record: list its own steps, in its order. The template may have
+        // been edited since (steps added or removed), which must not grey out work already done.
+        if ($movement->job) {
+            $movement->job->loadMissing(['checkpoints.checkpoint', 'checkpoints.completedBy']);
+
+            return $movement->job->checkpoints->sortBy('order')->map(fn ($jcp) => [
+                'id' => $jcp->checkpoint_id ?? 'job-'.$jcp->id,
+                'name' => $jcp->name,
+                'type' => $jcp->checkpoint?->type ?? $jcp->type,
+                'requires_photo' => (bool) ($jcp->checkpoint?->requires_photo ?? false),
+                'requires_signature' => (bool) ($jcp->checkpoint?->requires_signature ?? false),
+                'requires_baggage_count' => (bool) ($jcp->checkpoint?->requires_baggage_count ?? false),
+                'planned_bags' => $jcp->planned_bags,
+                'bags_loaded' => $jcp->bags_loaded,
+                'food_bags' => $jcp->food_bags,
+                'oversized_pieces' => $jcp->oversized_pieces,
+                'state' => $jcp->state ?? 'pending',
+                'scheduled_at' => $jcp->scheduled_at?->format('Y-m-d H:i:s'),
+                'started_at' => $jcp->started_at?->format('Y-m-d H:i:s'),
+                'completed_at' => $jcp->completed_at?->format('Y-m-d H:i:s'),
+                'completed_by' => $jcp->completedBy?->name,
+                'photo_path' => $jcp->photo_path,
+                'signature_path' => $jcp->signature_path,
+            ])->values()->toArray();
+        }
+
         $checkpoints = $movement->checkpointTemplate?->checkpoints;
         if (!$checkpoints || $checkpoints->isEmpty()) {
             return [];
         }
 
-        $jobCheckpoints = $movement->job?->checkpoints ?? collect();
-        $estimatedSchedule = $movement->job ? [] : $this->estimateCheckpointSchedule($movement);
+        $estimatedSchedule = $this->estimateCheckpointSchedule($movement);
 
-        return $checkpoints->map(function ($checkpoint) use ($jobCheckpoints, $estimatedSchedule, $movement) {
-            $jobCheckpoint = $jobCheckpoints->firstWhere('checkpoint_id', $checkpoint->id);
-
-            if ($jobCheckpoint) {
-                return [
-                    'id' => $checkpoint->id,
-                    'name' => $checkpoint->name,
-                    'type' => $checkpoint->type,
-                    'requires_photo' => $checkpoint->requires_photo,
-                    'requires_signature' => $checkpoint->requires_signature,
-                    'requires_baggage_count' => $checkpoint->requires_baggage_count,
-                    'planned_bags' => $jobCheckpoint->planned_bags,
-                    'bags_loaded' => $jobCheckpoint->bags_loaded,
-                    'food_bags' => $jobCheckpoint->food_bags,
-                    'oversized_pieces' => $jobCheckpoint->oversized_pieces,
-                    'state' => $jobCheckpoint->state ?? 'pending',
-                    'scheduled_at' => $jobCheckpoint->scheduled_at?->format('Y-m-d H:i:s'),
-                    'started_at' => $jobCheckpoint->started_at?->format('Y-m-d H:i:s'),
-                    'completed_at' => $jobCheckpoint->completed_at?->format('Y-m-d H:i:s'),
-                    'completed_by' => $jobCheckpoint->completedBy?->name,
-                    'photo_path' => $jobCheckpoint->photo_path,
-                    'signature_path' => $jobCheckpoint->signature_path,
-                ];
-            }
-
+        return $checkpoints->map(function ($checkpoint) use ($estimatedSchedule, $movement) {
             return [
                 'id' => $checkpoint->id,
                 'name' => $checkpoint->name,

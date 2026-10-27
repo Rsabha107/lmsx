@@ -132,13 +132,16 @@
         <span :class="['cte-status', statusTone]">{{ status }}</span>
         <div class="cte-foot-btns">
           <button type="button" class="cte-btn" @click="emit('close')">Cancel</button>
-          <button type="button" class="cte-btn cte-btn--primary" :disabled="blocking.length > 0 || saving" @click="save">
+          <button type="button" class="cte-btn cte-btn--primary" :disabled="blocking.length > 0 || saving" @click="save()">
             {{ saving ? 'Saving…' : (isNew ? 'Create template' : 'Save changes') }}
           </button>
         </div>
       </div>
     </template>
   </Modal>
+
+  <ConfirmModal :show="!!impactConfirm" :title="impactConfirm?.title" :message="impactConfirm?.message ?? ''" :note="impactConfirm?.note"
+    confirm-label="Save changes" :processing="saving" @close="impactConfirm = null" @confirm="save(true)" />
 </template>
 
 <script setup>
@@ -148,6 +151,8 @@ import Modal from '../Modal.vue';
 import { TYPE_ORDER, typeLabel, isRequired, fmtMinutes } from './checkpointTemplateFormat';
 import { CATEGORIES, categoryLabel } from './checkpointOptions';
 import { useToast } from '../../Composables/useToast';
+import { useTemplateImpact } from '../../Composables/useTemplateImpact';
+import ConfirmModal from '../ConfirmModal.vue';
 
 // New / edit checkpoint template: details on the left, the checkpoint sequence on the right.
 const props = defineProps({
@@ -284,9 +289,21 @@ const status = computed(() => serverError.value || blocking.value[0] || (isNew.v
 const statusTone = computed(() => (serverError.value ? 'cte-status--bad' : (blocking.value.length ? 'cte-status--warn' : '')));
 watch(() => [form.name, form.code], () => { errors.value = {}; });
 
+// Steps as saved, to tell a steps edit (asks first when the template is in use) from a details edit.
+const stepsKey = () => JSON.stringify(form.rows.map((r) => [r.checkpoint_id, !!r.required, Number(r.mins) || null]));
+const savedSteps = stepsKey();
+const { confirm: impactConfirm, check: checkImpact } = useTemplateImpact('checkpoint');
+
 const saving = ref(false);
-function save() {
+async function save(confirmed = false) {
   if (blocking.value.length) return;
+  if (!isNew.value && !confirmed && stepsKey() !== savedSteps) {
+    saving.value = true;
+    const go = await checkImpact(props.template.id);
+    saving.value = false;
+    if (!go) return;
+  }
+  impactConfirm.value = null;
   saving.value = true;
   errors.value = {};
   const payload = {

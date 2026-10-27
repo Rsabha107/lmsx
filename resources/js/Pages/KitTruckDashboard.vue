@@ -403,9 +403,10 @@ const STEPS = {
   CONVOY_DEPART:  { codes: ['CK87'], names: ['POA STAGING CONVY DEPART'] },
   AIRPORT:        { codes: ['CK88'], names: ['CONVOY ARRIVAL AT AIRPORT'] },
   QAS_HANDOVER:   { codes: ['CK89'], names: ['QAS HANDOVER TIME'] },
-  KIT_LOAD_END:   { codes: ['CK90'], names: ['KIT LOAD END'] },
-  LUGGAGE_HOTEL:  { codes: ['CK92'], names: ['LUGGAGE ARRIVAL TO HOTEL'] },
-  OFFLOAD_END:    { codes: ['CK93'], names: ['OFFLOAD END TIME'] },
+  // The arrival template replaced KIT LOAD END and OFFLOAD END TIME with these (staging, Oct 2026).
+  KIT_LOAD_END:   { codes: ['CK123', 'CK90'], names: ['LUGGAGE LOAD END AT THE AIRPORT', 'KIT LOAD END'] },
+  LUGGAGE_HOTEL:  { codes: ['CK92'], names: ['LUGGAGE TRUCK ARRIVAL TO HOTEL', 'LUGGAGE ARRIVAL TO HOTEL'] },
+  OFFLOAD_END:    { codes: ['CK126', 'CK93'], names: ['LUGGAGE OFFLOAD END AT THE HOTEL', 'OFFLOAD END TIME'] },
   LUGGAGE_PIECES: { codes: ['CK95'], names: ['LUGGAGE PIECES'] },
   // Match day (old names kept: the template was renamed on 18 Oct 2026)
   HOTEL_ARRIVAL:  { codes: ['CK100'], names: ['GWC ARRIVAL TIME AT HOTEL'] },

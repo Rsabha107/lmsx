@@ -1399,12 +1399,21 @@ class PlanManagementController extends Controller
             'flight',
         ]);
 
+        $job = $movement->job;
+        $templateIds = $movement->checkpointTemplate?->checkpoints->pluck('id') ?? collect();
+        $jobIds = $job?->checkpoints->pluck('checkpoint_id')->filter() ?? collect();
+
         return response()->json([
             'checkpoints' => $this->jobService->buildCheckpointsPayload($movement),
             'checkpoint_template' => $movement->checkpointTemplate ? [
                 'id' => $movement->checkpointTemplate->id,
                 'code' => $movement->checkpointTemplate->code,
                 'name' => $movement->checkpointTemplate->name,
+            ] : null,
+            // The template was edited after the job was generated; the job keeps its own steps.
+            'template_changed' => $job && $movement->checkpointTemplate ? [
+                'added' => $movement->checkpointTemplate->checkpoints->whereNotIn('id', $jobIds)->pluck('name')->values(),
+                'removed' => $job->checkpoints->filter(fn ($c) => $c->checkpoint_id && ! $templateIds->contains($c->checkpoint_id))->pluck('name')->values(),
             ] : null,
         ]);
     }

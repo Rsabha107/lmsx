@@ -125,4 +125,57 @@ class CheckpointRenameTest extends TestCase
                 }
             });
     }
+
+    public function test_the_planning_panel_lists_a_jobs_own_steps_after_its_template_changed(): void
+    {
+        $staging = $this->library('CK86', 'ARRIVAL TIME AT POA STAGING');
+        $kitEnd = $this->library('CK90', 'KIT LOAD END');
+        $loadStart = $this->library('CK120', 'LUGGAGE LOAD STARTED AT THE AIRPORT');
+        $template = \App\Models\CheckpointTemplate::create(['event_id' => $this->event->id, 'code' => 'TMPL-AIR', 'name' => 'Arrival', 'movement_type' => 'arrival', 'is_active' => true]);
+        $template->checkpoints()->attach([$staging->id => ['order' => 1, 'is_required' => true], $kitEnd->id => ['order' => 2, 'is_required' => true]]);
+
+        $job = $this->job([[$staging, 'ARRIVAL TIME AT POA STAGING', 1], [$kitEnd, 'KIT LOAD END', 2]]);
+        $job->checkpoints()->update(['state' => 'done', 'completed_at' => '2026-10-19 14:30']);
+        $job->movement->update(['checkpoint_template_id' => $template->id]);
+
+        // Edited after the job was generated: KIT LOAD END out, LUGGAGE LOAD STARTED in.
+        $template->checkpoints()->detach($kitEnd->id);
+        $template->checkpoints()->attach($loadStart->id, ['order' => 2, 'is_required' => true]);
+
+        $this->actingAs($this->createUserWithRole('admin'))->withSession(['active_event_id' => $this->event->id])
+            ->getJson("/movements/{$job->movement_id}/checkpoints")
+            ->assertOk()
+            ->assertJsonPath('checkpoints.*.name', ['ARRIVAL TIME AT POA STAGING', 'KIT LOAD END'])
+            ->assertJsonPath('checkpoints.*.state', ['done', 'done'])
+            ->assertJsonPath('template_changed.added', ['LUGGAGE LOAD STARTED AT THE AIRPORT'])
+            ->assertJsonPath('template_changed.removed', ['KIT LOAD END']);
+    }
+
+    public function test_changing_a_templates_steps_updates_its_date(): void
+    {
+        $step = $this->library('CK86', 'ARRIVAL TIME AT POA STAGING');
+        $added = $this->library('CK122', 'LUGGAGE LOAD STARTED AT THE AIRPORT');
+        $template = \App\Models\CheckpointTemplate::create(['event_id' => $this->event->id, 'code' => 'TMPL-AIR', 'name' => 'Arrival', 'movement_type' => 'arrival', 'is_active' => true]);
+        $template->checkpoints()->attach($step->id, ['order' => 1, 'is_required' => true]);
+        \App\Models\CheckpointTemplate::whereKey($template->id)->update(['updated_at' => '2026-09-27 12:00:00']);
+
+        $this->actingAs($this->createUserWithRole('admin'))->withSession(['active_event_id' => $this->event->id])
+            ->post('/admin/checkpoints/add-to-template', ['ids' => [$added->id], 'template_id' => $template->id])
+            ->assertSessionHasNoErrors();
+
+        $this->assertTrue($template->fresh()->updated_at->isToday());
+    }
+
+    public function test_replaced_arrival_steps_share_a_column_with_the_old_ones(): void
+    {
+        $oldEnd = $this->library('CK90', 'KIT LOAD END');
+        $newEnd = $this->library('CK123', 'LUGGAGE LOAD END AT THE AIRPORT');
+        foreach ([[$oldEnd, 'KIT LOAD END'], [$newEnd, 'LUGGAGE LOAD END AT THE AIRPORT']] as [$cp, $name]) {
+            $job = $this->job([[$cp, $name, 5]]);
+            $job->movement->update(['kind' => 'arrival']);
+        }
+
+        $this->actingAs($this->createUserWithRole('admin'))->get('/kit-truck?'.http_build_query(['kind' => 'arrival', 'event' => $this->event->id]))
+            ->assertInertia(fn (AssertableInertia $page) => $page->where('columns', fn ($cols) => collect($cols)->pluck('name')->all() === ['LUGGAGE LOAD END AT THE AIRPORT']));
+    }
 }

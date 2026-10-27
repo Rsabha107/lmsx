@@ -18,11 +18,16 @@ use Inertia\Inertia;
 class KitTruckDashboardController extends Controller
 {
     /**
-     * Library checkpoints that are the same real step under two entries (old code => new code):
-     * the match-day template switched its back-at-hotel step from CK108 to CK94 on 18 Oct 2026.
-     * The stat tiles in KitTruckDashboard.vue list both codes for that step.
+     * Library checkpoints that are the same real step under two entries (old code => new code),
+     * merged into one column under the new name: the match-day back-at-hotel step (CK108 → CK94,
+     * 18 Oct 2026) and the arrival kit load end and offload end (CK90 → CK123, CK93 → CK126).
+     * The stat tiles in KitTruckDashboard.vue list both codes for each.
      */
-    private const SAME_STEP = ['CK108' => 'CK94'];
+    private const SAME_STEP = [
+        'CK108' => 'CK94',
+        'CK90' => 'CK123',
+        'CK93' => 'CK126',
+    ];
 
     public function index(Request $request)
     {

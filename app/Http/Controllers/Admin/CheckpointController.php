@@ -263,6 +263,7 @@ class CheckpointController extends Controller
             foreach ($adding as $checkpoint) {
                 $template->checkpoints()->attach($checkpoint->id, ['order' => ++$order, 'is_required' => true, 'estimated_minutes' => null]);
             }
+            $template->touch();
         });
 
         $skipped = count(array_unique($validated['ids'])) - $adding->count();

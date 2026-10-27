@@ -1229,6 +1229,7 @@
                 title="Checkpoints"
                 empty-message="No checkpoints defined"
               />
+                <p v-if="templateChangeNote(selectedMovement)" class="tpl-changed-note">{{ templateChangeNote(selectedMovement) }}</p>
 
               <!-- Match Info -->
               <div
@@ -1665,6 +1666,7 @@
                   title="Checkpoints"
                   empty-message="No checkpoints defined"
                 />
+                <p v-if="templateChangeNote(selectedMovement)" class="tpl-changed-note">{{ templateChangeNote(selectedMovement) }}</p>
 
                 <div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border)">
                   <div class="dv-card-title" style="margin-bottom: 8px">Crew</div>
@@ -2507,6 +2509,7 @@
                   title="Checkpoints"
                   empty-message="No checkpoints defined"
                 />
+                <p v-if="templateChangeNote(selectedMovement)" class="tpl-changed-note">{{ templateChangeNote(selectedMovement) }}</p>
 
                 <!-- Job Info -->
                 <div
@@ -6992,11 +6995,22 @@ async function fetchMovementCheckpoints(movement) {
     const data = await response.json();
     movement.checkpoints = data.checkpoints;
     movement.checkpoint_template = data.checkpoint_template;
+    movement.template_changed = data.template_changed;
   } catch (error) {
     console.error("Failed to fetch checkpoints:", error);
   } finally {
     checkpointsLoading.value = false;
   }
+}
+
+// The job keeps the steps it was generated with; say so when the template has changed since.
+function templateChangeNote(movement) {
+  const change = movement?.template_changed;
+  if (!change || (!change.added?.length && !change.removed?.length)) return '';
+  const parts = [];
+  if (change.added?.length) parts.push(`added ${change.added.join(', ')}`);
+  if (change.removed?.length) parts.push(`removed ${change.removed.join(', ')}`);
+  return `The checkpoint template changed after this job was generated (${parts.join('; ')}). This job keeps the steps it was generated with.`;
 }
 
 function editMovement(movement) {
@@ -8779,4 +8793,6 @@ function statusLabel(s) {
     transform: rotate(360deg);
   }
 }
+
+.tpl-changed-note { margin: 10px 0 0; padding: 8px 10px; font-size: 11.5px; line-height: 1.45; color: var(--ink2); background: var(--panel); border-left: 3px solid var(--warn); border-radius: 6px; }
 </style>

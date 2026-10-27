@@ -39,6 +39,7 @@ Route::prefix('admin')->name('admin.')->middleware(['auth', 'role:admin'])->grou
     Route::get('checkpoint-templates/by-event/{event}', [CheckpointTemplateController::class, 'byEvent'])->name('checkpoint-templates.by-event');
     Route::post('checkpoint-templates/copy-from-event', [CheckpointTemplateController::class, 'copyFromEvent'])->name('checkpoint-templates.copy-from-event');
     Route::post('checkpoint-templates/{checkpointTemplate}/duplicate', [CheckpointTemplateController::class, 'duplicate'])->name('checkpoint-templates.duplicate');
+    Route::get('checkpoint-templates/{checkpointTemplate}/impact', [CheckpointTemplateController::class, 'impact'])->name('checkpoint-templates.impact');
     Route::resource('checkpoint-templates', CheckpointTemplateController::class);
     Route::post('checkpoint-templates/{template}/checkpoints', [CheckpointTemplateController::class, 'attachCheckpoint'])->name('checkpoint-templates.attach-checkpoint');
     Route::delete('checkpoint-templates/{template}/checkpoints/{checkpoint}', [CheckpointTemplateController::class, 'detachCheckpoint'])->name('checkpoint-templates.detach-checkpoint');
@@ -47,6 +48,7 @@ Route::prefix('admin')->name('admin.')->middleware(['auth', 'role:admin'])->grou
     Route::get('movement-templates/by-event/{event}', [MovementTemplateController::class, 'byEvent'])->name('movement-templates.by-event');
     Route::post('movement-templates/copy-from-event', [MovementTemplateController::class, 'copyFromEvent'])->name('movement-templates.copy-from-event');
     Route::post('movement-templates/{movementTemplate}/duplicate', [MovementTemplateController::class, 'duplicate'])->name('movement-templates.duplicate');
+    Route::get('movement-templates/{movementTemplate}/impact', [MovementTemplateController::class, 'impact'])->name('movement-templates.impact');
     Route::resource('movement-templates', MovementTemplateController::class);
     Route::post('movement-templates/{template}/legs', [MovementTemplateController::class, 'addLeg'])->name('movement-templates.add-leg');
     Route::put('movement-templates/{template}/legs/{leg}', [MovementTemplateController::class, 'updateLeg'])->name('movement-templates.update-leg');

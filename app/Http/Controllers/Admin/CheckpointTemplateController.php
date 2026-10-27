@@ -228,7 +228,10 @@ class CheckpointTemplateController extends Controller
                     'estimated_minutes' => $checkpoint['estimated_minutes'] ?? null,
                 ];
             }
-            $checkpointTemplate->checkpoints()->sync($syncData);
+            // Steps live in the pivot, so the template's own updated_at must be bumped by hand.
+            if (array_filter($checkpointTemplate->checkpoints()->sync($syncData))) {
+                $checkpointTemplate->touch();
+            }
         }
 
         AuditLog::change(
@@ -347,6 +350,7 @@ class CheckpointTemplateController extends Controller
             'is_required' => $validated['is_required'] ?? true,
             'estimated_minutes' => $validated['estimated_minutes'] ?? null,
         ]);
+        $checkpointTemplate->touch();
 
         $checkpoint = Checkpoint::find($validated['checkpoint_id']);
 
@@ -363,7 +367,16 @@ class CheckpointTemplateController extends Controller
         }
 
         $checkpointTemplate->checkpoints()->detach($checkpoint->id);
+        $checkpointTemplate->touch();
 
         return back()->with('success', "Checkpoint '{$checkpoint->name}' removed from template");
+    }
+
+    /** What saving an edit would touch, for the confirmation shown before it. */
+    public function impact(Request $request, CheckpointTemplate $checkpointTemplate): \Illuminate\Http\JsonResponse
+    {
+        abort_unless($request->user()->canAccessEvent((int) $checkpointTemplate->event_id), 403);
+
+        return response()->json(app(\App\Services\TemplateImpact::class)->forCheckpointTemplate($checkpointTemplate));
     }
 }

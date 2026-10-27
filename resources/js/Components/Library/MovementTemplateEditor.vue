@@ -193,13 +193,16 @@
         <span :class="['mte-status', statusTone]">{{ status }}</span>
         <div class="mte-foot-btns">
           <button type="button" class="mte-btn" @click="emit('close')">Cancel</button>
-          <button type="button" class="mte-btn mte-btn--primary" :disabled="blocking.length > 0 || saving" @click="save">
+          <button type="button" class="mte-btn mte-btn--primary" :disabled="blocking.length > 0 || saving" @click="save()">
             {{ saving ? 'Saving…' : (isNew ? 'Create template' : 'Save changes') }}
           </button>
         </div>
       </div>
     </template>
   </Modal>
+
+  <ConfirmModal :show="!!impactConfirm" :title="impactConfirm?.title" :message="impactConfirm?.message ?? ''" :note="impactConfirm?.note"
+    confirm-label="Save changes" :processing="saving" @close="impactConfirm = null" @confirm="save(true)" />
 </template>
 
 <script setup>
@@ -207,6 +210,8 @@ import { computed, reactive, ref, watch } from 'vue';
 import { router } from '@inertiajs/vue3';
 import Modal from '../Modal.vue';
 import { legMinutes } from '../../Composables/planFormat';
+import { useTemplateImpact } from '../../Composables/useTemplateImpact';
+import ConfirmModal from '../ConfirmModal.vue';
 
 // New / edit movement template: details on the left, the route (legs) on the right.
 const props = defineProps({
@@ -416,9 +421,21 @@ const status = computed(() => {
 const statusTone = computed(() => (serverError.value ? 'mte-status--bad' : (blocking.value.length || warnings.value.length ? 'mte-status--warn' : '')));
 watch(() => [form.name, form.code], () => { errors.value = {}; });
 
+// Legs as saved, to tell a route edit (asks first when the template is in use) from a details edit.
+const legsKey = () => JSON.stringify(form.legs.map((l) => [l.checkpoint_template_id, l.leg_type, l.from.trim(), l.to.trim(), Number(l.mins) || null]));
+const savedLegs = legsKey();
+const { confirm: impactConfirm, check: checkImpact } = useTemplateImpact('movement');
+
 const saving = ref(false);
-function save() {
+async function save(confirmed = false) {
   if (blocking.value.length) return;
+  if (!isNew.value && !confirmed && legsKey() !== savedLegs) {
+    saving.value = true;
+    const go = await checkImpact(props.template.id);
+    saving.value = false;
+    if (!go) return;
+  }
+  impactConfirm.value = null;
   saving.value = true;
   errors.value = {};
   const payload = {

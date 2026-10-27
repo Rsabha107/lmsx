@@ -483,4 +483,12 @@ class MovementTemplateController extends Controller
 
         return back()->with('success', 'Leg removed from movement template');
     }
+
+    /** What saving an edit would touch, for the confirmation shown before it. */
+    public function impact(Request $request, MovementTemplate $movementTemplate): \Illuminate\Http\JsonResponse
+    {
+        abort_unless($request->user()->canAccessEvent((int) $movementTemplate->event_id), 403);
+
+        return response()->json(app(\App\Services\TemplateImpact::class)->forMovementTemplate($movementTemplate));
+    }
 }

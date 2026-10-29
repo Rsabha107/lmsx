@@ -154,4 +154,27 @@ class DailyEmailTest extends TestCase
         $this->assertSame(1, $summary['glance']['movements']);
         $this->assertSame('14:00–15:00', $summary['glance']['busiestHour']);
     }
+
+    public function test_todays_jobs_are_listed_by_start_with_progress_and_shown_in_the_email(): void
+    {
+        $plan = $this->createPlan($this->event);
+        $team = $this->createTeam($this->event);
+        $supervisor = User::factory()->create(['name' => 'Sam Lead']);
+        $late = $this->createJob($this->event, $this->createMovement($this->event, $plan, $team, ['window_start' => '2026-11-20 15:00']), $team, ['job_id' => 'JOB-LATE']);
+        $early = $this->createJob($this->event, $this->createMovement($this->event, $plan, $team, ['window_start' => '2026-11-20 09:00']), $team, ['job_id' => 'JOB-EARLY', 'supervisor_id' => $supervisor->id, 'status' => 'in-progress']);
+        $this->createCheckpoint($this->event, $early)->forceFill(['order' => 1, 'scheduled_at' => '2026-11-20 08:30', 'state' => 'done'])->save();
+        $this->createCheckpoint($this->event, $early)->forceFill(['order' => 2, 'scheduled_at' => '2026-11-20 10:00', 'state' => 'pending'])->save();
+        // Tomorrow's job is not listed.
+        $this->createJob($this->event, $this->createMovement($this->event, $plan, $team, ['window_start' => '2026-11-21 09:00']), $team, ['job_id' => 'JOB-TOMORROW']);
+
+        $jobs = $this->build()['jobs'];
+
+        $this->assertSame(['JOB-EARLY', 'JOB-LATE'], array_column($jobs, 'id'));
+        $this->assertSame(['08:30', '10:00', 'Sam Lead', 1, 2], [$jobs[0]['start'], $jobs[0]['end'], $jobs[0]['supervisor'], $jobs[0]['done'], $jobs[0]['steps']]);
+        $this->assertSame('Unassigned', $jobs[1]['supervisor']);
+
+        $html = (new DailySummaryMail($this->build()))->render();
+        $this->assertStringContainsString("Today's jobs (2)", str_replace('&#039;', "'", $html));
+        $this->assertStringContainsString('JOB-EARLY', $html);
+    }
 }

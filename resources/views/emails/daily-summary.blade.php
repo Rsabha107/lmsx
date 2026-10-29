@@ -126,6 +126,35 @@
         </table>
     @endif
 
+    {{-- Today's jobs --}}
+    @if (count($summary['jobs'] ?? []))
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+            <tr><td style="{{ $section }}">Today's jobs ({{ count($summary['jobs']) }})</td></tr>
+        </table>
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;margin-top:8px;">
+            <tr>
+                @foreach (['Time' => 90, 'Job' => 110, 'Team' => 60, 'Supervisor' => 0, 'Steps' => 60, 'Status' => 100] as $head => $w)
+                    <th align="left" bgcolor="#f8f9fb" @if ($w) width="{{ $w }}" @endif
+                        style="background-color:#f8f9fb;padding:6px 8px;{{ $font }}font-size:11px;font-weight:bold;color:#5b6472;border-bottom:1px solid #e3e6ea;">{{ $head }}</th>
+                @endforeach
+            </tr>
+            @foreach ($summary['jobs'] as $job)
+                @php
+                    $cell = 'padding:7px 8px;'.$font.'font-size:12px;color:#1f2430;border-bottom:1px solid #e3e6ea;';
+                    $tone = ['in-progress' => 'color:#1d4ed8;font-weight:bold;', 'completed' => 'color:#15803d;font-weight:bold;', 'cancelled' => 'color:#9ca3af;'][$job['status']] ?? '';
+                @endphp
+                <tr>
+                    <td style="{{ $cell }}white-space:nowrap;">{{ $job['start'] }}&ndash;{{ $job['end'] }}</td>
+                    <td style="{{ $cell }}white-space:nowrap;">{{ $job['id'] }}</td>
+                    <td style="{{ $cell }}">{{ $job['code'] }}</td>
+                    <td style="{{ $cell }}{{ $job['supervisor'] === 'Unassigned' ? 'color:#9ca3af;' : '' }}">{{ $job['supervisor'] }}</td>
+                    <td style="{{ $cell }}white-space:nowrap;">{{ $job['done'] }}/{{ $job['steps'] }}</td>
+                    <td style="{{ $cell }}{{ $tone }}">{{ $job['status_label'] }}</td>
+                </tr>
+            @endforeach
+        </table>
+    @endif
+
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
         <tr><td style="padding:24px 0 0 0;font-size:1px;line-height:1px;">&nbsp;</td></tr>
         <tr><td align="center" style="padding:14px 0 0 0;border-top:1px solid #e3e6ea;{{ $font }}font-size:11px;color:#8b93a1;">

@@ -12,7 +12,7 @@ use Illuminate\Support\Collection;
 
 /**
  * The Daily Email for one event and day D: what needs attention today and tomorrow, how yesterday
- * went, today at a glance, and D's movements. Sent by hand from the Daily Email page to the
+ * went, today at a glance, and D's movements and jobs. Sent by hand from the Daily Email page to the
  * event's chosen audience (Setups → Settings → Notifications).
  */
 class DailySummaryService
@@ -44,6 +44,7 @@ class DailySummaryService
             // Not 'today': that name is the shared top-bar date (HandleInertiaRequests).
             'glance' => $this->today($eventId, $day),
             'schedule' => $this->schedule($eventId, $day),
+            'jobs' => $this->jobs($eventId, $day),
             'recipients' => $this->recipients($eventId),
         ];
     }
@@ -207,6 +208,44 @@ class DailySummaryService
                     'delay' => $delay > 0 ? $delay : null,
                 ];
             })
+            ->all();
+    }
+
+    /** D's jobs (movements starting on D, as for Yesterday), by first checkpoint time. */
+    private function jobs(?int $eventId, Carbon $day): array
+    {
+        return JobOperation::with([
+            'movement:id,team_id,window_start,window_end',
+            'movement.team:id,code,team_name',
+            'movement.extraSupervisors:users.id',
+            'supervisor:id,name',
+            'checkpoints:id,job_id,state,scheduled_at,order',
+        ])
+            ->when($eventId !== null, fn ($q) => $q->where('event_id', $eventId))
+            ->whereHas('movement', fn ($q) => $q->where('window_start', '>=', $day)->where('window_start', '<', $day->copy()->addDay()))
+            ->get()
+            ->map(function (JobOperation $job) {
+                $steps = $job->checkpoints->sortBy('order');
+                $start = $steps->first()?->scheduled_at ?? $job->movement?->window_start;
+                $end = $steps->last()?->scheduled_at ?? $job->movement?->window_end;
+                $extras = $job->movement?->extraSupervisors->count() ?? 0;
+
+                return [
+                    'id' => $job->job_id ?? 'J-'.$job->id,
+                    'sort' => $start?->format('Y-m-d H:i') ?? '',
+                    'start' => $start?->format('H:i') ?? '--:--',
+                    'end' => $end?->format('H:i') ?? '--:--',
+                    'code' => $job->movement?->team?->code ?? '—',
+                    'supervisor' => $job->supervisor?->name ? $job->supervisor->name.($extras ? " +{$extras}" : '') : 'Unassigned',
+                    'done' => $steps->where('state', 'done')->count(),
+                    'steps' => $steps->count(),
+                    'status' => $job->status,
+                    'status_label' => JobOperation::statusLabel($job->status),
+                ];
+            })
+            ->sortBy('sort')
+            ->map(fn ($row) => \Illuminate\Support\Arr::except($row, 'sort'))
+            ->values()
             ->all();
     }
 

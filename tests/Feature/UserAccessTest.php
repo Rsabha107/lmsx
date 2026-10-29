@@ -226,6 +226,19 @@ class UserAccessTest extends TestCase
         $this->get('/password/change')->assertRedirect(route('dashboard'));
     }
 
+    public function test_an_agency_user_can_replace_a_temporary_password(): void
+    {
+        $agency = $this->user('agency');
+        $agency->forceFill(['password' => Hash::make('temporary-1'), 'must_change_password' => true])->save();
+
+        $this->actingAs($agency)->withHeader('X-Inertia', 'true')
+            ->post('/password/change', ['password' => 'my-own-pass-1', 'password_confirmation' => 'my-own-pass-1'])
+            ->assertRedirect(route('dashboard'));
+
+        $this->assertFalse($agency->refresh()->must_change_password);
+        $this->assertTrue(Hash::check('my-own-pass-1', $agency->password));
+    }
+
     public function test_the_edit_dialog_switches_a_user_off_like_the_status_action(): void
     {
         $user = $this->user();

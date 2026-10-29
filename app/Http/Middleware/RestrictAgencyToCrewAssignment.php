@@ -31,6 +31,8 @@ class RestrictAgencyToCrewAssignment
         'fleet.bulk-delete',
         'fleet.pool',
         'logout',
+        // Replacing a temporary password (EnsurePasswordChanged) is their own account, not console data.
+        'password.change.update',
         'session.active-event',
         'session.active-plan',
     ];

@@ -4,12 +4,14 @@ namespace App\Services;
 
 use App\Mail\DeletionRequestMail;
 use App\Models\AuditLog;
+use App\Models\CheckpointTemplate;
 use App\Models\Deletion;
 use App\Models\Event;
 use App\Models\JobCheckpoint;
 use App\Models\JobOperation;
 use App\Models\Movement;
 use App\Models\MovementTemplate;
+use App\Models\MovementTemplateLeg;
 use App\Models\Plan;
 use App\Models\Scopes\ProviderScope;
 use App\Models\User;
@@ -22,7 +24,7 @@ use Illuminate\Support\Facades\Storage;
 use App\Exceptions\DeletionRefused;
 
 /**
- * Every delete of jobs, plans, movements, movement templates or an event goes through here.
+ * Every delete of jobs, plans, movements, movement or checkpoint templates, or an event goes through here.
  * Nothing is removed outright: rows are soft-deleted into one recycle-bin batch (a Deletion),
  * which can be restored for 30 days and is then purged. Large or risky deletes, and anything
  * past a user's hourly limit, wait for a second admin's approval.
@@ -33,26 +35,29 @@ class DeletionService
     public const APPROVAL_OVER = ['jobs' => 10, 'plans' => 3];
 
     /** Per user, within BRAKE_MINUTES: past this, every further delete of the kind needs approval. */
-    public const BRAKE = ['jobs' => 25, 'plans' => 5, 'movement_templates' => 3];
+    public const BRAKE = ['jobs' => 25, 'plans' => 5, 'movement_templates' => 3, 'checkpoint_templates' => 3];
     public const BRAKE_MINUTES = 60;
 
     public const KEEP_DAYS = 30;
     public const REQUEST_HOURS = 24;
 
     /** Restore order: parents before children. Purge runs it backwards. */
-    private const TABLE_ORDER = ['events', 'movement_templates', 'plans', 'movements', 'jobs'];
+    private const TABLE_ORDER = ['events', 'checkpoint_templates', 'movement_templates', 'plans', 'movements', 'jobs'];
 
     /**
      * Ask to delete $items (already authorised and confirmed by the caller). Runs at once, or
      * waits for approval; the returned Deletion's status says which ('done' or 'pending').
      *
-     * @param  'jobs'|'plans'|'movements'|'movement_templates'|'event'  $kind
+     * @param  'jobs'|'plans'|'movements'|'movement_templates'|'checkpoint_templates'|'event'  $kind
      */
     public function request(string $kind, Collection $items, User $user, ?int $eventId, ?string $reason = null): Deletion
     {
         $items = $items->values();
         if ($kind === 'movement_templates') {
             $this->assertTemplatesUnused($items->map(fn (Model $m) => $m->getKey())->all());
+        }
+        if ($kind === 'checkpoint_templates') {
+            $this->assertCheckpointTemplatesUnused($items->map(fn (Model $m) => $m->getKey())->all());
         }
         $trigger = $this->approvalTrigger($kind, $items, $user);
 
@@ -258,6 +263,7 @@ class DeletionService
 
         $rows = [
             'events' => $query(Event::class)->get(),
+            'checkpoint_templates' => $query(CheckpointTemplate::class)->get(),
             'movement_templates' => $query(MovementTemplate::class)->get(),
             'plans' => $query(Plan::class)->get(),
             'movements' => $query(Movement::class)->get(),
@@ -362,6 +368,52 @@ class DeletionService
             ." used in {$count} plan(s).".($empty ? " {$empty} of them have no movements." : ''));
     }
 
+    /**
+     * A checkpoint template still used by a movement template or movement that isn't deleted can't
+     * be deleted. Ones in the recycle bin don't count: restoring them brings it back.
+     *
+     * @param  array<int, int>  $templateIds
+     */
+    private function assertCheckpointTemplatesUnused(array $templateIds): void
+    {
+        $templates = MovementTemplate::whereHas('legs', fn ($q) => $q->whereIn('checkpoint_template_id', $templateIds))
+            ->orderBy('code')->get(['id', 'code', 'name']);
+        $movements = Movement::withoutGlobalScope(ProviderScope::class)->whereIn('checkpoint_template_id', $templateIds)->count();
+        if ($templates->isEmpty() && ! $movements) {
+            return;
+        }
+
+        $uses = array_filter([
+            $templates->isNotEmpty() ? 'movement template'.($templates->count() === 1 ? ' ' : 's ')
+                .$templates->take(3)->map(fn ($t) => "{$t->code} · {$t->name}")->implode(', ')
+                .($templates->count() > 3 ? ' and '.($templates->count() - 3).' more' : '') : null,
+            $movements ? "{$movements} movement(s)" : null,
+        ]);
+
+        throw new DeletionRefused((count($templateIds) === 1 ? 'Cannot delete template. It is' : 'Cannot delete these templates. They are')
+            .' used by '.implode(' and ', $uses).'. Remove it from '.($templates->isNotEmpty() ? 'those templates' : 'them').' first.');
+    }
+
+    /**
+     * Bring back the deleted checkpoint templates a restored row points at (from whichever batch).
+     *
+     * @return string|null  why one can't come back
+     */
+    private function reviveCheckpointTemplates(array $ids): ?string
+    {
+        foreach (CheckpointTemplate::onlyTrashed()->whereKey(array_filter($ids))->get() as $template) {
+            $batch = $template->deletion_id ? Deletion::find($template->deletion_id) : null;
+            if ($why = $this->restoreRow('checkpoint_templates', $template)) {
+                return $why;
+            }
+            if ($batch && in_array($batch->status, Deletion::IN_BIN, true)) {
+                $batch->update(['status' => $this->binCount($batch) ? 'partially_restored' : 'restored', 'restored_at' => now()]);
+            }
+        }
+
+        return null;
+    }
+
     private function assertDecidable(Deletion $deletion, User $user): void
     {
         if (! $deletion->isPending()) {
@@ -376,7 +428,7 @@ class DeletionService
     private function execute(Deletion $deletion, User $actor): Deletion
     {
         $ids = $deletion->request['ids'] ?? [];
-        $items = ['jobs' => [], 'movements' => [], 'plans' => [], 'movement_templates' => [], 'events' => []];
+        $items = ['jobs' => [], 'movements' => [], 'plans' => [], 'movement_templates' => [], 'checkpoint_templates' => [], 'events' => []];
         $skipped = 0;
 
         DB::transaction(function () use ($deletion, $ids, &$items, &$skipped) {
@@ -427,6 +479,13 @@ class DeletionService
                     $this->assertTemplatesUnused($ids);
                     foreach ($live(MovementTemplate::class) as $template) {
                         $items['movement_templates'][] = $this->binIt($template, $deletion);
+                    }
+                    break;
+
+                case 'checkpoint_templates':
+                    $this->assertCheckpointTemplatesUnused($ids);
+                    foreach ($live(CheckpointTemplate::class) as $template) {
+                        $items['checkpoint_templates'][] = $this->binIt($template, $deletion);
                     }
                     break;
 
@@ -503,6 +562,22 @@ class DeletionService
                 if ($taken) {
                     return "Template {$row->code}: its code or name is now used by another template.";
                 }
+                // Its legs' checkpoint templates come back with it.
+                if ($why = $this->reviveCheckpointTemplates(MovementTemplateLeg::where('movement_template_id', $row->id)->pluck('checkpoint_template_id')->all())) {
+                    return "Template {$row->code}: {$why}";
+                }
+                break;
+
+            case 'checkpoint_templates':
+                if ($row->event_id && ! Event::whereKey($row->event_id)->exists()) {
+                    return "Checkpoint template {$row->code}: its event is deleted.";
+                }
+                $taken = CheckpointTemplate::where('id', '!=', $row->id)
+                    ->where(fn ($q) => $q->where('code', $row->code)->orWhere(fn ($n) => $n->where('event_id', $row->event_id)->where('name', $row->name)))
+                    ->exists();
+                if ($taken) {
+                    return "Checkpoint template {$row->code}: its code or name is now used by another template.";
+                }
                 break;
 
             case 'plans':
@@ -514,6 +589,9 @@ class DeletionService
             case 'movements':
                 if (! Plan::whereKey($row->plan_id)->exists()) {
                     return "Movement {$row->code}: its plan is still deleted.";
+                }
+                if ($why = $this->reviveCheckpointTemplates([$row->checkpoint_template_id])) {
+                    return "Movement {$row->code}: {$why}";
                 }
                 break;
 
@@ -553,6 +631,14 @@ class DeletionService
             case 'plans':
                 $inUse = Movement::withTrashed()->withoutGlobalScope(ProviderScope::class)->where('plan_id', $row->id)->exists()
                     || JobOperation::withTrashed()->withoutGlobalScope(ProviderScope::class)->where('plan_id', $row->id)->exists();
+                if ($inUse) {
+                    return 0;
+                }
+                break;
+            case 'checkpoint_templates':
+                // Kept while a movement template or movement (live or in the bin) still points at it.
+                $inUse = MovementTemplateLeg::where('checkpoint_template_id', $row->id)->exists()
+                    || Movement::withTrashed()->withoutGlobalScope(ProviderScope::class)->where('checkpoint_template_id', $row->id)->exists();
                 if ($inUse) {
                     return 0;
                 }
@@ -620,7 +706,7 @@ class DeletionService
             'jobs' => fn ($job) => $job->job_id.($job->team ? ' · '.$job->team->team_name : ''),
             'plans' => fn ($plan) => trim("{$plan->code} · {$plan->name}"),
             'movements' => fn ($movement) => $movement->code,
-            'movement_templates' => fn ($template) => "{$template->code} · {$template->name}",
+            'movement_templates', 'checkpoint_templates' => fn ($template) => "{$template->code} · {$template->name}",
             'event' => fn ($event) => $event->name,
         };
 

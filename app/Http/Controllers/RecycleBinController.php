@@ -152,7 +152,7 @@ class RecycleBinController extends Controller
                 'jobs' => $row->job_id.($row->team ? ' · '.$row->team->team_name : '').' · '.$row->status,
                 'plans' => "{$row->code} · {$row->name}".(($n = $movementsByPlan[$row->id] ?? 0) ? " · {$n} movement(s)" : ''),
                 'movements' => trim("{$row->code} · {$row->from_location} → {$row->to_location}"),
-                'movement_templates' => "{$row->code} · {$row->name}",
+                'movement_templates', 'checkpoint_templates' => "{$row->code} · {$row->name}",
                 'events' => $row->name,
                 default => (string) $row->id,
             },

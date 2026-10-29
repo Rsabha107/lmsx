@@ -177,7 +177,7 @@ const tabs = computed(() => [
 const tab = ref(new URLSearchParams(window.location.search).get('tab') || (props.pending.length ? 'pending' : 'deleted'));
 
 const itemCount = (d) => Number((d.label.match(/^\d+/) || [0])[0]);
-const NAMES = { jobs: 'job', movements: 'movement', plans: 'plan', movement_templates: 'template', events: 'event' };
+const NAMES = { jobs: 'job', movements: 'movement', plans: 'plan', movement_templates: 'template', checkpoint_templates: 'checkpoint template', events: 'event' };
 function alsoText(d) {
   const primary = d.kind === 'event' ? 'events' : d.kind;
   return Object.entries(d.counts || {})

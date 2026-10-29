@@ -105,7 +105,7 @@ class MovementTemplateController extends Controller
             'estimated_duration_minutes' => 'nullable|integer|min:1',
             'is_active' => 'boolean',
             'legs' => 'nullable|array',
-            'legs.*.checkpoint_template_id' => 'required|exists:checkpoint_templates,id',
+            'legs.*.checkpoint_template_id' => ['required', Rule::exists('checkpoint_templates', 'id')->whereNull('deleted_at')],
             'legs.*.order' => 'required|integer|min:1',
             'legs.*.leg_type' => 'required|in:arrival,departure,transfer,training,match,daily_ops',
             'legs.*.from_location' => 'nullable|string|max:255',
@@ -250,7 +250,7 @@ class MovementTemplateController extends Controller
             'estimated_duration_minutes' => 'nullable|integer|min:1',
             'is_active' => 'boolean',
             'legs' => 'nullable|array',
-            'legs.*.checkpoint_template_id' => 'required|exists:checkpoint_templates,id',
+            'legs.*.checkpoint_template_id' => ['required', Rule::exists('checkpoint_templates', 'id')->whereNull('deleted_at')],
             'legs.*.order' => 'required|integer|min:1',
             'legs.*.leg_type' => 'required|in:arrival,departure,transfer,training,match,daily_ops',
             'legs.*.from_location' => 'nullable|string|max:255',
@@ -407,7 +407,7 @@ class MovementTemplateController extends Controller
     public function addLeg(Request $request, MovementTemplate $movementTemplate)
     {
         $validated = $request->validate([
-            'checkpoint_template_id' => 'required|exists:checkpoint_templates,id',
+            'checkpoint_template_id' => ['required', Rule::exists('checkpoint_templates', 'id')->whereNull('deleted_at')],
             'order' => 'required|integer|min:1',
             'from_location' => 'nullable|string|max:255',
             'to_location' => 'nullable|string|max:255',
@@ -444,7 +444,7 @@ class MovementTemplateController extends Controller
         }
 
         $validated = $request->validate([
-            'checkpoint_template_id' => 'required|exists:checkpoint_templates,id',
+            'checkpoint_template_id' => ['required', Rule::exists('checkpoint_templates', 'id')->whereNull('deleted_at')],
             'order' => 'required|integer|min:1',
             'from_location' => 'nullable|string|max:255',
             'to_location' => 'nullable|string|max:255',

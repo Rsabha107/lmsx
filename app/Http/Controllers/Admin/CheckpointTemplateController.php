@@ -7,6 +7,8 @@ use App\Models\AuditLog;
 use App\Models\Checkpoint;
 use App\Models\CheckpointTemplate;
 use App\Models\Event;
+use App\Exceptions\DeletionRefused;
+use App\Services\DeletionService;
 use App\Services\TemplateCopyService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -18,7 +20,10 @@ use Inertia\Inertia;
  */
 class CheckpointTemplateController extends Controller
 {
-    private const NAME_TAKEN = ['name.unique' => 'A checkpoint template with this name already exists in this event.'];
+    private const NAME_TAKEN = [
+        'name.unique' => 'A checkpoint template with this name already exists in this event (or is in the recycle bin).',
+        'code.unique' => 'This code is already used by a checkpoint template (or one in the recycle bin).',
+    ];
 
     /**
      * Display a listing of checkpoint templates.
@@ -267,7 +272,7 @@ class CheckpointTemplateController extends Controller
         $validated = $request->validate([
             'source_event_id' => 'required|exists:events,id',
             'template_ids' => 'required|array|min:1',
-            'template_ids.*' => 'exists:checkpoint_templates,id',
+            'template_ids.*' => Rule::exists('checkpoint_templates', 'id')->whereNull('deleted_at'),
         ]);
 
         $targetEventId = $request->session()->get('active_event_id');
@@ -307,25 +312,15 @@ class CheckpointTemplateController extends Controller
     /**
      * Remove the specified checkpoint template from storage.
      */
-    public function destroy(CheckpointTemplate $checkpointTemplate)
+    public function destroy(Request $request, CheckpointTemplate $checkpointTemplate, DeletionService $deletions)
     {
-        // Check if template is being used
-        $movementsCount = $checkpointTemplate->movements()->count();
-        $legsCount = $checkpointTemplate->movementTemplateLegs()->count();
-        
-        if ($movementsCount > 0 || $legsCount > 0) {
-            return back()->with('error', "Cannot delete template. It is used in {$movementsCount} movement(s) and {$legsCount} template leg(s).");
+        try {
+            $deletion = $deletions->request('checkpoint_templates', collect([$checkpointTemplate]), $request->user(), $checkpointTemplate->event_id, $request->input('reason'));
+        } catch (DeletionRefused $e) {
+            return back()->with('error', $e->getMessage());
         }
 
-        $name = $checkpointTemplate->name;
-        $code = $checkpointTemplate->code;
-        $eventId = $checkpointTemplate->event_id;
-        $checkpointTemplate->delete();
-
-        AuditLog::change('Checkpoint template deleted', $code, ['name' => $name], null, $eventId);
-
-        return redirect()->route('library')
-            ->with('success', "Checkpoint template '{$name}' deleted successfully");
+        return redirect()->route('library')->with('success', $deletions->message($deletion));
     }
 
     /**

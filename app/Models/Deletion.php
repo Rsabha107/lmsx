@@ -18,6 +18,7 @@ class Deletion extends Model
         'plans' => ['plan', 'plans'],
         'movements' => ['movement', 'movements'],
         'movement_templates' => ['movement template', 'movement templates'],
+        'checkpoint_templates' => ['checkpoint template', 'checkpoint templates'],
         'event' => ['event', 'events'],
     ];
 

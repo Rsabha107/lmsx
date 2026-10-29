@@ -1172,7 +1172,7 @@ class PlanManagementController extends Controller
             'checkpoint_template_id' => [
                 'required',
                 Rule::exists('checkpoint_templates', 'id')
-                    ->where(fn ($q) => $q->where('event_id', $plan->event_id)),
+                    ->where(fn ($q) => $q->where('event_id', $plan->event_id)->whereNull('deleted_at')),
             ],
             'kind' => 'required|in:arrival,departure,transfer,training,match',
             'functional_area' => 'nullable|in:LOG,AND,MOB',
@@ -1212,7 +1212,7 @@ class PlanManagementController extends Controller
         $this->ensureInActiveEvent($request, $movement->event_id);
 
         $validated = $request->validate([
-            'checkpoint_template_id' => ['required', Rule::exists('checkpoint_templates', 'id')->where('event_id', $movement->event_id)],
+            'checkpoint_template_id' => ['required', Rule::exists('checkpoint_templates', 'id')->where('event_id', $movement->event_id)->whereNull('deleted_at')],
         ]);
 
         if ($movement->hasJob()) {

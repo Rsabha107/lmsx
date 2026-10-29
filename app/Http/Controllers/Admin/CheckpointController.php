@@ -248,7 +248,7 @@ class CheckpointController extends Controller
     {
         $validated = $request->validate([
             'template_id' => ['required', 'integer', Rule::exists('checkpoint_templates', 'id')
-                ->where('event_id', $request->session()->get('active_event_id'))],
+                ->where('event_id', $request->session()->get('active_event_id'))->whereNull('deleted_at')],
             'ids' => 'required|array|min:1',
             'ids.*' => 'integer|exists:checkpoints,id',
         ], ['template_id.exists' => 'Pick a checkpoint template of the active event.']);

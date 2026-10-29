@@ -137,6 +137,9 @@
         <p v-if="deleteTarget.type === 'movement-template'" style="font-size: 13px; color: var(--ink2);">
           It moves to Setups → Recycle bin and can be restored for 30 days. It can't be deleted while a plan uses it; if only plans in the recycle bin use it, another admin has to approve first.
         </p>
+        <p v-else-if="deleteTarget.type === 'checkpoint-template'" style="font-size: 13px; color: var(--ink2);">
+          It moves to Setups → Recycle bin and can be restored for 30 days. It can't be deleted while a movement template or movement uses it; ones already in the recycle bin don't count, and restoring them brings it back.
+        </p>
         <p v-else style="font-size: 13px; color: var(--ink2);">
           This action cannot be undone.
         </p>

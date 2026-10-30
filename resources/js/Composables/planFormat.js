@@ -3,6 +3,15 @@
 // Mirrors Movement::formatCode() on the server.
 export const formatMovementCode = (n) => `TRP-${String(n).padStart(5, "0")}`;
 
+// Mirrors Movement::jobBlocker(): arrival / departure jobs are timed from the flight, so one without a flight
+// (removed in Event Teams) or without a window can't generate a job. Returns the reason, or null.
+export function jobBlocker(mv) {
+  if (["arrival", "departure"].includes(mv?.kind) && (!mv.flight_id || !mv.window_start)) {
+    return `No ${mv.kind} flight: add the team's ${mv.kind} in Event Teams first`;
+  }
+  return null;
+}
+
 // Mirrors MovementTemplate::legMinutes(): a movement window's length in minutes.
 export function legMinutes(template, leg) {
   const total = Number(template?.estimated_duration_minutes) || 0;

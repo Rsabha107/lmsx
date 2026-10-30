@@ -18,7 +18,8 @@
             <span class="notif-title">{{ n.title }}</span>
             <span class="notif-time">{{ n.t }}</span>
           </div>
-          <div class="notif-body">{{ n.body }}</div>
+          <FlightJobAlert v-if="n.detail" :detail="n.detail" />
+          <div v-else class="notif-body">{{ n.body }}</div>
         </div>
       </div>
       <p v-if="!notifications.length" class="notif-empty">No alerts right now.</p>
@@ -29,6 +30,7 @@
 <script setup>
 import AppLayout from '../Components/AppLayout.vue';
 import RefreshButton from '../Components/RefreshButton.vue';
+import FlightJobAlert from '../Components/FlightJobAlert.vue';
 
 defineProps({
   notifications: { type: Array, default: () => [] },

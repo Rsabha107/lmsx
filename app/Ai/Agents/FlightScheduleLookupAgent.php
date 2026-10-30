@@ -2,6 +2,7 @@
 
 namespace App\Ai\Agents;
 
+use App\Support\AiProvider;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Laravel\Ai\Contracts\Agent;
 use Laravel\Ai\Contracts\HasStructuredOutput;
@@ -82,12 +83,13 @@ class FlightScheduleLookupAgent implements Agent, HasTools, HasStructuredOutput
 
     public function provider(): string
     {
+        // Web search is an Anthropic tool here (the Azure driver has none), whatever Settings picks.
         return 'anthropic';
     }
 
     public function model(): ?string
     {
-        return config('services.anthropic.model') ?: null;
+        return AiProvider::model('anthropic');
     }
 
     public function timeout(): int

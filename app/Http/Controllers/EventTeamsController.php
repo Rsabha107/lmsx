@@ -36,23 +36,11 @@ class EventTeamsController extends Controller
         $activeEvent = Event::with('country')->find($activeEventId);
 
         $eventTeams = Team::where('event_id', $activeEventId)
-            ->with([
-                'country',
-                'classification',
-                'flights' => function ($query) use ($activeEventId) {
-                    $query->where('event_id', $activeEventId)
-                          ->with(['originAirport', 'destinationAirport'])
-                          ->orderBy('scheduled_at');
-                },
-                'stay' => function ($query) use ($activeEventId) {
-                    $query->where('event_id', $activeEventId);
-                },
-                'training' => function ($query) use ($activeEventId) {
-                    $query->where('event_id', $activeEventId);
-                }
-            ])
+            ->withProfile($activeEventId)
             ->orderBy('code')
             ->get();
+
+        $settings = app(\App\Services\SettingsService::class);
 
         return Inertia::render('EventTeams', [
             'activeEvent' => $activeEvent,
@@ -61,6 +49,14 @@ class EventTeamsController extends Controller
             'countries' => Country::active()->orderBy('country_name')->get(),
             'classifications' => TeamClassification::active()->orderBy('name')->get(),
             'baseCampHotels' => BaseCampHotel::active()->orderBy('name')->get(['id', 'name']),
+            // The refresh line under each flight is judged with the data-check limits (Settings → Conflict rules).
+            'flightLimits' => [
+                'near_minutes' => $settings->getThreshold('flight_stale_near_minutes'),
+                'far_hours' => $settings->getThreshold('flight_stale_far_hours'),
+                'unconfirmed_minutes' => $settings->getThreshold('flight_unconfirmed_minutes'),
+            ],
+            // Venue wall clock, so "updated 12 min ago" doesn't depend on the browser's clock.
+            'serverNow' => now()->format('Y-m-d H:i:s'),
         ]);
     }
 

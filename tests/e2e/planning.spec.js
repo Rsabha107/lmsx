@@ -58,6 +58,31 @@ test('the same arrival again is blocked as a duplicate', async ({ page }) => {
   await expect(dialog.getByRole('button', { name: 'Create plan' })).toBeDisabled();
 });
 
+test('edit movement opens the team in the Event Teams dialog and stays open after saving', async ({ page }) => {
+  await gotoPlansList(page);
+  await page.getByText('E2E single plan').first().click();
+  // Before generating, the movements toolbar (and the checklist) offer to refresh the movements' flights.
+  await expect(page.getByRole('button', { name: /^Refresh flights \(1\)/ }).first()).toBeVisible();
+  await page.getByTitle('Edit').first().click();
+  const movement = page.locator('.modal').filter({ hasText: 'Update movement' });
+  await expect(movement).toBeVisible();
+
+  await movement.getByRole('button', { name: 'Edit team' }).click();
+  const team = page.getByRole('dialog', { name: /^Edit team / });
+  await expect(team.getByLabel('Team code')).toHaveValue('QAT-17');
+  // Planning has no flight form or team delete.
+  await expect(team.getByRole('button', { name: 'Delete team' })).toHaveCount(0);
+  await expect(team.getByRole('button', { name: 'More flight details' })).toHaveCount(0);
+
+  await team.getByLabel('Training ground').fill('E2E planning pitch');
+  await team.getByLabel('Training date and time').fill('2030-01-06T10:00');
+  await team.getByRole('button', { name: 'Save changes' }).click();
+  await expect(team).toHaveCount(0);
+  await expect(page.getByText(/^Team updated\./)).toBeVisible();
+  await expect(movement).toBeVisible();
+  await movement.getByRole('button', { name: 'Cancel' }).click();
+});
+
 test('the plan checklist shows where the plan stands and links each step', async ({ page }) => {
   await gotoPlansList(page);
   await expect(page.locator('.pl-prog-next').first()).toContainText('Next:');
@@ -325,6 +350,11 @@ test('the plan picker opens every plan\'s movements, then the plan list again', 
   // Rows from several plans, each tagged with its plan code.
   const planCodes = async () => new Set(await page.getByText(/^PLN-\d{4}-\d{4}-\d+$/).allInnerTexts()).size;
   await expect.poll(planCodes).toBeGreaterThan(1);
+
+  // Adding a movement needs a plan: off here, with a "Coming soon" tooltip.
+  const add = page.getByRole('button', { name: 'Add movement' });
+  await expect(add).toBeDisabled();
+  await expect(page.locator('[title="Coming soon"]').filter({ has: add })).toHaveCount(1);
 
   await page.getByText('All Movements (Event-wide)').click();
   await page.getByRole('button', { name: /^All plans/ }).click();

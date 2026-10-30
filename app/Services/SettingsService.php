@@ -60,6 +60,32 @@ class SettingsService
             'label' => 'Window drift tolerance', 'unit' => 'minutes', 'default' => 60, 'min' => 0, 'max' => 600,
             'description' => 'How far a movement window may drift from its configured offset before it is reported.',
         ],
+        // Data checks (Daleel's data-quality watchdog and shift briefing).
+        'flight_stale_near_minutes' => [
+            'label' => 'Flight data stale (within 3 h)', 'unit' => 'minutes', 'default' => 60, 'min' => 30, 'max' => 360,
+            'description' => 'A flight within 3 hours whose times were not refreshed for this long is flagged (the sync refreshes these every 30 minutes).',
+        ],
+        'flight_stale_far_hours' => [
+            'label' => 'Flight data stale (3–12 h out)', 'unit' => 'hours', 'default' => 6, 'min' => 3, 'max' => 24,
+            'description' => 'A flight 3 to 12 hours away whose times were not refreshed for this long is flagged (the sync refreshes these every 3 hours).',
+        ],
+        'flight_unconfirmed_minutes' => [
+            'label' => 'Flight not confirmed', 'unit' => 'minutes', 'default' => 120, 'min' => 30, 'max' => 720,
+            'description' => 'A flight this long past its scheduled time with no landing or departure recorded is flagged.',
+        ],
+        'no_job_warn_hours' => [
+            'label' => 'No job yet: warn', 'unit' => 'hours', 'default' => 48, 'min' => 1, 'max' => 168,
+            'description' => 'A movement starting within this time that has no job yet is flagged (supervisors can\'t see it in the app).',
+        ],
+        'no_job_urgent_hours' => [
+            'label' => 'No job yet: urgent', 'unit' => 'hours', 'default' => 6, 'min' => 1, 'max' => 48,
+            'description' => 'Within this time a movement with no job is urgent.',
+        ],
+        // Flight changes under generated jobs (FlightJobRetimer).
+        'retime_email_minutes' => [
+            'label' => 'Email on job re-time', 'unit' => 'minutes', 'default' => 60, 'min' => 0, 'max' => 1440,
+            'description' => 'When a flight change moves a job (or a started job that kept its times) by at least this much, planners are emailed. 0 = no email; supervisors still get a push and the alert shows on the Dashboard.',
+        ],
     ];
 
     /**
@@ -255,6 +281,12 @@ class SettingsService
     public function getEventValue(string $key, int $eventId): ?string
     {
         return $this->getSetting($key, Setting::SCOPE_EVENT, $eventId);
+    }
+
+    /** A plain global value, or null when none is stored. */
+    public function getGlobalValue(string $key): ?string
+    {
+        return $this->getSetting($key, Setting::SCOPE_GLOBAL);
     }
 
     /** A conflict-check limit: the saved value, else the built-in default. */

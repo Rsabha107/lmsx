@@ -27,6 +27,7 @@ class NotificationFeedService
             $this->fromIssues($eventId),
             $this->fromDelayedMovements($eventId),
             $this->fromAgencyCrewChanges($eventId),
+            $this->fromFlightJobChanges($eventId),
             $this->fromDeletions($eventId),
         );
 
@@ -152,6 +153,93 @@ class NotificationFeedService
             ->all();
     }
 
+    /** Jobs a flight change re-timed, or that had started and need a look (FlightJobRetimer's audit entries). */
+    private function fromFlightJobChanges(?int $eventId): array
+    {
+        return AuditLog::whereIn('action', [FlightJobRetimer::RETIMED, FlightJobRetimer::REVIEW])
+            ->when($eventId !== null, fn ($q) => $q->where('event_id', $eventId))
+            ->latest()
+            ->limit(self::SCAN_LIMIT)
+            ->get()
+            ->map(function (AuditLog $log) {
+                $meta = json_decode((string) $log->meta, true) ?: [];
+                $retimed = $log->action === FlightJobRetimer::RETIMED;
+                // Older entries stored each clash as plain text.
+                $clashes = array_map(fn ($c) => is_array($c) ? $c + ['type' => null] : ['type' => null, 'text' => (string) $c], $meta['clashes'] ?? []);
+                [$jobRef, $team] = array_pad(explode(' · ', (string) $log->target, 2), 2, null);
+                $flight = $this->flightChange((string) ($meta['flight'] ?? ''));
+                $start = $this->span((string) ($meta['start'] ?? ''));
+
+                $summary = array_filter([
+                    $flight['number'] ? "{$flight['number']} ".($flight['shift'] ?? 'changed') : null,
+                    $retimed ? ($start['to'] ? 'job now starts '.$start['to'] : 'job re-timed') : 'job kept its times',
+                    $clashes ? count($clashes).' '.(count($clashes) === 1 ? 'clash' : 'clashes').' to check' : null,
+                ]);
+
+                return $this->alert(
+                    'flightjob-'.$log->id,
+                    $retimed ? ($clashes ? 'danger' : 'warn') : 'danger',
+                    ($retimed ? 'Job re-timed: ' : 'Started job needs review: ').$log->target,
+                    ucfirst(implode(' · ', $summary)).'.',
+                    $log->created_at,
+                    [
+                        'kind' => $retimed ? 'retimed' : 'review',
+                        'job_ref' => $jobRef,
+                        'team' => $team,
+                        'url' => $jobRef ? '/job/'.$jobRef : null,
+                        'flight' => $flight,
+                        'start' => $start,
+                        'clashes' => $clashes,
+                    ],
+                );
+            })
+            ->all();
+    }
+
+    /** "QR893 Wed 14 Oct 05:40 → Wed 14 Oct 09:40" (FlightJobRetimer's label) as number, times and the shift. */
+    private function flightChange(string $label): array
+    {
+        $when = '(?:\w{3} \d{1,2} \w{3} \d{2}:\d{2}|—)';
+        if (! preg_match("/^(.*?)\\s*({$when}) → ({$when})$/u", $label, $m)) {
+            return ['number' => $label ?: null, 'from' => null, 'to' => null, 'shift' => null];
+        }
+        $span = $this->span("{$m[2]} → {$m[3]}");
+
+        return ['number' => $m[1] ?: null] + $span + ['shift' => $this->shift($span['from'], $span['to'])];
+    }
+
+    /** "Wed 14 Oct 04:40 → Wed 14 Oct 08:40" as from / to ("—" = none). */
+    private function span(string $text): array
+    {
+        [$from, $to] = array_pad(array_map('trim', explode('→', $text, 2)), 2, null);
+
+        return ['from' => $from && $from !== '—' ? $from : null, 'to' => $to && $to !== '—' ? $to : null];
+    }
+
+    /** "4h later", "35 min earlier"; null when either time is missing. */
+    private function shift(?string $from, ?string $to): ?string
+    {
+        // The weekday is dropped: PHP would move the date to match it.
+        $parse = fn (?string $t) => $t ? Carbon::createFromFormat('j M H:i', preg_replace('/^\w{3} /', '', $t)) : null;
+        try {
+            $a = $parse($from);
+            $b = $parse($to);
+        } catch (\Throwable) {
+            return null;
+        }
+        if (! $a || ! $b) {
+            return null;
+        }
+        $minutes = (int) round($a->diffInMinutes($b, false));
+        if ($minutes === 0) {
+            return null;
+        }
+        $m = abs($minutes);
+        $size = $m >= 60 ? intdiv($m, 60).'h'.($m % 60 ? sprintf(' %02dm', $m % 60) : '') : "{$m} min";
+
+        return $size.($minutes < 0 ? ' earlier' : ' later');
+    }
+
     /** Delete requests waiting for a second admin, and mass-delete brake trips; admins only. */
     private function fromDeletions(?int $eventId): array
     {
@@ -174,7 +262,8 @@ class NotificationFeedService
             ->all();
     }
 
-    private function alert(string $id, string $tone, string $title, string $body, ?Carbon $at): array
+    /** @param  array<string, mixed>|null  $detail  structured fields a page may render instead of the body text */
+    private function alert(string $id, string $tone, string $title, string $body, ?Carbon $at, ?array $detail = null): array
     {
         return [
             'id' => $id,
@@ -183,6 +272,6 @@ class NotificationFeedService
             'body' => $body,
             'at' => \App\Support\WallClock::iso($at),
             't' => $at?->diffForHumans() ?? '—',
-        ];
+        ] + ($detail ? ['detail' => $detail] : []);
     }
 }

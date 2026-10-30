@@ -62,7 +62,39 @@ class HandleInertiaRequests extends Middleware
             'pendingDeletions' => fn () => $request->user()?->can('plans.manage')
                 ? \App\Models\Deletion::pending()->where('requested_by', '!=', $request->user()->id)->count()
                 : 0,
+            // The header's flight chip and every "updated N min ago" flight line.
+            'flightStatus' => fn () => $this->flightStatus($request, $activeEventId ? (int) $activeEventId : null),
         ]);
+    }
+
+    /**
+     * When the automatic flight refresh (flights:sync) last ran and how many of the active event's flights within
+     * 3 h of now are older than the refresh limit; plus the limits and server time the flight lines judge with.
+     */
+    private function flightStatus(Request $request, ?int $eventId): array
+    {
+        $settings = app(SettingsService::class);
+        $near = $settings->getThreshold('flight_stale_near_minutes');
+        $status = [
+            'limits' => ['near_minutes' => $near, 'far_hours' => $settings->getThreshold('flight_stale_far_hours')],
+            'now' => now()->format('Y-m-d H:i'),
+            'show' => false,
+        ];
+        if (! $eventId || ! $request->user()?->can('events.view')) {
+            return $status;
+        }
+
+        $soon = \App\Models\TeamFlight::where('event_id', $eventId)
+            ->whereNotNull('flight_number')->where('flight_number', '!=', 'BUS')
+            ->whereBetween('scheduled_at', [now()->subHours(3), now()->addHours(3)])
+            ->whereNull('actual_at')
+            ->where(fn ($q) => $q->whereNull('flight_status')->orWhereNotIn('flight_status', ['landed', 'cancelled']));
+
+        return ['show' => true,
+            'last_run' => \Illuminate\Support\Facades\Cache::get(\App\Console\Commands\SyncFlightData::LAST_RUN_KEY),
+            'near' => (clone $soon)->count(),
+            'stale' => $soon->where(fn ($q) => $q->whereNull('flight_synced_at')->orWhere('flight_synced_at', '<', now()->subMinutes($near)))->count(),
+        ] + $status;
     }
 
     /**
@@ -101,6 +133,7 @@ class HandleInertiaRequests extends Middleware
             'fleet.view',
             'fleet.manage',
             'events.view',
+            'events.manage',
             'analytics.view',
             'audit.view',
             'access.manage',

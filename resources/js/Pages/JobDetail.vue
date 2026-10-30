@@ -27,6 +27,9 @@
             {{ formatJobFromLocation(queueJob) }} → {{ formatJobToLocation(queueJob) }}<template v-if="queueJob.flight?.flight_number && !queueJob.flight.is_bus"> · ✈ {{ queueJob.flight.flight_number }}</template> · {{ queueJob.vehicle }}<template v-if="queueJob.units?.length"> +{{ queueJob.units.length }}</template> · {{ queueJob.pax }} pax
           </span>
         </div>
+        <FlightLine v-if="queueJob?.flight && ['arrival', 'departure'].includes(queueJob.kind)" class="detail-flight" :flight="queueJob.flight"
+          :can-refresh="canRefreshFlights && !job.read_only" :refreshing="flightRefreshingIds.includes(queueJob.flight.id)"
+          @refresh="refreshFlights([queueJob.flight], { single: true })" />
       </div>
       <div v-if="!job.read_only" style="display: flex; gap: 8px;">
         <Button variant="secondary" size="sm" :processing="explaining" @click="explainDelay">
@@ -357,13 +360,14 @@
         </div>
       </transition>
     </teleport>
+    <FlightRefreshResult :result="flightResult" @close="flightResult = null" />
   </app-layout>
 </template>
 
 <script setup>
 import { useStatusLabels } from '../Composables/useStatusLabels';
 import { ref, computed } from 'vue';
-import { Link as InertiaLink, router } from '@inertiajs/vue3';
+import { Link as InertiaLink, router, usePage } from '@inertiajs/vue3';
 import AppLayout from '../Components/AppLayout.vue';
 import StatusPill from '../Components/StatusPill.vue';
 import SvgIcon from '../Components/SvgIcon.vue';
@@ -374,6 +378,13 @@ import ConfirmModal from '../Components/ConfirmModal.vue';
 import JobOverrideModal from '../Components/JobOverrideModal.vue';
 import { useJobStatusActions, canStartJob, canRevertJob, canCancelJob, canReinstateJob } from '../Composables/useJobStatusActions';
 import { formatJobFromLocation, formatJobToLocation } from '../Composables/useJobLocations';
+import FlightLine from '../Components/FlightLine.vue';
+import FlightRefreshResult from '../Components/FlightRefreshResult.vue';
+import { useFlightRefresh } from '../Composables/useFlightRefresh';
+
+// ↻ on the job's flight (events.manage); the result lists what the new time moved.
+const canRefreshFlights = computed(() => usePage().props.auth?.can?.['events.manage'] === true);
+const { refresh: refreshFlights, refreshingIds: flightRefreshingIds, result: flightResult } = useFlightRefresh();
 
 const props = defineProps({
   job: { type: Object, default: () => ({}) },
@@ -506,7 +517,10 @@ async function explainDelay() {
         Accept: 'application/json',
         'X-CSRF-TOKEN': csrfToken || '',
       },
-      body: JSON.stringify({ question: `Explain the delay for job ${props.job.id}.` }),
+      body: JSON.stringify({
+        question: `Explain the delay for job ${props.job.id}, then say which step is next and whether it is overdue, at risk or on track.`,
+        context: { page: 'job', job_id: props.job.db_id },
+      }),
     });
 
     const data = await response.json();
@@ -601,6 +615,7 @@ async function explainDelay() {
 .cp-note__icon { flex-shrink: 0; margin-top: 2px; color: var(--ink3); }
 
 .detail-meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.detail-flight { margin-top: 6px; }
 .detail-event-badge {
   font-size: 10px; font-weight: 700; color: var(--accent); background: var(--accent-soft, var(--accent-ring));
   padding: 2px 8px; border-radius: 4px; text-transform: uppercase; letter-spacing: 0.5px;

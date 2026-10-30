@@ -401,7 +401,11 @@ class PlanManagementController extends Controller
             ->orderBy('kick_off')
             ->get();
 
-        // Get active plan from session (shared with Jobs page)
+        // Get active plan from session (shared with Jobs page). ?plan= (Daleel's links) opens one of this event's plans.
+        $linkedPlan = (int) $request->query('plan');
+        if ($linkedPlan && $activeEventId && Plan::where('event_id', $activeEventId)->whereKey($linkedPlan)->exists()) {
+            $request->session()->put('active_plan_id', $linkedPlan);
+        }
         $activePlanId = $request->session()->get('active_plan_id');
 
         // Next movement code number, so the UI can preview the real code a movement will get.
@@ -1073,8 +1077,15 @@ class PlanManagementController extends Controller
             return back()->with('error', 'No valid movements to generate jobs from');
         }
 
+        // Arrivals / departures without a flight can't be timed (Movement::jobBlocker); they're skipped.
+        $blocked = $movements->filter(fn (Movement $movement) => $movement->jobBlocker() !== null);
+        if ($blocked->count() === $movements->count()) {
+            return back()->with('error', $blocked->first()->jobBlocker()
+                .($blocked->count() > 1 ? " ({$blocked->count()} movements)" : ''));
+        }
+
         $jobs = $this->jobService->generateJobsFromMovements(
-            $movements->pluck('id')->toArray(),
+            $movements->diff($blocked)->pluck('id')->toArray(),
             [
                 'supervisor_id' => $validated['supervisor_id'] ?? null,
             ]
@@ -1084,7 +1095,11 @@ class PlanManagementController extends Controller
             return back()->with('error', 'No jobs generated.');
         }
 
-        return redirect()->back()->with('success', count($jobs) . ' jobs generated successfully');
+        $skipped = $blocked->count()
+            ? ". {$blocked->count()} ".($blocked->count() === 1 ? 'movement has' : 'movements have').' no flight and '.($blocked->count() === 1 ? 'was' : 'were').' skipped.'
+            : '';
+
+        return redirect()->back()->with('success', count($jobs) . ' jobs generated successfully' . $skipped);
     }
 
     /**

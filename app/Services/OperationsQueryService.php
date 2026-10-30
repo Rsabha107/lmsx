@@ -134,6 +134,7 @@ class OperationsQueryService
             'status' => $job?->status ?? 'no job yet ('.$movement->status.')',
             'checkpoints_completed' => $job?->checkpoints_completed,
             'checkpoints_total' => $job?->checkpoints_total,
+            'url' => self::movementUrl($movement),
         ];
     }
 
@@ -201,6 +202,7 @@ class OperationsQueryService
             'window_end' => $movement->window_end?->format('Y-m-d H:i'),
             'delay_minutes' => $movement->delay_minutes,
             'status' => $job?->status,
+            'url' => self::movementUrl($movement),
             'checkpoints' => $job?->checkpoints->map(fn ($cp) => [
                 'name' => $cp->name,
                 'state' => $cp->state,
@@ -264,7 +266,8 @@ class OperationsQueryService
     {
         $job = JobOperation::with(['movement', 'team', 'checkpoints'])->find($jobId);
 
-        if (! $job || Gate::forUser($user)->denies('view', $job)) {
+        // Daleel works on the active event only (the job policy also allows other accessible events).
+        if (! $job || (int) $job->event_id !== (int) session('active_event_id') || Gate::forUser($user)->denies('view', $job)) {
             return null;
         }
 
@@ -286,7 +289,9 @@ class OperationsQueryService
 
         return [
             'job_id' => $job->job_id ?? 'J-'.$job->id,
+            'url' => self::jobUrl($job),
             'team' => $job->team?->team_name,
+            'status' => $job->status,
             'total_delay_minutes' => $totalDelayMinutes,
             'checkpoint_variances' => $checkpointVariances->all(),
             'largest_contributor' => $largestContributor,
@@ -295,6 +300,45 @@ class OperationsQueryService
             'recovered_minutes' => $largestContributor
                 ? max(0, $largestContributor['variance_minutes'] - $totalDelayMinutes)
                 : 0,
+            'next_checkpoint' => $this->nextCheckpoint($job),
+        ];
+    }
+
+    /**
+     * The first step still to do, and whether it is overdue (its time has passed), at risk (the job is
+     * running late at its last done step, so it is expected that late unless time is made up) or on track.
+     */
+    private function nextCheckpoint(JobOperation $job): ?array
+    {
+        $steps = $job->checkpoints->sortBy('order')->values();
+        $next = $steps->first(fn (JobCheckpoint $cp) => in_array($cp->state, ['pending', 'active'], true));
+        if (! $next || in_array($job->status, ['completed', 'cancelled'], true)) {
+            return null;
+        }
+
+        $lastDone = $steps->filter(fn (JobCheckpoint $cp) => $cp->state === 'done' && $cp->scheduled_at && $cp->completed_at)->last();
+        $runningLate = $lastDone ? max(0, (int) $lastDone->delay_minutes) : 0;
+        $dueIn = $next->scheduled_at ? (int) round(now()->diffInMinutes($next->scheduled_at, false)) : null;
+
+        return [
+            'name' => $next->name,
+            'scheduled_at' => $next->scheduled_at?->format('H:i'),
+            'due_in_minutes' => $dueIn,
+            'running_late_minutes' => $runningLate,
+            'expected_at' => $next->scheduled_at && $runningLate ? $next->scheduled_at->copy()->addMinutes($runningLate)->format('H:i') : null,
+            'state' => match (true) {
+                $dueIn === null => 'not timed',
+                $dueIn < 0 => 'overdue',
+                $runningLate > 0 => 'at risk',
+                default => 'on track',
+            },
+            'basis' => match (true) {
+                $dueIn === null => 'The step has no scheduled time.',
+                $dueIn < 0 => 'Scheduled '.$next->scheduled_at->format('H:i').', '.abs($dueIn).' min ago, still not done.',
+                $runningLate > 0 => "The last done step, \"{$lastDone->name}\", was {$runningLate} min late; at that pace this step lands at ".$next->scheduled_at->copy()->addMinutes($runningLate)->format('H:i').'.',
+                default => 'Due in '.$dueIn.' min and the job is not running late.',
+            },
+            'steps_left' => $steps->whereIn('state', ['pending', 'active'])->count(),
         ];
     }
 
@@ -367,6 +411,18 @@ class OperationsQueryService
             'status' => $job->status,
             'checkpoints_completed' => $job->checkpoints_completed,
             'checkpoints_total' => $job->checkpoints_total,
+            'url' => self::jobUrl($job),
         ];
+    }
+
+    /** In-app links Daleel may put in an answer (MarkdownAnswer only renders these paths as links). */
+    public static function jobUrl(JobOperation $job): string
+    {
+        return '/job/'.$job->id;
+    }
+
+    public static function movementUrl(Movement $movement): string
+    {
+        return $movement->job ? self::jobUrl($movement->job) : '/plans?plan='.$movement->plan_id.'&movement='.$movement->id;
     }
 }

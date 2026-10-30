@@ -192,6 +192,7 @@
           <Button variant="secondary" size="sm" @click="emit('view', c)"
             >View</Button
           >
+          <AskDaleelButton quiet label="Explain" :question="explainQuestion(c)" :context="explainContext(c)" />
         </div>
       </div>
     </div>
@@ -203,6 +204,7 @@ import { computed } from 'vue';
 import Button from '../Button.vue';
 import StatusPill from '../StatusPill.vue';
 import SvgIcon from '../SvgIcon.vue';
+import AskDaleelButton from '../AskDaleelButton.vue';
 
 // All of the event's conflicts; accepted ones stay listed but don't count.
 const props = defineProps({
@@ -225,6 +227,14 @@ const sevTone = {
   medium: 'warn',
   low: 'neutral',
 };
+
+// "Explain" asks Daleel about this conflict, with its first movement and plan as context.
+const explainQuestion = (c) => `Explain this conflict and what to check before resolving it: "${c.type}: ${c.text}"`;
+const explainContext = (c) => ({
+  page: 'planning',
+  ...(c.movement_ids?.length ? { movement_id: c.movement_ids[0] } : {}),
+  ...(c.plan_id ? { plan_id: c.plan_id } : {}),
+});
 </script>
 
 <style scoped>

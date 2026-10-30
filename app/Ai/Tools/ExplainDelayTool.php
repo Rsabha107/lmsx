@@ -16,7 +16,7 @@ class ExplainDelayTool implements Tool
 
     public function description(): string
     {
-        return 'Get a checkpoint-by-checkpoint delay breakdown for one job — which checkpoint contributed the most delay, and how much time (if any) was recovered afterward. Pass a job id like JOB-20260927-0001, a movement code like TRP-00003, or a numeric id; no need to ask the user for a numeric id.';
+        return 'Get a checkpoint-by-checkpoint delay breakdown for one job — which checkpoint contributed the most delay, how much time (if any) was recovered afterward, and the next step still to do with whether it is overdue, at risk (the job is running late) or on track, and the facts behind that. Use it for "explain the delay", "what is next on job X", "is job X at risk". Pass a job id like JOB-20260927-0001, a movement code like TRP-00003, or a numeric id; no need to ask the user for a numeric id.';
     }
 
     public function handle(Request $request): string

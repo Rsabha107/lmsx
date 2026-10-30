@@ -10,9 +10,13 @@
         <span v-if="collapsed && r.next" class="pc-next-inline">Next: <strong>{{ r.next.label }}</strong> · {{ r.next.detail }}</span>
         <span v-else-if="collapsed" class="pc-next-inline pc-next-inline--ok">Ready: every movement has a job</span>
       </div>
-      <button type="button" class="pc-toggle" :aria-expanded="!collapsed" @click="toggle">
-        {{ collapsed ? 'Show steps' : 'Hide' }}
-      </button>
+      <div class="pc-head-actions">
+        <AskDaleelButton v-if="r.total && r.next" question="Why can't this plan generate all its jobs yet? What is blocking it and what should I do first?"
+          :context="{ page: 'planning', plan_id: plan.id }" label="Ask Daleel what's blocking it" />
+        <button type="button" class="pc-toggle" :aria-expanded="!collapsed" @click="toggle">
+          {{ collapsed ? 'Show steps' : 'Hide' }}
+        </button>
+      </div>
     </header>
 
     <ol v-if="!collapsed" class="pc-steps">
@@ -42,14 +46,22 @@
             <button v-else type="button" class="pc-act" @click="emit('movements')">Set in movements</button>
           </template>
 
-          <button v-else-if="s.key === 'jobs' && r.total && s.state !== 'done' && canManage" type="button" class="pc-act pc-act--primary"
-            :disabled="!r.readyForJobs" :title="r.readyForJobs ? '' : 'A movement needs a vehicle and a supervisor first'"
-            @click="emit('generate')">
-            Generate jobs<template v-if="r.readyForJobs"> ({{ r.readyForJobs }})</template>
-          </button>
+          <template v-else-if="s.key === 'jobs' && r.total && s.state !== 'done' && canManage">
+            <button v-if="canRefreshFlights && planFlights.length" type="button" class="pc-act" :disabled="flightsRefreshing"
+              :title="`Refresh the ${planFlights.length} flight${planFlights.length === 1 ? '' : 's'} of movements without a job from OAG, so jobs are generated from current times`"
+              @click="refreshFlights(planFlights)">
+              {{ flightsRefreshing ? 'Refreshing…' : `Refresh flights (${planFlights.length})` }}
+            </button>
+            <button type="button" class="pc-act pc-act--primary"
+              :disabled="!r.readyForJobs" :title="r.readyForJobs ? '' : 'A movement needs a vehicle and a supervisor (and a flight for arrivals / departures) first'"
+              @click="emit('generate')">
+              Generate jobs<template v-if="r.readyForJobs"> ({{ r.readyForJobs }})</template>
+            </button>
+          </template>
         </div>
       </li>
     </ol>
+    <FlightRefreshResult :result="flightResult" @close="flightResult = null" />
   </section>
 </template>
 
@@ -57,6 +69,9 @@
 import { computed, ref } from 'vue';
 import { Link, usePage } from '@inertiajs/vue3';
 import { planReadiness } from '../../Composables/planReadiness';
+import { useFlightRefresh } from '../../Composables/useFlightRefresh';
+import AskDaleelButton from '../AskDaleelButton.vue';
+import FlightRefreshResult from '../FlightRefreshResult.vue';
 
 // A per-plan guide from set-up to jobs; each step links to the screen that does it. The full editor is unchanged.
 const props = defineProps({
@@ -70,6 +85,21 @@ const page = usePage();
 const canAssignCrew = computed(() => page.props.auth?.can?.['movements.assign-crew'] === true);
 const r = computed(() => planReadiness(props.plan, props.openConflicts));
 const crewHref = computed(() => `/crew-assignment?date=${String(props.plan.date ?? '').slice(0, 10)}`);
+
+// Flights of the plan's arrivals / departures that have no job yet (not landed or cancelled): refreshed
+// before generating, so the jobs start from current times. Needs events.manage (the refresh route).
+const canRefreshFlights = computed(() => page.props.auth?.can?.['events.manage'] === true);
+const planFlights = computed(() => {
+  const seen = new Map();
+  for (const mv of props.plan.movements ?? []) {
+    const f = mv.flight;
+    if (mv.job_id || !['arrival', 'departure'].includes(mv.kind) || !f?.id || !f.flight_number || f.flight_number === 'BUS') continue;
+    if (f.actual_at || f.flight_status === 'cancelled' || f.flight_status === 'landed') continue;
+    seen.set(f.id, { id: f.id, event_id: f.event_id ?? props.plan.event_id });
+  }
+  return [...seen.values()];
+});
+const { refresh: refreshFlights, refreshing: flightsRefreshing, result: flightResult } = useFlightRefresh();
 
 const STORE_KEY = 'plans.checklist';
 const collapsed = ref(localStorage.getItem(STORE_KEY) === 'collapsed');
@@ -86,6 +116,7 @@ function toggle() {
 }
 .pc--collapsed { gap: 0; padding: 8px 14px; }
 .pc-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.pc-head-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
 .pc-title { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; min-width: 0; }
 .pc-kicker { font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink3); }
 .pc-count { font-size: 12px; font-weight: 600; color: var(--ink); }

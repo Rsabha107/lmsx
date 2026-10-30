@@ -39,8 +39,10 @@ class DayBoardController extends Controller
                 ->whereHas('movement', fn ($q) => $q->where('window_start', '>=', $day)->where('window_start', '<', $day->copy()->addDay()))
                 ->with([
                     'event:id,name,short_name',
-                    'movement:id,team_id,kind,from_location,to_location,window_start,window_end,delay_minutes,passengers',
+                    'movement:id,team_id,flight_id,kind,from_location,to_location,window_start,window_end,delay_minutes,passengers',
                     'movement.team:id,code,team_name,country_id,flag',
+                    'movement.flight.originAirport:id,code',
+                    'movement.flight.destinationAirport:id,code',
                     'vehicle:id,code,plate_number,vehicle_type',
                     'driver:id,name,phone',
                     'supervisor:id,name',
@@ -132,6 +134,8 @@ class DayBoardController extends Controller
             'status' => $job->status,
             'status_label' => JobOperation::statusLabel($job->status),
             'kind' => $movement?->kind,
+            // Arrivals / departures show their flight and its refresh state on the card.
+            'flight' => in_array($movement?->kind, ['arrival', 'departure'], true) ? \App\Support\FlightSummary::from($movement->flight) : null,
             'team' => $team?->team_name,
             'team_code' => $team?->code,
             // Shown when several events are on the board.

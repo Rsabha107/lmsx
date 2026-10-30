@@ -40,7 +40,11 @@
             </span>
             <span v-if="passengers > 0" class="em-pax"><i class="em-sdot" />{{ passengers }} passenger{{ passengers === 1 ? '' : 's' }}</span>
             <span v-else class="em-pax em-pax--warn"><i class="em-sdot em-sdot--warn" />No passengers listed</span>
-            <span class="em-readonly" title="Flight and team details come from the plan and can't be edited here">Read-only</span>
+            <button v-if="canEditTeam && teamId" type="button" class="em-edit-team" :title="`Edit ${teamName || 'the team'}: flights, party, hotel, training`" @click="emit('edit-team', teamId)">
+              <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M11.5 1.5L14.5 4.5L5 14H2V11L11.5 1.5Z" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" /></svg>
+              Edit team
+            </button>
+            <span v-else class="em-readonly" title="Flight and team details come from the plan and can't be edited here">Read-only</span>
           </div>
         </div>
       </div>
@@ -208,9 +212,11 @@ const props = defineProps({
   drivers: { type: Array, default: () => [] },
   supervisors: { type: Array, default: () => [] },
   matches: { type: Array, default: () => [] },
+  // Shows "Edit team" (the Event Teams dialog) instead of the read-only tag; needs events.manage.
+  canEditTeam: { type: Boolean, default: false },
 });
 
-const emit = defineEmits(['close']);
+const emit = defineEmits(['close', 'edit-team']);
 
 const ENDS = [
   { key: 'start', label: 'WINDOW START', name: 'Window start' },
@@ -261,6 +267,7 @@ const flightNo = String(flight?.flight_number || mv.flight_number || '');
 const isBus = flightNo.toUpperCase() === 'BUS';
 const teamName = mv.team?.team_name || mv.team?.team || (typeof mv.team === 'string' ? mv.team : '');
 const teamCode = mv.team?.code || mv.team_code || '';
+const teamId = mv.team_id || mv.team?.id || null;
 const countryCode = mv.team?.country_id || teamCode.split('-')[0] || null;
 const passengers = Number(mv.passengers ?? mv.pax ?? 0);
 const airport = (a) => (a && typeof a === 'object' ? a.code || a.iata : a) || '';
@@ -480,7 +487,7 @@ function submit() {
 <style scoped>
 /* Edit movement dialog: layout after the "Edit Movement Modal" design, in the app's theme colours. */
 .em {
-  max-width: 580px;
+  max-width: 760px; /* same as the Edit team dialog it opens */
   max-height: calc(100vh - 48px);
   display: flex;
   flex-direction: column;
@@ -549,6 +556,12 @@ function submit() {
 .em-pax { display: flex; align-items: center; gap: 6px; color: var(--ink2); }
 .em-pax--warn { color: var(--warn); }
 .em-readonly { font-size: 11px; color: var(--ink4); cursor: help; }
+.em-edit-team {
+  display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 10px;
+  border: 1px solid var(--border); border-radius: 7px; background: var(--surface);
+  font-size: 12px; font-weight: 600; color: var(--ink2); cursor: pointer;
+}
+.em-edit-team:hover { border-color: var(--accent); color: var(--accent); }
 .em-sdot { width: 6px; height: 6px; border-radius: 50%; background: var(--ok); flex: none; }
 .em-sdot--warn { background: var(--warn); }
 

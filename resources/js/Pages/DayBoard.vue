@@ -17,6 +17,14 @@
           </p>
         </div>
         <div class="db-head-actions">
+          <AskDaleelButton :question="`Brief me on ${date}: what needs attention (overdue updates, delays, conflicts, missing crew, jobs not generated)?`"
+            :context="{ page: 'day-board', date }" label="Brief me on this day" />
+          <button v-if="canRefreshFlights && dayFlights.length && view === 'board'" type="button" class="db-refresh-flights" :disabled="flightsRefreshing"
+            :title="`Refresh this day's ${dayFlights.length} flight${dayFlights.length === 1 ? '' : 's'} from OAG now; a new time re-times their plans and jobs`"
+            @click="refreshFlights(dayFlights)">
+            <svg :class="{ 'db-spin': flightsRefreshing }" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M21 12a9 9 0 1 1-3-6.7L21 8" /><path d="M21 3v5h-5" /></svg>
+            {{ flightsRefreshing ? 'Refreshing…' : `Refresh ${isToday ? "today's" : "this day's"} flights` }}
+          </button>
           <EventMultiPicker :events="events" :event-ids="eventIds" label="Showing"
             hint="Show other events' jobs on this board. Each card is tagged with its event." @change="showEvents" />
           <div class="db-views" role="tablist" aria-label="View">
@@ -135,6 +143,8 @@
                     <strong>{{ job.team_code || '—' }}</strong> {{ job.team }}
                   </div>
                   <div class="db-route" :title="`${job.from ?? ''} → ${job.to ?? ''}`">{{ job.from || '?' }} <span>→</span> {{ job.to || '?' }}</div>
+                  <FlightLine v-if="job.flight" :flight="job.flight" :can-refresh="canRefreshFlights" :refreshing="flightRefreshingIds.includes(job.flight.id)"
+                    class="db-flight" @refresh="refreshFlights([job.flight], { single: true })" />
                 </div>
                 <div class="db-card-tags">
                   <span v-if="eventIds.length > 1 && job.event" class="db-event-tag">{{ job.event }}</span>
@@ -206,6 +216,8 @@
 
               <div v-if="a.reasons.length" class="db-reasons">
                 <span v-for="(r, i) in a.reasons" :key="i" :class="['db-reason', `db-reason--${r.tone}`]">{{ r.text }}</span>
+                <AskDaleelButton quiet label="Ask" :question="`What is going on with ${job.team}'s ${job.kind || 'movement'} (job ${job.job_id}) and what should I check?`"
+                  :context="{ page: 'day-board', job_id: job.id, date }" />
               </div>
 
               <footer class="db-crew">
@@ -239,6 +251,7 @@
         <MovementScheduleView v-else :schedule="scheduleRows" />
       </template>
     </div>
+    <FlightRefreshResult :result="flightResult" @close="flightResult = null" />
   </app-layout>
 </template>
 
@@ -252,7 +265,11 @@ import SvgIcon from '../Components/SvgIcon.vue';
 import FlagIcon from '../Components/FlagIcon.vue';
 import MovementScheduleView from '../Components/MovementScheduleView.vue';
 import EventMultiPicker from '../Components/EventMultiPicker.vue';
+import AskDaleelButton from '../Components/AskDaleelButton.vue';
+import FlightLine from '../Components/FlightLine.vue';
+import FlightRefreshResult from '../Components/FlightRefreshResult.vue';
 import { useScheduleFilter } from '../Composables/useScheduleFilter';
+import { useFlightRefresh } from '../Composables/useFlightRefresh';
 import { minutesFrom, duration, todayKey } from '../Composables/useCrewRoster';
 
 const props = defineProps({
@@ -270,6 +287,19 @@ const { filters: scheduleFilters, activeFilter: activeScheduleFilter, filtered: 
 const page = usePage();
 const hasActiveEvent = computed(() => !!page.props.activeEventId);
 
+// Flights of the day's arrival / departure jobs (not landed or cancelled), refreshable by events.manage holders.
+const canRefreshFlights = computed(() => page.props.auth?.can?.['events.manage'] === true);
+const dayFlights = computed(() => {
+  const seen = new Map();
+  for (const job of props.jobs) {
+    const f = job.flight;
+    if (f && !f.is_bus && f.flight_number && !f.actual_time && f.flight_status !== 'cancelled' && !seen.has(f.id)) seen.set(f.id, f);
+  }
+  return [...seen.values()];
+});
+const { refresh: refreshFlights, refreshing: flightsRefreshing, refreshingIds: flightRefreshingIds, result: flightResult } =
+  useFlightRefresh({ reloadOnly: ['jobs', 'schedule', 'dayCounts', 'flightStatus'] });
+
 const STATUS_TONES = { pending: 'info', dispatched: 'primary', 'in-progress': 'live', completed: 'ok' };
 // Minutes past due before a late step turns red.
 const CRITICAL_AFTER = 15;
@@ -281,7 +311,7 @@ let poll;
 onMounted(() => {
   tick = setInterval(() => { now.value = new Date(); }, 30000);
   poll = setInterval(() => {
-    if (!document.hidden) router.reload({ only: ['jobs', 'schedule', 'dayCounts'], preserveScroll: true });
+    if (!document.hidden) router.reload({ only: ['jobs', 'schedule', 'dayCounts', 'flightStatus'], preserveScroll: true });
   }, 60000);
 });
 onUnmounted(() => { clearInterval(tick); clearInterval(poll); });
@@ -513,6 +543,16 @@ const groups = computed(() => {
 .db-search { display: flex; align-items: center; gap: 6px; padding: 0 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--ink3); min-width: 260px; }
 .db-search input { border: 0; outline: none; background: none; padding: 8px 0; font-size: 13px; color: var(--ink); flex: 1; }
 .db-head-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.db-refresh-flights {
+  display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 12px;
+  border: 1px solid var(--border); border-radius: 8px; background: var(--surface);
+  font-size: 13px; font-weight: 600; color: var(--ink2); cursor: pointer;
+}
+.db-refresh-flights:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.db-refresh-flights:disabled { opacity: .6; cursor: default; }
+.db-spin { animation: db-spin 1s linear infinite; }
+@keyframes db-spin { to { transform: rotate(360deg); } }
+.db-flight { margin-top: 3px; }
 .db-views { display: inline-flex; padding: 3px; gap: 2px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel); }
 .db-view { border: 0; background: none; padding: 6px 14px; border-radius: 6px; font-size: 13px; font-weight: 600; color: var(--ink3); cursor: pointer; }
 .db-view:hover { color: var(--ink); }

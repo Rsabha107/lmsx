@@ -5,17 +5,45 @@ namespace App\Services;
 use App\Models\Movement;
 use App\Models\TeamFlight;
 use Carbon\Carbon;
+use Illuminate\Validation\ValidationException;
 
 /**
  * Carries a team flight change (number, scheduled time, party size) through to the movements
- * planned against it. Movements without a job are updated and re-timed from the settings offsets;
- * ones with a job are left alone and reported, since the job's checkpoints were snapshotted and a
- * crew may already be working to them. Used by the team import and the Event Teams flight edit.
+ * planned against it. Movements without a job are updated and re-timed from the settings offsets.
+ * A new time also re-times a job not started yet, or flags a started one (FlightJobRetimer); other
+ * changes to a movement with a job are reported for review. Used by the team import, the Event Teams
+ * edits and the OAG refresh.
  */
 class FlightMovementSync
 {
-    public function __construct(private JobGenerationService $jobs)
+    public function __construct(private JobGenerationService $jobs, private FlightJobRetimer $retimer)
     {
+    }
+
+    /**
+     * Deletes a flight. Refused while a job was generated from it (the job's times come from the flight).
+     * Its other movements stay (the FK sets flight_id null) but lose their window and flight number, since
+     * both came from the flight, and can't generate a job until they get a flight again (Movement::jobBlocker).
+     *
+     * @return array{cleared: int}
+     *
+     * @throws ValidationException under $errorKey when a job depends on the flight
+     */
+    public static function remove(TeamFlight $flight, string $errorKey = 'flight'): array
+    {
+        if ($jobs = $flight->issuedJobIds()) {
+            $label = trim(ucfirst($flight->direction).' '.($flight->flight_number ?? ''));
+            throw ValidationException::withMessages([$errorKey => sprintf(
+                '%s can\'t be removed: %s %s generated from it. Delete %s in the Jobs Queue first, or change the flight instead.',
+                $label, count($jobs) === 1 ? 'job' : 'jobs', implode(', ', $jobs).(count($jobs) === 1 ? ' was' : ' were'),
+                count($jobs) === 1 ? 'that job' : 'those jobs',
+            )]);
+        }
+        $cleared = Movement::where('flight_id', $flight->id)
+            ->update(['window_start' => null, 'window_end' => null, 'flight_number' => null, 'flight_id' => null]);
+        $flight->delete();
+
+        return ['cleared' => $cleared];
     }
 
     /**
@@ -91,6 +119,7 @@ class FlightMovementSync
                 'code' => $movement->code,
                 'kind' => $movement->kind,
                 'plan' => $movement->plan?->name,
+                'plan_id' => $movement->plan_id,
                 'from' => $movement->window_start?->format('D j M H:i'),
                 'to' => null,
                 'status' => 'unchanged',
@@ -98,8 +127,17 @@ class FlightMovementSync
             ];
 
             if ($movement->hasJob()) {
-                if ($timeMoved || $paxChanged || $numberChanged) {
+                // A new time re-times a job not started yet, or flags a started one (FlightJobRetimer), when the
+                // job is timed from this flight: linked to it, or a transfer (timed off the team's arrival).
+                $timedByFlight = $movement->flight_id === $flight->id || $movement->kind === 'transfer';
+                if ($timeMoved && $timedByFlight) {
+                    if ($outcome = $this->retimer->handle($movement, $flight, $before)) {
+                        $movement->refresh();
+                        $results[] = array_merge($entry, $outcome, ['to' => $movement->window_start?->format('D j M H:i')]);
+                    }
+                } elseif ($timeMoved || $paxChanged || $numberChanged) {
                     $entry['status'] = 'needs_review';
+                    $entry['job_ref'] = $movement->job_id;
                     $entry['notes'][] = "Job {$movement->job_id} was already issued - update it by hand.";
                     $results[] = $entry;
                 }
@@ -109,6 +147,10 @@ class FlightMovementSync
             $attrs = [];
             if ($movement->kind === $flight->direction && $movement->flight_id === null) {
                 $attrs['flight_id'] = $flight->id;
+                // A movement whose flight was removed lost its number too; it takes this flight's.
+                if ($movement->flight_number === null && $flight->flight_number !== null) {
+                    $attrs['flight_number'] = $flight->flight_number;
+                }
             }
             // Only follow the flight when the movement's count came from it, not a manual edit.
             if ($paxChanged && in_array($movement->passengers, [null, 0, $before['party_size_total']], true)) {

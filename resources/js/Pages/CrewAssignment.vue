@@ -71,6 +71,9 @@
             {{ f.label }}<span class="filter-count">{{ f.count }}</span>
           </button>
         </div>
+        <AskDaleelButton v-if="view === 'table' && counts.all" class="crew-ask" label="Brief me on this day"
+          :question="`Brief me on crew gaps for ${selectedDate}: which movements are missing a vehicle, driver or supervisor, any double-bookings, and are we short of vehicles or drivers?`"
+          :context="{ page: 'crew-assignment', date: selectedDate }" />
         <input v-if="view !== 'week'" v-model="search" class="crew-search" type="search" placeholder="Search movement, team or route" aria-label="Search movements" />
       </div>
 
@@ -152,6 +155,9 @@
                 <span v-if="missingFor(mv).length" class="ct-note ct-note--warn">Missing {{ missingFor(mv).join(', ') }}</span>
                 <span v-if="seatsShort(mv)" class="ct-note ct-note--bad">{{ mv.pax - seatsOf(mv) }} seats short</span>
                 <span v-if="mv.job_status" class="ct-note ct-note--muted" :title="mv.job_id">Job {{ statusLabel(mv.job_status).toLowerCase() }}</span>
+                <AskDaleelButton v-if="['clash', 'needs'].includes(statusOf(mv)) && mv.event_id === activeEventId" quiet label="Who's free?"
+                  :question="`For ${mv.code}: which vehicles, drivers and supervisors are free, and why is each of the others unavailable?`"
+                  :context="{ page: 'crew-assignment', movement_id: mv.id, date: selectedDate }" />
               </template>
             </div>
           </div>
@@ -259,6 +265,7 @@ import AppLayout from '../Components/AppLayout.vue';
 import NoActiveEvent from '../Components/NoActiveEvent.vue';
 import CrewChip from '../Components/CrewChip.vue';
 import RefreshButton from '../Components/RefreshButton.vue';
+import AskDaleelButton from '../Components/AskDaleelButton.vue';
 import MonthCalendar from '../Components/MonthCalendar.vue';
 import CrewRoster from '../Components/CrewRoster.vue';
 import CrewWeek from '../Components/CrewWeek.vue';
@@ -809,6 +816,7 @@ const selectedSpan = computed(() => {
 .wn-conf { font-size: 10px; font-weight: 600; padding: 1px 6px; border-radius: 999px; background: var(--danger); color: #fff; white-space: nowrap; }
 
 .crew-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.crew-ask { margin-left: auto; }
 .filter-tabs { display: flex; gap: 6px; flex-wrap: wrap; }
 .filter-tab {
   display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px; border-radius: 999px;

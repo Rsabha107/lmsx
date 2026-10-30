@@ -41,6 +41,8 @@ Route::middleware(['auth', 'role:admin'])->prefix('setups')->name('setups.')->gr
         Route::post('/ui-flag', [SettingsController::class, 'updateUiFlag'])->name('update-ui-flag');
         Route::post('/thresholds', [SettingsController::class, 'updateThresholds'])->name('update-thresholds');
         Route::post('/daily-email', [SettingsController::class, 'updateDailyEmail'])->name('update-daily-email');
+        Route::post('/ai-provider', [SettingsController::class, 'updateAiProvider'])->name('update-ai-provider');
+        Route::post('/ai-provider/test', [SettingsController::class, 'testAiProvider'])->middleware('throttle:10,1')->name('test-ai-provider');
         Route::delete('/{id}', [SettingsController::class, 'destroy'])->name('destroy');
         Route::post('/preview', [SettingsController::class, 'preview'])->name('preview');
         Route::post('/preview-impact', [SettingsController::class, 'previewImpact'])->name('preview-impact');

@@ -8,7 +8,7 @@
         </div>
         <div class="st-head-right">
           <span class="st-note">Changes apply to every event unless overridden</span>
-          <RefreshButton :only="['globalOverrides', 'eventOverrides', 'conflictThresholds', 'uiFlags', 'dailyEmail']" />
+          <RefreshButton :only="['globalOverrides', 'eventOverrides', 'conflictThresholds', 'uiFlags', 'dailyEmail', 'ai']" />
         </div>
       </header>
 
@@ -252,6 +252,9 @@
           <!-- Notifications: Daily Email audience -->
           <DailyEmailAudience v-if="section === 'dailyEmail'" :audience="dailyEmail" />
 
+          <!-- AI provider -->
+          <AiProviderSettings v-if="section === 'ai' && ai" :ai="ai" />
+
           <!-- Mobile app -->
           <div v-if="section === 'mobile'" class="st-mobile">
             <div class="st-app">
@@ -355,6 +358,7 @@ import Modal from '@/Components/Modal.vue';
 import Select from 'primevue/select';
 import { useToast } from '@/Composables/useToast';
 import DailyEmailAudience from '@/Components/Settings/DailyEmailAudience.vue';
+import AiProviderSettings from '@/Components/Settings/AiProviderSettings.vue';
 
 const props = defineProps({
   movementTypes: Array,
@@ -367,12 +371,13 @@ const props = defineProps({
   mobileOnlyUsers: { type: Number, default: 0 },
   conflictThresholds: { type: Array, default: () => [] },
   dailyEmail: { type: Object, default: () => ({ event: null, recipientIds: [], users: [] }) },
+  ai: { type: Object, default: null },
 });
 
 /* ------------------------------- Navigation ------------------------------- */
 
 // ?section=dailyEmail (the Daily Email page links there) opens that section.
-const SECTIONS = ['offsets', 'overrides', 'rules', 'features', 'mobile', 'dailyEmail'];
+const SECTIONS = ['offsets', 'overrides', 'rules', 'features', 'mobile', 'ai', 'dailyEmail'];
 const requested = new URLSearchParams(window.location.search).get('section');
 const section = ref(SECTIONS.includes(requested) ? requested : 'offsets');
 const filter = ref('all');
@@ -394,6 +399,7 @@ const navGroups = computed(() => [
   { label: 'Platform', items: [
     { id: 'features', label: 'Optional features', sub: 'Turn app areas on/off', count: `${features.value.filter((f) => f.on).length}/${features.value.length}` },
     { id: 'mobile', label: 'Mobile app', sub: 'Android APK', count: '' },
+    { id: 'ai', label: 'AI provider', sub: 'Assistant & AI imports', count: props.ai ? (props.ai.current === 'azure' ? 'Azure' : 'Claude') : '' },
   ] },
   { label: 'Notifications', items: [
     { id: 'dailyEmail', label: 'Daily Email', sub: 'Who receives it', count: props.dailyEmail.event ? String(props.dailyEmail.recipientIds.length) : '', alert: !!props.dailyEmail.event && !props.dailyEmail.recipientIds.length },
@@ -403,9 +409,10 @@ const navGroups = computed(() => [
 const VIEWS = {
   offsets: { title: 'Movement offsets', desc: "When each checkpoint happens relative to its reference time. Offsets on a movement's first checkpoint drive that movement's whole window.", canAdd: true },
   overrides: { title: 'Event overrides', desc: 'Replace a global offset for one event only. Overrides win over every global setting.', canAdd: true },
-  rules: { title: 'Conflict rules', desc: 'Limits the Conflicts tab and crew clash checks judge against. Applies to every event.' },
+  rules: { title: 'Conflict rules', desc: "Limits the Conflicts tab, crew clash checks and Daleel's data checks judge against, and when a flight change under a job is emailed. Applies to every event." },
   features: { title: 'Optional features', desc: 'Turn parts of the app on or off for everyone.' },
   mobile: { title: 'Mobile app', desc: 'Android app for field supervisors.' },
+  ai: { title: 'AI provider', desc: 'Which AI service the assistant and the AI imports use. Applies to everyone.' },
   dailyEmail: { title: 'Daily Email', desc: 'Who receives the Daily Email for the event you have open. Sent by hand from the Daily Email page.' },
 };
 const view = computed(() => VIEWS[section.value]);

@@ -253,6 +253,20 @@ class Movement extends Model
     }
 
     /**
+     * Why no job can be generated from this movement, or null. Arrival and departure jobs are timed from
+     * their flight, so one without a flight (e.g. removed in Event Teams) or without a window can't make one.
+     * Mirrored by jobBlocker() in resources/js/Composables/planFormat.js.
+     */
+    public function jobBlocker(): ?string
+    {
+        if (in_array($this->kind, ['arrival', 'departure'], true) && (! $this->flight_id || ! $this->window_start)) {
+            return "No {$this->kind} flight: add the team's {$this->kind} in Event Teams first.";
+        }
+
+        return null;
+    }
+
+    /**
      * Scope for movements without jobs.
      */
     public function scopeWithoutJob($query)

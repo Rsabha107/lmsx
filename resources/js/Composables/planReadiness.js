@@ -1,7 +1,8 @@
-import { formatDate } from './planFormat';
+import { formatDate, jobBlocker } from './planFormat';
 
 /**
  * Where a plan stands on the way from set-up to jobs. Shared by the plan page checklist and the plan list.
+ * Daleel's App\Services\Ai\PlanReadiness uses the same rules; change both together.
  * Step states: 'done' | 'partial' (some way there) | 'warn' (needs a look) | 'todo'.
  *
  * @param {object} plan  a plan with its movements (vehicle_id, driver_id, field_supervisor_id, job_id, window_start)
@@ -15,8 +16,9 @@ export function planReadiness(plan, openConflicts = []) {
   const conflicts = openConflicts.filter((c) => (c.movement_ids ?? []).some((id) => ids.has(id))).length;
   const crewed = movements.filter((mv) => mv.vehicle_id && mv.driver_id && mv.field_supervisor_id).length;
   const jobs = movements.filter((mv) => mv.job_id).length;
-  // Same rule as the Generate jobs button: a vehicle and a supervisor.
-  const readyForJobs = movements.filter((mv) => !mv.job_id && mv.vehicle_id && mv.field_supervisor_id).length;
+  // Same rule as the Generate jobs button: a vehicle and a supervisor, and a flight for arrivals / departures.
+  const noFlight = movements.filter((mv) => !mv.job_id && jobBlocker(mv)).length;
+  const readyForJobs = movements.filter((mv) => !mv.job_id && mv.vehicle_id && mv.field_supervisor_id && !jobBlocker(mv)).length;
   const share = (n) => (n === total ? 'done' : (n ? 'partial' : 'todo'));
   const none = !total;
 
@@ -50,8 +52,8 @@ export function planReadiness(plan, openConflicts = []) {
     {
       key: 'jobs',
       label: 'Generate jobs',
-      state: none ? 'todo' : share(jobs),
-      detail: none ? '—' : `${jobs} / ${total} generated${readyForJobs ? ` · ${readyForJobs} ready` : ''}`,
+      state: none ? 'todo' : (noFlight && !readyForJobs && jobs < total ? 'warn' : share(jobs)),
+      detail: none ? '—' : `${jobs} / ${total} generated${readyForJobs ? ` · ${readyForJobs} ready` : ''}${noFlight ? ` · ${noFlight} without a flight` : ''}`,
     },
   ];
 

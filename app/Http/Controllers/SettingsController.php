@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Ai\Agents\ConnectionCheckAgent;
 use App\Models\AuditLog;
 use App\Models\Checkpoint;
 use App\Models\Event;
@@ -10,6 +11,7 @@ use App\Models\Setting;
 use App\Models\User;
 use App\Services\JobGenerationService;
 use App\Services\SettingsService;
+use App\Support\AiProvider;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
@@ -64,6 +66,7 @@ class SettingsController extends Controller
         // a checkpoint set are checkpoint-specific (and drive the movement
         // window when that's the movement's first checkpoint).
         $globalOverrides = Setting::where('scope', Setting::SCOPE_GLOBAL)
+            ->where('key', 'like', 'movement_offset.%')
             ->with('checkpoint')
             ->orderBy('key')
             ->get()
@@ -97,6 +100,7 @@ class SettingsController extends Controller
             ],
             'mobileOnlyUsers' => $this->mobileOnlyUserCount(),
             'dailyEmail' => $this->dailyEmailAudience($request),
+            'ai' => AiProvider::describe(),
             'conflictThresholds' => collect(SettingsService::CONFLICT_THRESHOLDS)
                 ->map(fn (array $t, string $key) => $t + ['key' => $key, 'value' => $this->settingsService->getThreshold($key)])
                 ->values(),
@@ -150,6 +154,56 @@ class SettingsController extends Controller
         }
 
         return back()->with('success', $added || $removed ? "Daily Email audience saved: {$after->count()} recipient(s)." : 'No changes to save.');
+    }
+
+    /** Which AI provider Daleel and the AI imports use. Keys stay in .env; only a configured one can be picked. */
+    public function updateAiProvider(Request $request)
+    {
+        $provider = $request->validate([
+            'provider' => ['required', Rule::in(array_keys(AiProvider::OPTIONS))],
+        ])['provider'];
+
+        if (! AiProvider::configured($provider)) {
+            return back()->with('error', AiProvider::OPTIONS[$provider].' is not set up on this server. Add its keys to the environment first.');
+        }
+
+        $before = AiProvider::current();
+        if ($before === $provider) {
+            return back()->with('success', 'No changes to save.');
+        }
+
+        $this->settingsService->setSetting(AiProvider::SETTING, $provider, Setting::SCOPE_GLOBAL, null, 'AI provider for the assistant and AI imports');
+        AuditLog::change('AI provider changed', AiProvider::OPTIONS[$provider], ['provider' => ['from' => $before, 'to' => $provider]]);
+
+        return back()->with('success', 'AI provider set to '.AiProvider::OPTIONS[$provider].'.');
+    }
+
+    /** One short prompt to the chosen provider, so an admin can check the keys before switching. */
+    public function testAiProvider(Request $request)
+    {
+        $provider = $request->validate([
+            'provider' => ['required', Rule::in(array_keys(AiProvider::OPTIONS))],
+        ])['provider'];
+
+        if (! AiProvider::configured($provider)) {
+            return response()->json(['ok' => false, 'message' => 'Not set up: its keys are missing from the environment.']);
+        }
+
+        $started = microtime(true);
+        try {
+            $response = (new ConnectionCheckAgent)->prompt('Connection check', provider: $provider, model: AiProvider::model($provider));
+        } catch (\Throwable $e) {
+            report($e);
+
+            return response()->json(['ok' => false, 'message' => \Illuminate\Support\Str::limit($e->getMessage(), 300)]);
+        }
+
+        return response()->json([
+            'ok' => true,
+            'message' => 'Connected',
+            'model' => $response->meta->model,
+            'ms' => (int) round((microtime(true) - $started) * 1000),
+        ]);
     }
 
     /** Saves the limits the conflict checks judge against. */

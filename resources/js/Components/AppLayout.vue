@@ -113,6 +113,10 @@
         </div>
 
         <div class="topbar-right">
+          <Link v-if="flightChip" href="/event-teams" :class="['topbar-flights', `topbar-flights--${flightChip.tone}`]" :title="flightChip.title" :aria-label="flightChip.title">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M21 16v-2l-8-5V3.5a1.5 1.5 0 0 0-3 0V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5z" /></svg>
+            {{ flightChip.text }}
+          </Link>
           <span class="topbar-date">{{ $page.props.today }}</span>
           <div class="topbar-live-dot" />
           <span class="topbar-live-text">LIVE</span>
@@ -133,6 +137,7 @@
     <!-- Toast Notifications -->
     <Toast />
     <AccessRestrictedModal />
+    <DaleelWindow v-if="canUseDaleel && !onDaleelPage" />
   </div>
 </template>
 
@@ -142,9 +147,33 @@ import { Link, router, usePage } from '@inertiajs/vue3';
 import { icons } from '../Composables/useIcons.js';
 import Toast from './Toast.vue';
 import AccessRestrictedModal from './AccessRestrictedModal.vue';
+import DaleelWindow from './DaleelWindow.vue';
+import { useDaleel } from '../Composables/useDaleel';
 import ScLogo from './ScLogo.vue';
+import { agoText, wallMinutes } from '../Composables/flightFreshness';
 
 const page = usePage();
+
+// Header chip: when the automatic flight refresh (every 30 min) last ran, and flights near now that are stale.
+const flightChip = computed(() => {
+  const s = page.props.flightStatus;
+  if (!s?.show) return null;
+  const last = wallMinutes(s.last_run);
+  const age = last === null ? null : (wallMinutes(s.now) ?? last) - last;
+  const tone = age === null || age > 90 ? 'bad' : age > 45 || s.stale > 0 ? 'warn' : 'ok';
+  const text = age === null ? 'Flights · auto refresh not running' : `Flights · updated ${agoText(age)}`;
+  const title = [
+    age === null ? 'The automatic flight refresh has not run yet: check the scheduler.' : `The automatic flight refresh last ran ${agoText(age)} (it runs every 30 minutes).`,
+    s.near ? `${s.near} flight${s.near === 1 ? '' : 's'} within 3 h of now${s.stale ? `, ${s.stale} not refreshed in the last ${s.limits?.near_minutes ?? 60} min` : ', all current'}.` : 'No flights within 3 h of now.',
+    'Open Event Teams.',
+  ].join(' ');
+  return { tone, text: s.stale ? `${text} · ${s.stale} stale` : text, title };
+});
+
+// Daleel opens as a floating window over the current page; /ai stays as the full-page version.
+const daleel = useDaleel();
+const canUseDaleel = computed(() => page.props.auth?.can?.['ai.use'] === true);
+const onDaleelPage = computed(() => page.url === '/ai' || page.url.startsWith('/ai?'));
 
 // ── Event selector ─────────────────────────────────────────────────────────
 const selectorOpen = ref(false);
@@ -283,7 +312,7 @@ onUnmounted(() => {
 
 const allNavItems = [
   { label: 'Dashboard',     route: 'dashboard',        icon: 'dashboard', can: 'console.view' },
-  { label: 'Daleel',        route: 'ai',                icon: 'ai',        can: 'ai.use' },
+  { label: 'Daleel',        route: 'ai',                icon: 'ai',        can: 'ai.use', action: 'daleel' },
   { label: 'Planning',      route: 'plans',             icon: 'plans',     can: 'plans.view' },
   { label: 'Jobs Queue',    route: 'jobs',              icon: 'jobs',      can: ['console.view', 'jobs.view'] },
   { label: 'Crew Assignment', route: 'crew-assignment', icon: 'team',      can: 'movements.assign-crew' },
@@ -392,8 +421,27 @@ const SidebarLink = (props, { emit }) => {
     }
   }
 
-  // A file download must be a real request, not an Inertia visit.
   const badge = props.item.badge ? Number(page.props[props.item.badge] ?? 0) : 0;
+
+  // Daleel: a plain click opens the floating window; Ctrl/Cmd/Shift or middle click still opens the page.
+  if (props.item.action === 'daleel') {
+    return h('a', {
+      href,
+      class: ['sidebar-link', isActive ? 'sidebar-link--active' : ''],
+      title: sidebarMini.value ? props.item.label : undefined,
+      onClick: (e) => {
+        if (e.ctrlKey || e.metaKey || e.shiftKey || e.button !== 0) return;
+        e.preventDefault();
+        if (!onDaleelPage.value) daleel.open();
+        emit('click');
+      },
+    }, [
+      h(SvgIcon, { name: props.item.icon }),
+      h('span', { class: 'nav-label' }, props.item.label),
+    ]);
+  }
+
+  // A file download must be a real request, not an Inertia visit.
   return h(props.item.download ? 'a' : Link, {
     href,
     class: ['sidebar-link', isActive ? 'sidebar-link--active' : ''],
@@ -713,6 +761,15 @@ MobileNavItem.props = ['item'];
 }
 .topbar-date { display: none; }
 @media (min-width: 480px) { .topbar-date { display: block; } }
+.topbar-flights {
+  display: none; align-items: center; gap: 5px; margin-right: 8px; padding: 3px 9px;
+  border-radius: 999px; font-size: 11.5px; font-weight: 600; text-decoration: none; white-space: nowrap;
+}
+@media (min-width: 900px) { .topbar-flights { display: inline-flex; } }
+.topbar-flights--ok { background: var(--panel); color: var(--ink3); }
+.topbar-flights--warn { background: #FEF3C7; color: #92400E; }
+.topbar-flights--bad { background: var(--danger-soft); color: var(--danger); }
+.topbar-flights:hover { filter: brightness(.97); }
 .topbar-live-dot {
   width: 7px; height: 7px; border-radius: 50%;
   background: var(--live); animation: pulseDot 1.4s ease-in-out infinite;

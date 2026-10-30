@@ -93,6 +93,38 @@ class JobPushNotifier
     }
 
     /**
+     * Flight changes under one supervisor's jobs (FlightChangeDigest): the job's own message, or one merged
+     * push when several of their jobs changed in the same save, refresh or sync.
+     *
+     * @param  array<int, array{job_id: int, job_ref: string, team: ?string, kind: string, flight: string, start_after: ?string}>  $items
+     */
+    public function flightChangesFor(int $userId, array $items): void
+    {
+        if (count($items) === 1) {
+            $item = $items[0];
+            $retimed = $item['kind'] === 'retimed';
+            $this->send([$userId], 'job_flight_changed',
+                $retimed ? 'Job re-timed: flight changed' : 'Flight changed: check your job',
+                $this->itemLabel($item).' · '.$item['flight'].'. '.($retimed ? "Now starts {$item['start_after']}." : 'The job has started and kept its times.'),
+                JobOperation::find($item['job_id']));
+
+            return;
+        }
+
+        $retimed = count(array_filter($items, fn ($i) => $i['kind'] === 'retimed'));
+        $title = count($items).' of your jobs changed with their flights';
+        $body = implode('; ', array_map(fn ($i) => $this->itemLabel($i).($i['kind'] === 'retimed' ? " now {$i['start_after']}" : ' needs a check'), array_slice($items, 0, 4)))
+            .(count($items) > 4 ? '; and '.(count($items) - 4).' more' : '')
+            .($retimed < count($items) ? '.' : '. All re-timed.');
+        $this->send([$userId], 'job_flight_changed', $title, $body);
+    }
+
+    private function itemLabel(array $item): string
+    {
+        return $item['job_ref'].($item['team'] ? ' · '.$item['team'] : '');
+    }
+
+    /**
      * @param  array<int, int>  $userIds
      */
     public function startingSoon(JobOperation $job, Carbon $startsAt, array $userIds): void

@@ -7,6 +7,7 @@ use App\Models\Team;
 use App\Models\TeamFlight;
 use App\Services\FlightAiLookupService;
 use App\Services\FlightMovementSync;
+use App\Services\FlightRefresh;
 use App\Services\FlightSyncService;
 use App\Services\OagScheduleService;
 use Illuminate\Http\JsonResponse;
@@ -87,10 +88,12 @@ class TeamFlightsController extends Controller
         $movements = collect($change['movements'] ?? []);
         $updated = $movements->where('status', 'updated')->count();
         $review = $movements->where('status', 'needs_review')->count();
+        $retimed = $movements->where('status', 'job_retimed')->count();
 
         return trim(implode(' ', array_filter([
             'Flight updated.',
             $updated ? "{$updated} planned ".($updated === 1 ? 'movement' : 'movements').' synced.' : null,
+            $retimed ? "{$retimed} ".($retimed === 1 ? 'job' : 'jobs').' re-timed and supervisors notified.' : null,
             $review ? "{$review} ".($review === 1 ? 'movement already has a job' : 'movements already have jobs').' and must be updated by hand.' : null,
         ])));
     }
@@ -108,6 +111,7 @@ class TeamFlightsController extends Controller
             trim(($flight->team?->code ?? '').' '.$flight->direction.' '.($flight->flight_number ?? '')),
             $diff + [
                 'movements_synced' => $movements->where('status', 'updated')->pluck('code')->values()->all(),
+                'jobs_retimed' => $movements->where('status', 'job_retimed')->pluck('code')->values()->all(),
                 'movements_to_review' => $movements->where('status', 'needs_review')->pluck('code')->values()->all(),
             ],
             $flight,
@@ -117,76 +121,116 @@ class TeamFlightsController extends Controller
 
     public function destroy(int $eventId, int $flightId): RedirectResponse
     {
-        TeamFlight::where('event_id', $eventId)->findOrFail($flightId)->delete();
+        FlightMovementSync::remove(TeamFlight::where('event_id', $eventId)->findOrFail($flightId));
 
         return redirect()->back()->with('success', 'Flight removed.');
     }
 
-    public function sync(FlightSyncService $service, OagScheduleService $oagService, FlightAiLookupService $aiLookup, FlightMovementSync $movementSync, int $eventId, int $flightId): JsonResponse
+    /** Several flights at once from Event Teams (OAG, then AviationStack; no AI search): one result per flight. */
+    public function syncBulk(Request $request, FlightRefresh $refresh, int $eventId): JsonResponse
+    {
+        $ids = $request->validate([
+            'flight_ids' => 'required|array|min:1|max:60',
+            'flight_ids.*' => 'integer',
+        ])['flight_ids'];
+
+        $flights = TeamFlight::where('event_id', $eventId)->whereKey($ids)
+            ->with('team:id,code,team_name')->orderBy('scheduled_at')->get();
+
+        $results = $flights->map(function (TeamFlight $flight) use ($refresh) {
+            $result = $refresh->refresh($flight);
+            $flight->refresh();
+
+            return [
+                'id' => $flight->id,
+                'team' => $flight->team?->code,
+                'flight_number' => $flight->flight_number,
+                'direction' => $flight->direction,
+                'ok' => $result['ok'],
+                'source' => $result['source'],
+                'error' => $result['error'],
+                'moved_movements' => count($result['change']['movements'] ?? []),
+                // What the new time did to plans and jobs (FlightMovementSync::sync), for the result list.
+                'change' => $result['change'] ? $result['change'] + ['code' => $flight->team?->code] : null,
+                'flight' => $flight->only(['id', 'scheduled_at', 'estimated_at', 'actual_at', 'delay_minutes', 'flight_status', 'flight_synced_at', 'flight_sync_attempted_at', 'flight_sync_error']),
+            ];
+        })->values();
+
+        $ok = $results->where('ok', true)->count();
+        $movements = $results->pluck('change')->filter()->flatMap(fn ($c) => $c['movements']);
+        $summary = [
+            'flights_changed' => $results->filter(fn ($r) => $r['change'] !== null)->count(),
+            'movements_updated' => $movements->where('status', 'updated')->count(),
+            'jobs_retimed' => $movements->where('status', 'job_retimed')->count(),
+            'jobs_review' => $movements->where('status', 'needs_review')->count(),
+            'clashes' => $movements->sum(fn ($m) => $m['clashes'] ?? 0),
+        ];
+        // Only what happened: failures, new times and what they moved; nothing when a figure is 0.
+        AuditLog::change('Flights refreshed', "{$ok} of {$results->count()}", array_filter([
+            'flights' => $results->pluck('flight_number')->all(),
+            'failed' => $results->where('ok', false)->pluck('flight_number')->values()->all(),
+            'new_times' => $results->filter(fn ($r) => $r['change'] !== null)->pluck('flight_number')->values()->all(),
+            'movements_retimed' => $summary['movements_updated'],
+            'jobs_retimed' => $summary['jobs_retimed'],
+            'jobs_to_review' => $summary['jobs_review'],
+        ]), null, $eventId);
+
+        return response()->json(['refreshed' => $ok, 'failed' => $results->count() - $ok, 'results' => $results, 'summary' => $summary]);
+    }
+
+    /** Remember this refresh attempt and why it failed (null when it worked). */
+    private function recordAttempt(TeamFlight $flight, ?string $error): void
+    {
+        $flight->forceFill(['flight_sync_attempted_at' => now(), 'flight_sync_error' => $error])->saveQuietly();
+    }
+
+    public function sync(FlightSyncService $service, OagScheduleService $oagService, FlightAiLookupService $aiLookup, int $eventId, int $flightId): JsonResponse
     {
         $teamFlight = TeamFlight::where('event_id', $eventId)
                                 ->with(['originAirport', 'destinationAirport'])
                                 ->findOrFail($flightId);
 
-        $raw = $service->syncFlightRecord($teamFlight);
+        // OAG first: schedule and status for any date, saved like any sync. Then AviationStack
+        // (recent flights only, saved on an exact date match). Then an AI web search, never saved.
+        $oag = $oagService->sync($teamFlight);
 
-        if (!$raw) {
+        if ($oag) {
+            $this->recordAttempt($teamFlight, null);
+            $oagDep = $oag['instance']['departure'] ?? [];
+            $oagArr = $oag['instance']['arrival'] ?? [];
+            $change = $oag['change'];
+
             return response()->json([
-                'success' => false,
-                'message' => 'No flight data available for ' . $teamFlight->flight_number,
-            ], 404);
+                'success'       => true,
+                'source'        => 'oag',
+                'saved'         => $oag['saved'],
+                'flight_change' => $change && $change['movements'] ? $change : null,
+                'flight_number' => $teamFlight->flight_number,
+                'flight_status' => $oag['status']['flight_status'],
+                'departure'     => [
+                    'iata'      => $oagDep['airport']['iata'] ?? null,
+                    'scheduled' => isset($oagDep['date']['local'], $oagDep['time']['local'])
+                        ? "{$oagDep['date']['local']} {$oagDep['time']['local']}" : null,
+                    'terminal'  => ($oagDep['terminal'] ?? '') ?: null,
+                ] + $oag['status']['departure'],
+                'arrival'       => [
+                    'iata'      => $oagArr['airport']['iata'] ?? null,
+                    'scheduled' => isset($oagArr['date']['local'], $oagArr['time']['local'])
+                        ? "{$oagArr['date']['local']} {$oagArr['time']['local']}" : null,
+                    'terminal'  => ($oagArr['terminal'] ?? '') ?: null,
+                ] + $oag['status']['arrival'],
+                'synced_at'     => now()->toISOString(),
+            ]);
         }
 
-        // AviationStack only has live/near-term data. When it can't find this
-        // flight's actual date (e.g. it's months away), fall back to OAG's
-        // published-schedule database - a real commercial data feed, so a
-        // match is trusted and saved the same way a normal sync is. If OAG
-        // also has nothing (not subscribed, or genuinely no data), fall back
-        // further to an AI web search - read-only, never auto-saved.
-        if (!empty($raw['_date_mismatch'])) {
-            $oag = $oagService->lookupSchedule($teamFlight);
+        $raw = $service->syncFlightRecord($teamFlight);
+        $this->recordAttempt($teamFlight, match (true) {
+            !$raw => 'Not found by OAG or AviationStack; check the flight number and date.',
+            !empty($raw['_date_mismatch']) => 'Found only on another date; check the flight number and date.',
+            default => null,
+        });
 
-            if ($oag) {
-                $oagDep = $oag['departure'] ?? [];
-                $oagArr = $oag['arrival'] ?? [];
-                $leg = $teamFlight->direction === 'arrival' ? $oagArr : $oagDep;
-
-                $scheduledAt = null;
-                $change = null;
-                if (!empty($leg['date']['local']) && !empty($leg['time']['local'])) {
-                    $scheduledAt = \Carbon\Carbon::parse("{$leg['date']['local']} {$leg['time']['local']}");
-                    $before = FlightMovementSync::before($teamFlight);
-                    $change = DB::transaction(function () use ($teamFlight, $scheduledAt, $before, $movementSync) {
-                        $teamFlight->update(['scheduled_at' => $scheduledAt, 'flight_synced_at' => now()]);
-
-                        return FlightMovementSync::changed($teamFlight, $before)
-                            ? $movementSync->sync($teamFlight->loadMissing('team:id,code'), $before, $teamFlight->team?->code ?? '')
-                            : null;
-                    });
-                }
-
-                return response()->json([
-                    'success'       => true,
-                    'source'        => 'oag',
-                    'saved'         => (bool) $scheduledAt,
-                    'flight_change' => $change && $change['movements'] ? $change : null,
-                    'flight_number' => $teamFlight->flight_number,
-                    'departure'     => [
-                        'iata'      => $oagDep['airport']['iata'] ?? null,
-                        'scheduled' => isset($oagDep['date']['local'], $oagDep['time']['local'])
-                            ? "{$oagDep['date']['local']} {$oagDep['time']['local']}" : null,
-                        'terminal'  => $oagDep['terminal'] ?: null,
-                    ],
-                    'arrival'       => [
-                        'iata'      => $oagArr['airport']['iata'] ?? null,
-                        'scheduled' => isset($oagArr['date']['local'], $oagArr['time']['local'])
-                            ? "{$oagArr['date']['local']} {$oagArr['time']['local']}" : null,
-                        'terminal'  => $oagArr['terminal'] ?: null,
-                    ],
-                    'synced_at'     => now()->toISOString(),
-                ]);
-            }
-
+        if (!$raw || !empty($raw['_date_mismatch'])) {
             $ai = $aiLookup->lookup($teamFlight);
 
             // Show whatever the AI turned up, even when it couldn't confirm an
@@ -217,6 +261,13 @@ class TeamFlightsController extends Controller
                     'synced_at'      => now()->toISOString(),
                 ]);
             }
+        }
+
+        if (!$raw) {
+            return response()->json([
+                'success' => false,
+                'message' => 'No flight data available for ' . $teamFlight->flight_number,
+            ], 404);
         }
 
         $dep = $raw['departure'] ?? [];

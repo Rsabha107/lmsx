@@ -24,7 +24,8 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        // One collector per request / command: a bulk refresh or sync tells each person once.
+        $this->app->scoped(\App\Services\FlightChangeDigest::class);
     }
 
     /**

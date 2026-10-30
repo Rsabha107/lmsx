@@ -248,6 +248,12 @@
               </div>
             </div>
             <div class="jh-actions">
+              <AskDaleelButton v-if="['pending', 'dispatched'].includes(selectedJob.status)"
+                :question="`What is preventing dispatch of job ${selectedJob.id} (${selectedJob.team})? Check its crew, conflicts and timing.`"
+                :context="{ page: 'jobs', job_id: selectedJob.db_id }" label="What's blocking it?" />
+              <AskDaleelButton v-else-if="selectedJob.status === 'in-progress'"
+                :question="`How is job ${selectedJob.id} (${selectedJob.team}) going? Any overdue steps or delay, and what should I check?`"
+                :context="{ page: 'jobs', job_id: selectedJob.db_id }" label="Ask Daleel" />
               <Button v-if="selectedJob.status !== 'in-progress' && canStartJob(selectedJob)" variant="primary" size="md" @click="promptStartJob">Start job</Button>
               <Button v-else-if="canReinstateJob(selectedJob)" variant="primary" size="md" @click="promptReinstateJob">Reinstate</Button>
               <div v-if="hasMoreActions" ref="moreRef" class="jh-more">
@@ -412,7 +418,10 @@
               <dd>{{ selectedJob.job_info?.sequence || '—' }}</dd>
               <template v-if="detailFlight(selectedJob)">
                 <dt>Flight</dt>
-                <dd>{{ detailFlight(selectedJob) }}</dd>
+                <dd>
+                  <FlightLine :flight="selectedJob.flight" :can-refresh="canRefreshFlights" :refreshing="flightRefreshingIds.includes(selectedJob.flight.id)"
+                    @refresh="refreshFlights([selectedJob.flight], { single: true })" />
+                </dd>
               </template>
               <dt>Generated</dt>
               <dd>{{ formatStamp(selectedJob.job_info?.generated_at) }}</dd>
@@ -611,6 +620,7 @@
       @close="showStatusError = false"
       @confirm="showStatusError = false"
     />
+    <FlightRefreshResult :result="flightResult" @close="flightResult = null" />
   </app-layout>
 </template>
 
@@ -624,6 +634,7 @@ import StatusPill from '../Components/StatusPill.vue';
 import SvgIcon from '../Components/SvgIcon.vue';
 import RefreshButton from '../Components/RefreshButton.vue';
 import EventMultiPicker from '../Components/EventMultiPicker.vue';
+import AskDaleelButton from '../Components/AskDaleelButton.vue';
 import Modal from '../Components/Modal.vue';
 import Button from '../Components/Button.vue';
 import CheckpointTimeline from '../Components/CheckpointTimeline.vue';
@@ -639,8 +650,15 @@ import ColumnFilter from '../Components/ColumnFilter.vue';
 import { useColumnFilters } from '../Composables/useColumnFilters';
 import { useToast } from '../Composables/useToast';
 import { varianceFromPlan } from '../Composables/useVenueTime';
+import FlightLine from '../Components/FlightLine.vue';
+import FlightRefreshResult from '../Components/FlightRefreshResult.vue';
+import { useFlightRefresh } from '../Composables/useFlightRefresh';
 
 const page = usePage();
+
+// ↻ on the selected job's flight (events.manage); the result lists what the new time moved.
+const canRefreshFlights = computed(() => page.props.auth?.can?.['events.manage'] === true);
+const { refresh: refreshFlights, refreshingIds: flightRefreshingIds, result: flightResult } = useFlightRefresh();
 const hasActiveEvent = computed(() => !!page.props.activeEventId);
 
 const props = defineProps({

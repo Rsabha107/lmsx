@@ -11,12 +11,6 @@
       </div>
       <div class="header-actions">
         <RefreshButton :only="['matches']" />
-        <Button variant="secondary" size="sm">
-          <template #icon>
-            <svg-icon name="filter" :size="14" />
-          </template>
-          Filter
-        </Button>
         <Button variant="secondary" size="sm" @click="openImportModal">
           <template #icon>
             <svg-icon name="upload" :size="14" />
@@ -52,12 +46,25 @@
             class="search-input"
           />
         </div>
-        <select v-model="filterStage" class="filter-select">
+        <select v-model="filterStage" class="filter-select" aria-label="Stage">
           <option value="">All Stages</option>
           <option v-for="stage in uniqueStagesArray" :key="stage" :value="stage">
             {{ stage }}
           </option>
         </select>
+        <select v-model="filterTeam" class="filter-select" aria-label="Team">
+          <option value="">All Teams</option>
+          <option v-for="t in teamOptions" :key="t.id" :value="t.id">{{ t.label }}</option>
+        </select>
+        <select v-model="filterVenue" class="filter-select" aria-label="Venue">
+          <option value="">All Venues</option>
+          <option v-for="v in venueOptions" :key="v.id" :value="v.id">{{ v.name }}</option>
+        </select>
+        <select v-model="filterDate" class="filter-select" aria-label="Match date">
+          <option value="">All Dates</option>
+          <option v-for="d in dateOptions" :key="d.value" :value="d.value">{{ d.label }}</option>
+        </select>
+        <button v-if="hasFilters" type="button" class="clear-filters" @click="clearFilters">Clear filters</button>
       </div>
       <div class="table-controls">
         <div class="view-toggle" v-if="!isMobile">
@@ -804,6 +811,60 @@ const uniqueStagesArray = computed(() => {
   return [...new Set(stages)].sort();
 });
 
+// Team, venue and date filters list only what the event's matches use (with how many matches each).
+const filterTeam = ref('');
+const filterVenue = ref('');
+const filterDate = ref('');
+const dayOf = (match) => String(match.match_date ?? '').slice(0, 10);
+
+const teamOptions = computed(() => {
+  const teams = new Map();
+  for (const m of props.matches) {
+    for (const t of [m.team1, m.team2]) {
+      if (!t?.id) continue;
+      const entry = teams.get(t.id) ?? { id: t.id, name: t.team_name || t.code || '—', code: t.code, n: 0 };
+      entry.n++;
+      teams.set(t.id, entry);
+    }
+  }
+  return [...teams.values()]
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .map(t => ({ id: t.id, label: `${t.name}${t.code ? ` (${t.code})` : ''} · ${t.n}` }));
+});
+
+const venueOptions = computed(() => {
+  const venues = new Map();
+  for (const m of props.matches) {
+    if (!m.venue?.id) continue;
+    const entry = venues.get(m.venue.id) ?? { id: m.venue.id, label: m.venue.name, n: 0 };
+    entry.n++;
+    venues.set(m.venue.id, entry);
+  }
+  return [...venues.values()]
+    .sort((a, b) => a.label.localeCompare(b.label))
+    .map(v => ({ id: v.id, name: `${v.label} · ${v.n}` }));
+});
+
+const dateOptions = computed(() => {
+  const days = new Map();
+  for (const m of props.matches) {
+    const day = dayOf(m);
+    if (day) days.set(day, (days.get(day) ?? 0) + 1);
+  }
+  return [...days.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([day, n]) => ({ value: day, label: `${formatMatchDateWeekday(day)} · ${n} match${n === 1 ? '' : 'es'}` }));
+});
+
+const hasFilters = computed(() => !!(searchQuery.value || filterStage.value || filterTeam.value || filterVenue.value || filterDate.value));
+function clearFilters() {
+  searchQuery.value = '';
+  filterStage.value = '';
+  filterTeam.value = '';
+  filterVenue.value = '';
+  filterDate.value = '';
+}
+
 const filteredMatches = computed(() => {
   let result = props.matches;
 
@@ -825,6 +886,16 @@ const filteredMatches = computed(() => {
   // Filter by stage
   if (filterStage.value) {
     result = result.filter(match => match.stage === filterStage.value);
+  }
+
+  if (filterTeam.value) {
+    result = result.filter(match => match.team1?.id === filterTeam.value || match.team2?.id === filterTeam.value);
+  }
+  if (filterVenue.value) {
+    result = result.filter(match => match.venue?.id === filterVenue.value);
+  }
+  if (filterDate.value) {
+    result = result.filter(match => dayOf(match) === filterDate.value);
   }
 
   return result;
@@ -1245,6 +1316,8 @@ function csvEscapeMatch(value) {
 
 .table-header {
   display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
   align-items: center;
   justify-content: space-between;
   padding: 0 0 8px 0;
@@ -1253,8 +1326,19 @@ function csvEscapeMatch(value) {
 
 .table-controls {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   align-items: center;
+}
+
+.clear-filters {
+  border: none;
+  background: none;
+  padding: 4px 6px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--accent);
+  cursor: pointer;
 }
 
 .search-box {

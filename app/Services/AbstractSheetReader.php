@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Ai\Agents\PdfTableExtractionAgent;
 use App\Ai\Agents\SheetColumnMappingAgent;
+use App\Support\AiProvider;
 use App\Http\Controllers\Concerns\ReadsSpreadsheetRows;
 use Carbon\Carbon;
 use Illuminate\Http\UploadedFile;
@@ -180,7 +181,7 @@ abstract class AbstractSheetReader
             $structured = $agent->prompt(
                 $prompt,
                 attachments: [$document],
-                provider: $provider,
+                provider: $provider ?? AiProvider::current(),
                 timeout: self::PDF_TIMEOUT,
             )->structured;
         } catch (Throwable $e) {
@@ -474,7 +475,7 @@ abstract class AbstractSheetReader
                 $this->aiGuidance(),
             );
 
-            $structured = $agent->prompt($this->previewGrid($sheet), provider: $provider)->structured;
+            $structured = $agent->prompt($this->previewGrid($sheet), provider: $provider ?? AiProvider::current())->structured;
 
             return isset($structured['header_row']) ? $structured : null;
         } catch (Throwable $e) {

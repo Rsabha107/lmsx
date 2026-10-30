@@ -109,17 +109,26 @@ class JobDetailTest extends TestCase
                 ->where('queueJob.flight.scheduled_local', '2026-11-08T04:00'));
     }
 
-    public function test_a_job_from_another_event_is_refused(): void
+    public function test_a_job_from_an_event_the_user_cannot_access_is_refused(): void
     {
         $event = $this->createEvent();
         $team = $this->createTeam($event);
         $job = $this->createJob($event, $this->createMovement($event, $this->createPlan($event), $team), $team);
+        $other = $this->createEvent();
 
-        $admin = User::factory()->create();
-        $admin->assignRole('admin');
+        $transport = User::factory()->create();
+        $transport->assignRole('transport');
+        $transport->events()->attach($other->id);
 
-        $this->actingAs($admin)->withSession(['active_event_id' => $this->createEvent()->id])
+        $this->actingAs($transport)->withSession(['active_event_id' => $other->id])
             ->get("/job/{$job->id}")
             ->assertForbidden();
+
+        // Another event the user can open is fine (the Jobs Queue and Day Board can show several).
+        $admin = User::factory()->create();
+        $admin->assignRole('admin');
+        $this->actingAs($admin)->withSession(['active_event_id' => $other->id])
+            ->get("/job/{$job->id}")
+            ->assertOk();
     }
 }

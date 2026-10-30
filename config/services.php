@@ -58,7 +58,8 @@ return [
     // app's existing convention (see aviationstack above).
     'anthropic' => [
         'model' => env('AI_MODEL'),
-        'timeout' => (int) env('AI_TIMEOUT', 15),
+        // Briefings chain several tools, so allow 30 s.
+        'timeout' => (int) env('AI_TIMEOUT', 30),
     ],
 
     // Firebase Cloud Messaging (HTTP v1). Push stays off until a service-account JSON is set.

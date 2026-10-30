@@ -14,12 +14,12 @@ class AiCopilotService
      * @param  array<int, array{role?: mixed, content?: mixed}>  $history  earlier turns of this chat, oldest first
      * @return array{ok: bool, answer?: string, message?: string}
      */
-    public function ask(string $question, User $user, int $eventId, array $history = []): array
+    public function ask(string $question, User $user, int $eventId, array $history = [], ?string $context = null): array
     {
         $startedAt = microtime(true);
 
         try {
-            $response = app()->make(OperationsCopilotAgent::class, ['history' => $history])->prompt($question);
+            $response = app()->make(OperationsCopilotAgent::class, ['history' => $history, 'context' => $context])->prompt($question);
 
             $this->logInteraction(
                 user: $user,

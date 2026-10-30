@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class TeamFlight extends Model
 {
@@ -37,6 +38,7 @@ class TeamFlight extends Model
         'estimated_at'        => 'datetime:Y-m-d H:i:s',
         'actual_at'           => 'datetime:Y-m-d H:i:s',
         'flight_synced_at'    => 'datetime:Y-m-d H:i:s',
+        'flight_sync_attempted_at' => 'datetime:Y-m-d H:i:s',
         'manifest'            => 'array',
         'delay_minutes'       => 'integer',
         'party_size_total'    => 'integer',
@@ -63,6 +65,17 @@ class TeamFlight extends Model
     public function destinationAirport(): BelongsTo
     {
         return $this->belongsTo(Airport::class, 'destination_airport_id');
+    }
+
+    public function movements(): HasMany
+    {
+        return $this->hasMany(Movement::class, 'flight_id');
+    }
+
+    /** Job ids generated from this flight's movements: while there are any, the flight can't be deleted. */
+    public function issuedJobIds(): array
+    {
+        return $this->movements()->whereNotNull('job_id')->orderBy('job_id')->pluck('job_id')->all();
     }
 
     public function scopeArrival($query)

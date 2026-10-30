@@ -39,6 +39,13 @@ final class FlightSummary
             'flight_status' => $flight->flight_status,
             'terminal' => $flight->terminal,
             'gate' => $flight->gate,
+            // Refresh state (wall-clock digits), for the "updated N min ago" line and ↻ (bulk refresh is per event).
+            'event_id' => $flight->event_id,
+            'scheduled_wall' => $flight->scheduled_at?->format('Y-m-d H:i'),
+            'actual_wall' => $flight->actual_at?->format('Y-m-d H:i'),
+            'synced_at' => $flight->flight_synced_at?->format('Y-m-d H:i'),
+            'sync_attempted_at' => $flight->flight_sync_attempted_at?->format('Y-m-d H:i'),
+            'sync_error' => $flight->flight_sync_error,
         ];
     }
 }

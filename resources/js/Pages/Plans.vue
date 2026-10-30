@@ -796,13 +796,28 @@
                 </Button>
               </div>
               <div style="margin-left: auto; display: flex; gap: 8px;">
+                <!-- All movements (no plan open): adding a movement needs a plan, so it's off for now. -->
+                <div :title="activePlan ? undefined : 'Coming soon'">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    :disabled="!activePlan"
+                    @click="addMovement"
+                  >
+                    <template #icon><svg-icon name="plus" :size="14" /></template>
+                    Add movement
+                  </Button>
+                </div>
                 <Button
+                  v-if="canRefreshFlights && genFlights.length"
                   variant="secondary"
                   size="sm"
-                  @click="addMovement"
+                  :processing="flightsRefreshing"
+                  :disabled="flightsRefreshing"
+                  :title="`Refresh the ${genFlights.length} flight${genFlights.length === 1 ? '' : 's'} of the ${selectedMovementIds.size ? 'selected' : 'listed'} arrivals and departures without a job from OAG, so jobs are generated from current times`"
+                  @click="refreshFlights(genFlights)"
                 >
-                  <template #icon><svg-icon name="plus" :size="14" /></template>
-                  Add movement
+                  Refresh flights ({{ genFlights.length }})
                 </Button>
                 <div :title="genCanGenerateTooltip">
                   <Button
@@ -1097,11 +1112,12 @@
                       style="padding: 3px 8px; font-size: 11px"
                       @click="generateSingleJob(mv)"
                       :processing="generatingJobForMovement === mv.id"
-                      :disabled="generatingJobForMovement === mv.id || !mv.field_supervisor_id || !mv.vehicle_id"
-                      :title="!mv.field_supervisor_id ? 'Assign a supervisor before generating job' : !mv.vehicle_id ? 'Assign a vehicle before generating job' : ''"
+                      :disabled="generatingJobForMovement === mv.id || !mv.field_supervisor_id || !mv.vehicle_id || !!jobBlocker(mv)"
+                      :title="jobBlocker(mv) || (!mv.field_supervisor_id ? 'Assign a supervisor before generating job' : !mv.vehicle_id ? 'Assign a vehicle before generating job' : '')"
                       >Generate</Button
                     >
-                    <div v-if="!mv.field_supervisor_id || !mv.vehicle_id" style="display: flex; gap: 4px; align-items: center;">
+                    <div v-if="!mv.field_supervisor_id || !mv.vehicle_id || jobBlocker(mv)" style="display: flex; gap: 4px; align-items: center;">
+                      <span v-if="jobBlocker(mv)" :title="jobBlocker(mv)" class="mv-no-flight">No flight</span>
                       <span v-if="!mv.field_supervisor_id" title="No supervisor assigned" style="color: #F59E0B; font-size: 14px;">⚠️</span>
                       <span v-if="!mv.vehicle_id" title="No vehicle assigned" style="color: #F59E0B; font-size: 14px;">🚗</span>
                     </div>
@@ -1597,8 +1613,8 @@
                       size="sm"
                       style="padding: 3px 8px; font-size: 11px"
                       :processing="generatingJobForMovement === mv.id"
-                      :disabled="generatingJobForMovement === mv.id || !mv.field_supervisor_id || !mv.vehicle_id"
-                      :title="!mv.field_supervisor_id ? 'Assign a supervisor before generating job' : !mv.vehicle_id ? 'Assign a vehicle before generating job' : ''"
+                      :disabled="generatingJobForMovement === mv.id || !mv.field_supervisor_id || !mv.vehicle_id || !!jobBlocker(mv)"
+                      :title="jobBlocker(mv) || (!mv.field_supervisor_id ? 'Assign a supervisor before generating job' : !mv.vehicle_id ? 'Assign a vehicle before generating job' : '')"
                       @click="generateSingleJob(mv)"
                     >Generate</Button>
                   </div>
@@ -4405,16 +4421,36 @@
     <teleport to="body">
       <EditMovementModal
         v-if="editingMovement"
-        :key="editingMovement.id"
+        :key="`${editingMovement.id}-${movementModalRev}`"
         :movement="editingMovement"
         :plan-date="selectedPlanObj?.date ?? null"
         :vehicles="props.vehicles"
         :drivers="props.drivers"
         :supervisors="props.supervisors"
         :matches="props.matches"
+        :can-edit-team="page.props.auth?.can?.['events.manage'] === true"
         @close="editingMovement = null"
+        @edit-team="openTeamEdit"
       />
     </teleport>
+
+    <!-- The Event Teams dialog over Edit movement: a saved flight re-times this team's planned movements. -->
+    <TeamDialog
+      v-if="teamEdit"
+      :team="teamEdit.team"
+      :event-id="activeEvent.id"
+      :airports="teamEdit.airports"
+      :countries="teamEdit.countries"
+      :classifications="teamEdit.classifications"
+      :base-camp-hotels="teamEdit.baseCampHotels"
+      :group-options="teamEdit.groupOptions"
+      :allow-delete="false"
+      @close="teamEdit = null"
+      @saved="onTeamEdited"
+    />
+
+    <!-- Refresh flights (movements toolbar): what the new times did to plans and jobs -->
+    <FlightRefreshResult :result="flightResult" @close="flightResult = null" />
 
     <!-- Bulk Delete Plans Modal -->
     <teleport to="body">
@@ -5131,10 +5167,13 @@ import FlagIcon from "../Components/FlagIcon.vue";
 import ConfirmModal from "../Components/ConfirmModal.vue";
 import NewPlanModal from "../Components/Plans/NewPlanModal.vue";
 import EditMovementModal from "../Components/Plans/EditMovementModal.vue";
+import TeamDialog from "../Components/Teams/TeamDialog.vue";
+import FlightRefreshResult from "../Components/FlightRefreshResult.vue";
+import { useFlightRefresh } from "../Composables/useFlightRefresh";
 import ConflictsTab from "../Components/Plans/ConflictsTab.vue";
 import PlanList from "../Components/Plans/PlanList.vue";
 import PlanChecklist from "../Components/Plans/PlanChecklist.vue";
-import { formatDate, formatDateTime, formatMovementCode, legMinutes } from "../Composables/planFormat";
+import { formatDate, formatDateTime, formatMovementCode, jobBlocker, legMinutes } from "../Composables/planFormat";
 import FormDateField from "../Components/FormDateField.vue";
 import ColumnFilter from "../Components/ColumnFilter.vue";
 import { useColumnFilters } from "../Composables/useColumnFilters";
@@ -5390,6 +5429,14 @@ const activeTab = ref(
     : "plans"
 );
 
+// ?team= (Event Teams' link icon) opens every plan's movements for that team.
+const linkedTeamId = Number(new URLSearchParams(window.location.search).get('team')) || null;
+if (linkedTeamId) {
+  activePlan.value = null;
+  activeTab.value = "movements";
+  movementsTeamFilter.value = linkedTeamId;
+}
+
 const showJobInfoModal = ref(false);
 const showRefTimeInfoModal = ref(false);
 const showGenerateJobs = ref(false);
@@ -5581,9 +5628,24 @@ const genAlreadyCount = computed(
   () => selectedPlanMovements.value.filter((mv) => mv.job_id).length
 );
 
+// Flights of the same pool's arrivals / departures (no job yet, not landed or cancelled): refreshed before
+// generating so jobs start from current times. Needs events.manage (the refresh route).
+const canRefreshFlights = computed(() => page.props.auth?.can?.["events.manage"] === true);
+const genFlights = computed(() => {
+  const seen = new Map();
+  for (const mv of genMovements.value) {
+    const f = mv.flight;
+    if (!["arrival", "departure"].includes(mv.kind) || !f?.id || !f.flight_number || f.flight_number === "BUS") continue;
+    if (f.actual_at || ["landed", "cancelled"].includes(f.flight_status)) continue;
+    seen.set(f.id, { id: f.id, event_id: f.event_id ?? props.activeEvent?.id });
+  }
+  return [...seen.values()];
+});
+const { refresh: refreshFlights, refreshing: flightsRefreshing, result: flightResult } = useFlightRefresh();
+
 /** The subset that can actually be generated right now — fully crewed. */
 const genReadyMovements = computed(() =>
-  genMovements.value.filter((mv) => mv.field_supervisor_id && mv.vehicle_id)
+  genMovements.value.filter((mv) => mv.field_supervisor_id && mv.vehicle_id && !jobBlocker(mv))
 );
 
 /** Ready movements bucketed by plan — generation is a per-plan endpoint. */
@@ -5615,8 +5677,12 @@ const genCanGenerateTooltip = computed(() => {
 
   const missingSupervisor = genMovements.value.filter(mv => !mv.field_supervisor_id).length;
   const missingVehicle = genMovements.value.filter(mv => !mv.vehicle_id).length;
+  const missingFlight = genMovements.value.filter(mv => jobBlocker(mv)).length;
 
   if (genReadyMovements.value.length === 0) {
+    if (missingFlight > 0 && !missingSupervisor && !missingVehicle) {
+      return `${missingFlight} ${scope} without a flight: add it in Event Teams`;
+    }
     if (missingSupervisor > 0 && missingVehicle > 0) {
       return `${missingSupervisor} ${scope} missing supervisor, ${missingVehicle} missing vehicle`;
     }
@@ -6573,7 +6639,8 @@ function isReadyForGeneration(mv) {
     !mv.job_id &&
     Boolean(mv.vehicle_id) &&
     Boolean(mv.driver_id) &&
-    Boolean(mv.field_supervisor_id)
+    Boolean(mv.field_supervisor_id) &&
+    !jobBlocker(mv)
   );
 }
 
@@ -6978,6 +7045,13 @@ async function selectMovement(movement) {
   await fetchMovementCheckpoints(movement);
 }
 
+// ?movement= (Daleel's links) opens that movement's panel once the plan's movements are shown.
+const linkedMovementId = Number(new URLSearchParams(window.location.search).get('movement')) || null;
+if (linkedMovementId) {
+  const linked = selectedPlanMovements.value.find((mv) => mv.id === linkedMovementId);
+  if (linked) nextTick(() => selectMovement(linked));
+}
+
 // Checkpoint detail (state, times, baggage, live estimate) isn't sent for
 // every movement on page load anymore — only a cheap total/completed count
 // is (see PlanManagementController@index). Fetched fresh from the database
@@ -7015,6 +7089,35 @@ function templateChangeNote(movement) {
 
 function editMovement(movement) {
   editingMovement.value = movement;
+}
+
+// Edit team from Edit movement: the team and pick lists load on demand (Planning doesn't carry them).
+const teamEdit = ref(null);
+const movementModalRev = ref(0);
+let teamEditLoading = false;
+async function openTeamEdit(teamId) {
+  if (teamEditLoading || !props.activeEvent) return;
+  teamEditLoading = true;
+  try {
+    const res = await fetch(`/events/${props.activeEvent.id}/teams/${teamId}/profile`, { headers: { Accept: "application/json" } });
+    if (!res.ok) throw new Error(res.status === 403 ? "You can't edit teams." : "Couldn't load the team.");
+    teamEdit.value = await res.json();
+  } catch (e) {
+    showErrorToast(e.message || "Couldn't load the team.");
+  } finally {
+    teamEditLoading = false;
+  }
+}
+
+// The save reloaded the plans; reopen Edit movement on the movement's new data (its window may have moved).
+function onTeamEdited() {
+  teamEdit.value = null;
+  const id = editingMovement.value?.id;
+  if (!id) return;
+  const fresh = allPlans.value.flatMap((p) => p.movements || []).find((m) => m.id === id);
+  // Not found: close rather than keep a window the save may have just moved.
+  editingMovement.value = fresh ?? null;
+  movementModalRev.value++;
 }
 
 function deleteMovement(movement) {
@@ -7155,15 +7258,17 @@ function generateJobs() {
   const validMovements = genReadyMovements.value;
   const missingSupervisor = genMovements.value.filter(mv => !mv.field_supervisor_id).length;
   const missingVehicle = genMovements.value.filter(mv => !mv.vehicle_id).length;
+  const missingFlight = genMovements.value.filter(mv => jobBlocker(mv)).length;
 
   if (validMovements.length === 0) {
     const reasons = [];
+    if (missingFlight > 0) reasons.push(`${missingFlight} arrival/departure movement(s) without a flight (add it in Event Teams)`);
     if (missingSupervisor > 0) reasons.push(`${missingSupervisor} movement(s) missing a supervisor`);
     if (missingVehicle > 0) reasons.push(`${missingVehicle} movement(s) missing a vehicle`);
 
     genBlockedMessage.value = reasons.length
       ? `No movements are ready for job generation:<br><br>${reasons.map(r => `• ${r}`).join('<br>')}`
-        + '<br><br>Assign a supervisor and a vehicle, then try again.'
+        + '<br><br>Fix these, then try again.'
       : 'No movements are awaiting job generation.';
     showGenerateBlocked.value = true;
     return;
@@ -7172,6 +7277,7 @@ function generateJobs() {
   const skippedCount = genMovements.value.length - validMovements.length;
   if (skippedCount > 0) {
     const reasons = [];
+    if (missingFlight > 0) reasons.push(`${missingFlight} without a flight`);
     if (missingSupervisor > 0) reasons.push(`${missingSupervisor} without a supervisor`);
     if (missingVehicle > 0) reasons.push(`${missingVehicle} without a vehicle`);
 
@@ -7208,6 +7314,8 @@ function toggleGenMovement(id) {
 }
 
 function genRowBlockedReason(mv) {
+  const blocker = jobBlocker(mv);
+  if (blocker) return blocker;
   const missing = [];
   if (!mv.vehicle_id) missing.push('vehicle');
   if (!mv.field_supervisor_id) missing.push('supervisor');
@@ -7419,6 +7527,8 @@ function statusLabel(s) {
 </script>
 
 <style scoped>
+/* An arrival / departure whose flight was removed in Event Teams: no job until it has one again. */
+.mv-no-flight { font-size: 10.5px; font-weight: 600; color: var(--danger); background: var(--danger-soft, #fee2e2); padding: 1px 6px; border-radius: 999px; white-space: nowrap; cursor: help; }
 .delete-approval-note {
   font-size: 13px; color: var(--ink2); background: var(--accent-soft);
   border-radius: 6px; padding: 10px 12px; margin-bottom: 12px;

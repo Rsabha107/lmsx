@@ -14,6 +14,11 @@ class Team extends Model
 
     use HasFactory;
 
+    /** A team's part in the event: travelling team, host (local, no travel) or guest. */
+    public const ROLES = ['team', 'host', 'guest'];
+
+    protected $attributes = ['role' => 'team'];
+
     protected $fillable = [
         'event_id',
         'code',
@@ -21,6 +26,7 @@ class Team extends Model
         'country_id',
         'flag',
         'group_pool',
+        'role',
         'classification_type_id',
         'origin_airport_id',
         'destination_airport_id',
@@ -125,5 +131,20 @@ class Team extends Model
     public function scopeByGroup($query, string $group)
     {
         return $query->where('group_pool', $group);
+    }
+
+    /** What the Event Teams table and the Add / Edit team dialog show: country, flights with airports, stay, sessions. */
+    public function scopeWithProfile($query, int $eventId)
+    {
+        return $query->with([
+            'country',
+            'classification',
+            // issued_jobs_count: a flight with generated jobs can't be removed (FlightMovementSync::remove).
+            'flights' => fn ($q) => $q->where('event_id', $eventId)->with(['originAirport', 'destinationAirport'])
+                ->withCount(['movements as issued_jobs_count' => fn ($m) => $m->whereNotNull('job_id')])
+                ->orderBy('scheduled_at'),
+            'stay' => fn ($q) => $q->where('event_id', $eventId),
+            'trainings' => fn ($q) => $q->where('event_id', $eventId)->orderBy('training_start_at'),
+        ]);
     }
 }

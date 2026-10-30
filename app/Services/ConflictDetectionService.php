@@ -39,8 +39,27 @@ class ConflictDetectionService
             return [];
         }
 
-        $movements = $this->eventMovements($eventId);
+        return $this->run($eventId, $this->eventMovements($eventId));
+    }
 
+    /**
+     * The same checks on the event's movements after $adjust has changed them in memory (for example a
+     * flight running late). Nothing is saved: the models are fresh copies, discarded afterwards.
+     *
+     * @param  callable(Collection<int, Movement>): void  $adjust
+     * @return array<int, array<string, mixed>>
+     */
+    public function whatIf(int $eventId, callable $adjust): array
+    {
+        $movements = $this->eventMovements($eventId);
+        $adjust($movements);
+
+        return $this->run($eventId, $movements);
+    }
+
+    /** @return array<int, array<string, mixed>> */
+    private function run(int $eventId, Collection $movements): array
+    {
         if ($movements->isEmpty()) {
             return [];
         }

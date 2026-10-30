@@ -93,7 +93,8 @@ class JobGenerationService
         $movements = Movement::with(['checkpointTemplate.checkpoints', 'flight'])
             ->whereIn('id', $movementIds)
             ->whereNull('job_id')
-            ->get();
+            ->get()
+            ->reject(fn (Movement $movement) => $movement->jobBlocker() !== null);
 
         foreach ($movements as $movement) {
             $jobs[] = $this->generateJobFromMovement($movement, $options);
@@ -189,7 +190,7 @@ class JobGenerationService
      *
      * @return int how many checkpoints were re-timed
      */
-    public function rescheduleJob(JobOperation $job): int
+    public function rescheduleJob(JobOperation $job, bool $notify = true): int
     {
         $movement = $job->movement;
         if (!$movement) {
@@ -213,7 +214,7 @@ class JobGenerationService
             }
         }
 
-        if ($moved > 0) {
+        if ($moved > 0 && $notify) {
             app(JobPushNotifier::class)->retimed($job);
         }
 
